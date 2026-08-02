@@ -191,6 +191,12 @@ class PlannerStore:
         if column not in columns:
             self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+    def health_check(self) -> dict[str, str]:
+        with self._lock:
+            self.connection.execute("SELECT 1").fetchone()
+            integrity = str(self.connection.execute("PRAGMA quick_check").fetchone()[0])
+        return {"database": "ok" if integrity == "ok" else "degraded", "integrity": integrity}
+
     def close(self) -> None:
         with self._lock:
             self.connection.close()

@@ -4,6 +4,7 @@ import argparse
 import calendar
 import json
 import os
+import sqlite3
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -389,6 +390,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
+        if parsed.path == "/health":
+            try:
+                health = self.server.store.health_check()
+                status = 200 if health["database"] == "ok" else 503
+                self._send_json({"status": "ok" if status == 200 else "degraded", "service": "hearthstate", **health}, status=status)
+            except sqlite3.Error:
+                self._send_json({"status": "degraded", "service": "hearthstate", "database": "unavailable"}, status=503)
+            return
         if parsed.path == "/api/groceries":
             apply_known_coles_prices(self.server.store)
             payload = self.server.store.grocery_budget_snapshot()
@@ -724,6 +733,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
         self.send_header("Cache-Control", cache_control)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         self.end_headers()
         self.wfile.write(content)
 

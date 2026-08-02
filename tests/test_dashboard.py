@@ -235,6 +235,28 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertTrue(image.startswith(b"\x89PNG"))
         self.assertIn("/api/recipes", script)
 
+    def test_health_endpoint_and_security_headers(self):
+        store = PlannerStore(":memory:")
+        server = DashboardServer(("127.0.0.1", 0), store=store)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            with urlopen(base_url + "/health", timeout=2) as response:
+                payload = json.loads(response.read().decode())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(payload["status"], "ok")
+                self.assertEqual(payload["service"], "hearthstate")
+                self.assertEqual(payload["database"], "ok")
+                self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+                self.assertEqual(response.headers["Referrer-Policy"], "no-referrer")
+        finally:
+            server.shutdown()
+            server.server_close()
+            store.close()
+            thread.join(timeout=2)
+
     def test_serves_dashboard_page_and_json_snapshot(self):
         store = PlannerStore(":memory:")
         store.add_task("pack school bag", "2026-08-02T09:00:00", None, False, "you")

@@ -78,7 +78,21 @@ The tailnet dashboard is available at [http://vnic.tail015325.ts.net:8788](http:
 - Unknown items support manual price entry; the page labels those prices separately from Coles observations.
 - All pages preserve the light/dark preference in the browser.
 
-- The JSON read/action endpoints are `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. Dashboard actions support adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, and recording grocery prices; destructive operations remain unavailable until confirmation and permission rules are added.
+- The JSON read/action endpoints are `/health`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, and recording grocery prices; destructive operations remain unavailable until confirmation and permission rules are added.
+
+## Backups and verification
+
+Create a consistent local backup of the live SQLite database without stopping the dashboard:
+
+```bash
+python3 scripts/backup_db.py \
+  --database /home/ubuntu/workspace/family-planner/family_planner.db \
+  --output-dir /home/ubuntu/workspace/family-planner/backups
+```
+
+Backups are intentionally ignored by Git. Keep them on storage with appropriate household-data protections; this command does not upload them anywhere or prune old snapshots.
+
+The repository CI workflow runs the unittest/HTTP suite on Python 3.11 and 3.12, compiles Python sources, and checks every dashboard JavaScript file with Node.
 ## Tailnet access
 
 The dashboard is served over the tailnet at:
@@ -101,8 +115,7 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 - A connected **What needs attention?** centre combines open tasks, unplanned dinners, unpriced/over-budget groceries, and meal assignments. Task rows can be completed inline; every item links to the page where it can be resolved.
 - A **Today** view combines calendar events, dated task occurrences, and planned meals for the next 24 hours.
 - A seven-day **Plan the week** strip shows dinners, calendar events, and recurring tasks together. Empty dinner slots link directly to the meal planner; meal cards link back to the relevant day.
-- Viewer switcher for the two household members
-- Private-by-default reminder note
+- Private-by-default reminder note. The API still accepts a `viewer` selector for local read-model testing, but it is not authentication.
 
 - The dashboard supports safe shared mutations: adding/editing/completing/deleting tasks, assigning tasks, setting task recurrence, adding/editing calendar events, planning meals, syncing meal ingredients to Groceries, setting a weekly grocery budget, and recording grocery prices. Destructive task deletion requires browser confirmation.
 - The API read model is available at `/api/dashboard?viewer=you` or `/api/dashboard?viewer=partner`; it includes `attention_items`, `today_items`, `planning_week`, `grocery_summary`, and the existing page-specific fields.
@@ -118,6 +131,12 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 - Every stored record keeps its creator.
 
 
-## Next slice
+## Next level roadmap
 
-Add explicit household identity configuration, completion/edit commands, conflict detection, and an adapter for the existing iMessage/Photon delivery path. The adapter should call `FamilyPlanner.handle_message(sender, text)` and send the returned response, keeping transport separate from planner state and policy.
+1. **Household identity and permissions** — replace client-supplied `created_by`/`saved_by` values with an authenticated actor derived from the transport or dashboard session. Add explicit permission checks before destructive mutations.
+2. **Audit history** — record who changed, completed, deleted, or repriced a household item, with timestamps and a small human-readable activity view.
+3. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
+4. **Scheduled backups** — run the tested backup helper from a user-level timer with retention and an alert when the last successful backup is too old.
+5. **Conversation depth** — add natural-language completion, editing, grocery removal, and “what changed?” queries through the same tested planner boundary.
+
+The first four items are intentionally separate from the current public tailnet boundary: tailnet membership controls network reachability, but it is not application authentication.

@@ -30,3 +30,4 @@ htmlcov/
 *.log
 tmp/
 tmp_*/
+backups/
