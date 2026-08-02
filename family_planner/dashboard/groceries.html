@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-1" />
+    <title>Hearthstate · Groceries</title>
+    <script>
+      (() => { try { if (localStorage.getItem('hearthstate-theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch (error) {} })();
+    </script>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-1" />
+  </head>
+  <body data-section="groceries">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><div><div class="brand-name">hearthstate</div><div class="brand-caption">household state</div></div></div>
+        <div class="sidebar-kicker">Household</div>
+        <button class="mobile-nav-toggle" type="button" aria-controls="primaryNav" aria-expanded="false"><span class="mobile-nav-icon" aria-hidden="true">☰</span><span>Menu</span></button>
+        <nav class="nav-list" id="primaryNav">
+          <a class="nav-item" href="/"><span class="nav-symbol">⌂</span>Overview</a>
+          <a class="nav-item" href="/calendar"><span class="nav-symbol">◷</span>Calendar</a>
+          <a class="nav-item" href="/tasks"><span class="nav-symbol">✓</span>Tasks</a>
+          <a class="nav-item" href="/meals"><span class="nav-symbol">♨</span>Meals</a>
+          <a class="nav-item" href="/recipes"><span class="nav-symbol">✦</span>Recipes</a>
+          <a class="nav-item is-active" href="/groceries" aria-current="page"><span class="nav-symbol">+</span>Groceries</a>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="privacy-card"><div class="privacy-icon" aria-hidden="true">✦</div><div><strong>Private by default</strong><p>Personal reminders stay with their owner.</p></div></div>
+        <div class="sidebar-footer"><div class="avatar avatar-you">G</div><div class="person-copy"><strong>Grant</strong><span>Household admin</span></div><button class="more-button" type="button" aria-label="More household settings">···</button></div>
+      </aside>
+      <main class="main-content section-page">
+        <header class="topbar"><div class="breadcrumb"><a href="/">Hearthstate</a><span class="slash">/</span><span>Groceries</span></div><div class="topbar-actions"><span class="sync-status"><span class="sync-dot"></span><span id="syncStatus">Live snapshot</span></span><button class="theme-button" id="themeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">☾</button><button class="refresh-button" id="refreshButton" type="button" aria-label="Refresh groceries">↻</button></div></header>
+        <section class="section-hero grocery-hero"><div><p class="eyebrow">THE WEEKLY SHOP</p><h1>Groceries</h1><p class="welcome-subtitle">A price-aware list for the household. Coles matches are linked and dated; anything uncertain stays visible instead of becoming fake precision.</p></div><div class="section-hero-note"><span class="section-kicker">BUDGET SIGNAL</span><strong id="budgetSignal">Loading the list…</strong><span id="budgetSignalNote">Prices are location-sensitive.</span></div></section>
+        <section class="grocery-metrics" aria-label="Weekly grocery budget summary">
+          <article class="budget-metric"><span class="metric-label">Priced subtotal</span><strong id="pricedTotal">—</strong><span>known items only</span></article>
+          <article class="budget-metric"><span class="metric-label">Weekly budget</span><strong id="budgetTotal">—</strong><span id="budgetStatus">Set a target below</span></article>
+          <article class="budget-metric"><span class="metric-label">Still unknown</span><strong id="unknownCount">—</strong><span>items need a price</span></article>
+          <article class="budget-metric budget-metric-accent"><span class="metric-label">Remaining</span><strong id="remainingTotal">—</strong><span id="remainingStatus">After known prices</span></article>
+        </section>
+        <section class="grocery-controls" aria-label="Grocery controls"><div><span class="section-kicker">SHOPPING LIST</span><strong id="itemCount">—</strong><span>open items</span></div><div class="grocery-actions"><button class="secondary-action" id="refreshColes" type="button">Refresh Coles matches</button><form id="budgetForm" class="budget-form"><label for="budgetInput">Weekly budget</label><div><span>$</span><input id="budgetInput" name="budget" type="number" min="0" step="0.01" placeholder="e.g. 180" required /><button type="submit">Save</button></div></form></div></section>
+        <div class="grocery-layout"><section class="records-panel grocery-records"><div class="records-heading"><div><p class="section-kicker">THE LIST</p><h2>What needs buying</h2></div><span class="date-stamp" id="updatedAt">—</span></div><div id="groceryList" class="grocery-record-list" aria-live="polite"></div><div class="empty-state is-hidden" id="emptyState"><div class="empty-mark quiet">+</div><strong>The list is clear.</strong><span>Add groceries by iMessage or from a meal.</span></div></section><aside class="grocery-sidebar"><section class="records-panel"><p class="section-kicker">HOW TO READ THIS</p><h2>Known is not complete.</h2><p class="panel-intro">The subtotal includes only items with a current price. Unknown items are excluded from the total and called out separately.</p><div class="price-legend"><div><span class="legend-dot is-coles"></span><span><strong>Coles observed</strong><small>Product link and checked date included.</small></span></div><div><span class="legend-dot is-manual"></span><span><strong>Manual</strong><small>Household-entered price; still counted.</small></span></div><div><span class="legend-dot is-unknown"></span><span><strong>Unknown</strong><small>No safe product match yet.</small></span></div></div></section><section class="note-panel grocery-note"><div class="note-pin">$</div><p class="section-kicker">A USEFUL CAVEAT</p><p class="note-copy">Coles prices can change by store, location, and weight. Treat this as a planning number, not a checkout promise.</p><span class="note-signoff">— hearthstate, trying not to lie about bananas</span></section></aside></div>
+        <div class="error-banner is-hidden" id="errorBanner" role="alert"></div><footer class="page-footer"><span>hearthstate</span><span>Coles prices are linked, dated, and location-sensitive</span></footer>
+      </main>
+    </div>
+    <script src="/nav.js?v=hearthstate-1" defer></script>
+    <script src="/groceries.js?v=hearthstate-1" defer></script>
+  </body>
+</html>

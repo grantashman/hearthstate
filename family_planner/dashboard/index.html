@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-1" />
+    <title>Hearthstate · Household dashboard</title>
+    <script>
+      (() => {
+        try {
+          const savedTheme = localStorage.getItem('hearthstate-theme');
+          if (savedTheme === 'dark') document.documentElement.dataset.theme = 'dark';
+        } catch (error) {
+          // Private browsing can disable storage; the dashboard still loads.
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-1" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div>
+            <div class="brand-name">hearthstate</div>
+            <div class="brand-caption">household state</div>
+          </div>
+        </div>
+
+        <div class="sidebar-kicker">Household</div>
+        <button class="mobile-nav-toggle" type="button" aria-controls="primaryNav" aria-expanded="false">
+          <span class="mobile-nav-icon" aria-hidden="true">☰</span><span>Menu</span>
+        </button>
+        <nav class="nav-list" id="primaryNav">
+          <a class="nav-item is-active" href="#overview" aria-current="page">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5 12 5l8 7.5v7a1 1 0 0 1-1 1h-4.2v-5.2H9.2V20H5a1 1 0 0 1-1-1v-6.5Z"/><path d="m8 9.8 4-3.7 4 3.7"/></svg>
+            Overview
+          </a>
+          <a class="nav-item" href="/calendar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14" rx="1.5"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/></svg>
+            Calendar
+          </a>
+          <a class="nav-item" href="/tasks">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5.5h12a1.5 1.5 0 0 1 1.5 1.5v10.5A1.5 1.5 0 0 1 18 19H6a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 6 5.5Z"/><path d="m8 12 2.2 2.2L16 8.5"/></svg>
+            Tasks
+          </a>
+          <a class="nav-item" href="/meals">
+            <span class="nav-symbol">♨</span>
+            Meals
+          </a>
+          <a class="nav-item" href="/recipes">
+            <span class="nav-symbol">✦</span>
+            Recipes
+          </a>
+          <a class="nav-item" href="/groceries">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l-1 11H6L5 9Z"/><path d="M8.5 9a3.5 3.5 0 0 1 7 0M9 13h.01M15 13h.01"/></svg>
+            Groceries
+          </a>
+        </nav>
+
+        <div class="sidebar-spacer"></div>
+        <div class="privacy-card">
+          <div class="privacy-icon" aria-hidden="true">✦</div>
+          <div>
+            <strong>Private by default</strong>
+            <p>Personal reminders stay with their owner.</p>
+          </div>
+        </div>
+        <div class="sidebar-footer">
+          <div class="avatar avatar-you">Y</div>
+          <div class="person-copy"><strong>You</strong><span>Household admin</span></div>
+          <button class="more-button" type="button" aria-label="More household settings">···</button>
+        </div>
+      </aside>
+
+      <main class="main-content" id="overview">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Hearthstate</span><span class="slash">/</span><span id="headerDate">Today</span></div>
+          <div class="topbar-actions">
+            <span class="sync-status"><span class="sync-dot"></span><span id="syncStatus">Live snapshot</span></span>
+            <button class="theme-button" id="themeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+              <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.3A7.8 7.8 0 0 1 9.7 4.5 7.8 7.8 0 1 0 19.5 14.3Z"/></svg>
+              <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.8v2M12 19.2v2M21.2 12h-2M4.8 12h-2M18.5 5.5l-1.4 1.4M6.9 17.1l-1.4 1.4M18.5 18.5l-1.4-1.4M6.9 6.9 5.5 5.5"/></svg>
+            </button>
+            <button class="refresh-button" id="refreshButton" type="button" aria-label="Refresh dashboard">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-14.8-3L4 10"/><path d="M4 5v5h5M4 13a8.1 8.1 0 0 0 14.8 3L20 14"/><path d="M20 19v-5h-5"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <section class="welcome-row" aria-labelledby="greetingTitle">
+          <div class="welcome-copy">
+            <p class="eyebrow" id="greetingEyebrow">A SHARED MOMENT AT HOME</p>
+            <h1 id="greetingTitle">Hello, family.</h1>
+            <p class="welcome-subtitle">One shared view of what matters next, without making home feel like a workplace.</p>
+          </div>
+          <div class="welcome-utility">
+            <div class="state-card">
+              <div class="state-card-label">FAMILY STATE</div>
+              <div class="state-card-title" id="stateTitle">Clear the path</div>
+              <p><strong id="stateCount">0</strong> things need a human today.</p>
+              <div class="state-rule"><span id="stateRuleFill"></span></div>
+            </div>
+            <article class="welcome-note-panel note-panel">
+              <div class="note-pin">✦</div>
+              <p class="section-kicker">A LITTLE HOUSE RULE</p>
+              <p class="note-copy">The board is here to hold the details, not hold them over you.</p>
+              <span class="note-signoff">— hearthstate</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="metric-strip" aria-label="Household summary">
+          <article class="metric-card metric-attention">
+            <div class="metric-icon">!</div>
+            <div><span class="metric-label">Needs attention</span><strong id="attentionMetric">—</strong></div>
+            <span class="metric-note">open items</span>
+          </article>
+          <article class="metric-card metric-calendar">
+            <div class="metric-icon">◷</div>
+            <div><span class="metric-label">On today</span><strong id="todayMetric">—</strong></div>
+            <span class="metric-note">items</span>
+          </article>
+          <article class="metric-card metric-grocery">
+            <div class="metric-icon">+</div>
+            <div><span class="metric-label">Shopping list</span><strong id="groceryMetric">—</strong></div>
+            <span class="metric-note">to pick up</span>
+          </article>
+        </section>
+
+        <section class="planning-panel panel" id="weeklyPlan" aria-labelledby="weeklyPlanTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">THE WEEK AHEAD</p>
+              <h2 id="weeklyPlanTitle">Plan the week</h2>
+            </div>
+            <a class="panel-link" href="/meals">Open meal planner <span aria-hidden="true">↗</span></a>
+          </div>
+          <p class="panel-intro">Dinners, calendar moments, and recurring work in one calm strip.</p>
+          <div class="planning-strip" id="planningStrip" aria-live="polite"></div>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel attention-panel" id="tasks">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">THE NEXT FEW THINGS</p>
+                <h2>Needs attention</h2>
+              </div>
+              <span class="panel-badge" id="attentionBadge">0 open</span>
+            </div>
+            <p class="panel-intro">Tasks, meal gaps, and shopping loose threads worth pulling first.</p>
+            <ol class="attention-list" id="attentionList" aria-live="polite"></ol>
+            <div class="empty-state is-hidden" id="attentionEmpty">
+              <div class="empty-mark">✓</div>
+              <strong>Nothing tugging at you.</strong>
+              <span>The household is caught up.</span>
+            </div>
+          </article>
+
+          <article class="panel day-panel" id="calendar">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">THE RHYTHM OF TODAY</p>
+                <h2 id="todayHeading">Today</h2>
+              </div>
+              <span class="date-stamp" id="todayStamp">—</span>
+            </div>
+            <div class="timeline" id="todayTimeline" aria-live="polite"></div>
+            <div class="empty-state is-hidden" id="todayEmpty">
+              <div class="empty-mark quiet">○</div>
+              <strong>Nothing scheduled for today.</strong>
+              <span>A rare and beautiful thing.</span>
+            </div>
+            <div class="upcoming-wrap" id="upcomingWrap">
+              <div class="upcoming-label">UP NEXT</div>
+              <div class="upcoming-list" id="upcomingList"></div>
+            </div>
+          </article>
+
+          <aside class="side-stack">
+            <article class="panel grocery-panel" id="groceries">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <p class="section-kicker">DON'T FORGET</p>
+                  <h2>Groceries</h2>
+                </div>
+                <a class="grocery-count" id="groceryCount" href="/groceries">0</a>
+              </div>
+              <div class="grocery-list" id="groceryList" aria-live="polite"></div>
+              <div class="empty-state is-hidden" id="groceryEmpty">
+                <strong>List is clear.</strong>
+                <span>Add items by iMessage.</span>
+              </div>
+              <div class="grocery-budget-note" id="groceryBudgetNote"></div>
+              <div class="list-footnote">Capture it from your phone. It lands here.</div>
+            </article>
+
+          </aside>
+        </section>
+        <div class="error-banner is-hidden" id="errorBanner" role="alert">Could not load the household state.</div>
+        <footer class="page-footer"><span>hearthstate</span><span>Last refreshed <time id="footerTime">—</time></span></footer>
+      </main>
+    </div>
+    <script src="/nav.js?v=hearthstate-1" defer></script>
+    <script src="/app.js?v=hearthstate-1" defer></script>
+  </body>
+</html>

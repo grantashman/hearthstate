@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-1" />
+    <title>Hearthstate · Recipes</title>
+    <script>(() => { try { if (localStorage.getItem('hearthstate-theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch (error) {} })();</script>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-1" />
+  </head>
+  <body data-section="recipes">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><div><div class="brand-name">hearthstate</div><div class="brand-caption">household state</div></div></div>
+        <div class="sidebar-kicker">Household</div>
+        <button class="mobile-nav-toggle" type="button" aria-controls="primaryNav" aria-expanded="false"><span class="mobile-nav-icon" aria-hidden="true">☰</span><span>Menu</span></button>
+        <nav class="nav-list" id="primaryNav">
+          <a class="nav-item" href="/"><span class="nav-symbol">⌂</span>Overview</a>
+          <a class="nav-item" href="/calendar"><span class="nav-symbol">◷</span>Calendar</a>
+          <a class="nav-item" href="/tasks"><span class="nav-symbol">✓</span>Tasks</a>
+          <a class="nav-item" href="/meals"><span class="nav-symbol">♨</span>Meals</a>
+          <a class="nav-item is-active" href="/recipes" aria-current="page"><span class="nav-symbol">✦</span>Recipes</a>
+          <a class="nav-item" href="/groceries"><span class="nav-symbol">+</span>Groceries</a>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="privacy-card"><div class="privacy-icon" aria-hidden="true">✦</div><div><strong>Private by default</strong><p>Personal reminders stay with their owner.</p></div></div>
+        <div class="sidebar-footer"><div class="avatar avatar-you">G</div><div class="person-copy"><strong>Grant</strong><span>Household admin</span></div><button class="more-button" type="button" aria-label="More household settings">···</button></div>
+      </aside>
+      <main class="main-content section-page">
+        <header class="topbar"><div class="breadcrumb"><a href="/">Hearthstate</a><span class="slash">/</span><span>Recipes</span></div><div class="topbar-actions"><span class="sync-status"><span class="sync-dot"></span><span id="syncStatus">Live snapshot</span></span><button class="theme-button" id="themeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false"><span aria-hidden="true">☾</span></button><button class="refresh-button" id="refreshButton" type="button" aria-label="Refresh recipes">↻</button></div></header>
+        <section class="section-hero recipe-hero"><div><p class="eyebrow">LESS “WHAT ARE WE EATING?”</p><h1>Recipes</h1><p class="welcome-subtitle">Find something simple, save the good ones, and put dinner on the board.</p></div><div class="section-hero-note"><span class="section-kicker">THE SMALL LOOP</span><strong>Choose → plan → shop</strong><span>Source links stay with the recipe.</span></div></section>
+        <section class="recipe-toolbar records-panel">
+          <label class="form-field recipe-search"><span>Search recipes</span><input id="recipeSearch" type="search" placeholder="beans, chicken, quick…" /></label>
+          <label class="form-field"><span>Filter</span><select id="recipeTag"><option value="">Everything</option><option value="healthy">Healthy-labelled</option><option value="quick">Quick</option><option value="vegetarian">Vegetarian</option><option value="family">Family</option><option value="budget">Budget</option><option value="protein">Protein-forward</option><option value="saved">Saved by me</option></select></label>
+          <label class="form-field"><span>Plan date</span><input id="planDate" type="date" /></label>
+          <label class="form-field"><span>Meal</span><select id="planType"><option value="dinner">Dinner</option><option value="lunch">Lunch</option><option value="breakfast">Breakfast</option></select></label>
+        </section>
+        <section class="recipe-layout">
+          <section class="records-panel recipe-results"><div class="records-heading"><div><p class="section-kicker">THE SHORTLIST</p><h2 id="recipeHeading">Simple and healthy</h2></div><span class="date-stamp" id="recipeUpdated">—</span></div><div class="recipe-grid" id="recipeGrid" aria-live="polite"></div><div class="empty-state is-hidden" id="recipeEmpty"><div class="empty-mark quiet">✦</div><strong>No recipes in this slice.</strong><span>Try a different filter or add your own.</span></div></section>
+          <aside class="recipe-sidebar">
+            <form class="records-panel recipe-import" id="recipeImportForm">
+              <div class="records-heading"><div><p class="section-kicker">YOUR OWN RECIPES</p><h2>Save a recipe</h2></div></div>
+              <p class="panel-intro">Paste a recipe you own or have permission to use. Its ingredients can flow into Groceries.</p>
+              <label class="form-field"><span>Title</span><input name="title" required placeholder="Weeknight bean bowl" /></label>
+              <label class="form-field"><span>Source link <em>optional</em></span><input name="source_url" type="url" placeholder="https://…" /></label>
+              <label class="form-field"><span>Photo URL <em>optional</em></span><input name="image_url" type="url" placeholder="https://…" /></label>
+              <label class="form-field"><span>Tags <em>comma separated</em></span><input name="tags" placeholder="healthy, quick" /></label>
+              <label class="form-field"><span>Ingredients <em>one per line: quantity | unit | name</em></span><textarea name="ingredients" id="recipeIngredients" rows="5" placeholder="1 | can | beans&#10;2 | | tomatoes"></textarea></label>
+              <fieldset class="ingredient-ownership is-hidden" id="ingredientOwnership">
+                <legend>Ingredient check</legend>
+                <p>Leave an ingredient unchecked if it needs to go on the Grocery list. Check anything you already have.</p>
+                <div id="ingredientChecklist"></div>
+              </fieldset>
+              <button class="primary-action" type="submit">Save recipe <span>↗</span></button>
+              <div class="form-feedback is-hidden" id="importFeedback" role="status"></div>
+            </form>
+            <div class="note-panel"><div class="note-pin">✦</div><p class="section-kicker">SOURCE NOTES</p><p class="note-copy">External links provide inspiration. HEARTHSTATE ORIGINAL ingredient lists are locally authored; cooking instructions remain on the original source.</p><span class="note-signoff">— hearthstate</span></div>
+          </aside>
+        </section>
+        <div class="error-banner is-hidden" id="errorBanner" role="alert"></div>
+        <footer class="page-footer"><span>hearthstate</span><span>Recipes stay connected to their source</span></footer>
+      </main>
+    </div>
+    <div class="modal-backdrop is-hidden" id="planDialog" role="dialog" aria-modal="true" aria-labelledby="planDialogTitle" aria-hidden="true">
+      <section class="modal-card">
+        <div class="records-heading"><div><p class="section-kicker">PLAN DINNER</p><h2 id="planDialogTitle">Plan this recipe</h2></div><button class="quiet-action" id="closePlanDialog" type="button">Close</button></div>
+        <form id="planForm">
+          <div class="form-grid">
+            <label class="form-field"><span>What night?</span><input id="planDialogDate" type="date" required /></label>
+            <label class="form-field"><span>Who will cook?</span><select id="planDialogCook"><option value="grant">Grant</option><option value="billie">Billie</option><option value="skye">Skye</option></select></label>
+          </div>
+          <div class="plan-ingredients"><div class="section-kicker">INGREDIENTS</div><p id="planIngredientHint">Check anything you already have. Unchecked ingredients will be added to Groceries.</p><div id="planIngredientChecklist"></div></div>
+          <button class="primary-action" id="confirmPlan" type="submit">Plan dinner <span>↗</span></button>
+          <div class="form-feedback is-hidden" id="planFeedback" role="status"></div>
+        </form>
+      </section>
+    </div>
+    <script src="/nav.js?v=hearthstate-1" defer></script>
+    <script src="/recipes.js?v=hearthstate-1" defer></script>
+  </body>
+</html>

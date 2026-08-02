@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Hearthstate</title>
+  <rect width="64" height="64" rx="16" fill="#c6573d"/>
+  <path d="M15 32h34v22H15z" fill="#fffaf3" opacity=".96"/>
+  <path d="M11 32 32 14l21 18" fill="none" stroke="#fffaf3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 54V38h20v16" fill="#385e4f"/>
+  <path d="M32 44c-4-5 2-8 2-13 5 4 7 8 4 13-1 2-4 3-6 0Z" fill="#cc9a38"/>
+</svg>
