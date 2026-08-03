@@ -1,10 +1,15 @@
 # Hearthstate
 
-Hearthstate is a local, SQLite-backed household operations assistant designed to receive natural-language messages from iMessage and return concise, safe responses. Its dashboard is a shared operating picture of what needs attention at home.
+Hearthstate is a household operations assistant: notice what matters, decide who owns it, and get it done. It has two deliberate runtime boundaries:
+
+- **Hosted production:** [hearthstate.vercel.app](https://hearthstate.vercel.app), with Vercel serving the branded dashboard/API and Supabase providing canonical hosted Auth, data, and RLS.
+- **Local compatibility:** SQLite-backed planner/dashboard code used by tests, local development, backups, and the Photon/iMessage bridge. Local SQLite is not used by Vercel and is never uploaded to GitHub.
+
+For the maintainer map, read [`docs/maintainer-handoff.md`](docs/maintainer-handoff.md) and [`AGENTS.md`](AGENTS.md) before coding. Hermes/Linux normally works from `/home/ubuntu/workspace/hearthstate`; this checkout is `/Users/grant/Documents/Hearthstate`. Both use the same GitHub repository and `main` is the production branch.
 
 ## Current vertical slice
 
-The planner now has a shared SQLite backend plus a tailnet dashboard:
+The local planner has a shared SQLite backend plus a tailnet dashboard. The hosted deployment uses the same branded dashboard concepts over the Supabase-backed API:
 
 - Overview: `/`
 - Calendar: `/calendar`
@@ -75,9 +80,9 @@ The owner-only `/admin` section manages the household name, member roles, member
 
 ## Hosted boundary
 
-The hosted application is available under `api/index.py` for Vercel and uses the dedicated Supabase project described in [`docs/hosted-deployment.md`](docs/hosted-deployment.md). Supabase is the canonical hosted database: email OTP authentication, a temporary password fallback while email is offline, an HTTP-only session cookie, household membership RLS, and the full branded dashboard run through Vercel. Local SQLite remains only as a compatibility and test path; it is not used by the hosted runtime.
+The hosted application is available under `api/index.py` for Vercel and uses the dedicated Supabase project described in [`docs/hosted-deployment.md`](docs/hosted-deployment.md). Supabase is the canonical hosted database: email OTP authentication, a temporary password fallback while email is offline, an HTTP-only session cookie, household membership RLS, and the full branded dashboard run through Vercel. Local SQLite remains only as a compatibility and test path; it is not used by the hosted runtime. The hosted Auth/session flow and route ownership are documented in [`docs/maintainer-handoff.md`](docs/maintainer-handoff.md).
 
-Production releases are GitHub-driven through [`.github/workflows/production.yml`](.github/workflows/production.yml): pushes to `main` apply Supabase migrations and deploy Vercel in sequence. The required GitHub/Vercel/Supabase secrets and one-time integration steps are documented in [`docs/hosted-deployment.md`](docs/hosted-deployment.md).
+Production releases are GitHub-driven through [`.github/workflows/production.yml`](.github/workflows/production.yml): pushes to `main` trigger the migration workflow when needed, while Vercel deploys `main` through its connected Git integration. The required GitHub/Vercel/Supabase secrets and one-time integration steps are documented in [`docs/hosted-deployment.md`](docs/hosted-deployment.md).
 
 Example account-backed launch:
 
@@ -109,7 +114,7 @@ The tailnet dashboard is available at [http://vnic.tail015325.ts.net:8788](http:
 - Unknown items support manual price entry; the page labels those prices separately from Coles observations.
 - All pages preserve the light/dark preference in the browser.
 
-- The JSON read/action endpoints are `/health`, `/api/auth/config`, `/api/session` (compatibility mode only), `/api/auth/invitations`, `/api/auth/invitations/inspect`, `/api/auth/invitations/accept`, `/api/auth/sign-in/request`, `/api/auth/sign-in`, `/api/admin`, `/api/admin/household`, `/api/admin/members/{account_id}`, `/api/admin/members/{account_id}/remove`, `/api/admin/invitations/{id}/revoke`, `/api/dashboard`, `/api/inbox`, `/api/inbox/{id}/archive`, `/api/inbox/{id}/convert`, `/api/activity`, `/api/activity/undo`, `/api/conflicts`, `/api/chores`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support capturing and triaging Inbox items, auditing/reversing household mutations, adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, recording grocery prices, creating chores, and advancing round-robin chore assignments. Account-backed API reads and mutations require a live session whose account is a member of the configured household; administration endpoints additionally require the `owner` role.
+- The JSON read/action endpoints are listed in `api/index.py`; the hosted boundary includes `/api/auth/session`, `/api/me`, `/api/households`, and the dashboard/action routes, while `/api/session` remains compatibility-mode only. Hosted `/health` checks Supabase reachability and reports `backend: supabase`; local `/health` checks SQLite integrity. Account-backed API reads and mutations require a live session whose account is a member of the configured household; administration endpoints additionally require the `owner` role. See [`docs/maintainer-handoff.md`](docs/maintainer-handoff.md) for the route and data-boundary map.
 
 ## Backups and verification
 
@@ -180,11 +185,11 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 
 ## Remaining roadmap
 
-1. **Household identity and permissions** — **P1.1/P1.2 complete:** `HouseholdDirectory` models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household; owner invitations, one-time invitation acceptance, one-time sign-in tokens, AgentMail delivery, and account-backed dashboard sessions are implemented. Hosted provisioning and a public onboarding path remain.
+1. **Household identity and permissions** — **P1.1/P1.2 complete; hosted P1.3 boundary live:** `HouseholdDirectory` models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household; owner invitations, one-time invitation acceptance, one-time sign-in tokens, AgentMail delivery, and account-backed dashboard sessions are implemented. Hosted provisioning is currently operator-assisted; public onboarding remains.
 2. **Notification preferences and briefing delivery** — **P2.4 complete for the local deployment:** authenticated Notifications settings, per-member delivery preferences, atomic claims, bounded retries, and AgentMail email delivery are implemented. Photon/iMessage, push, and provider idempotency remain.
 3. **Data portability** — add owner-confirmed household export and deletion with documented retention behavior.
 4. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
 5. **Scheduled backups** — **mostly complete:** the tested backup helper runs from a user-level timer with retention; a stale-age alert remains.
 6. **Conversation depth** — **expanded:** natural-language completion, assignment, grocery removal, undo, conflict queries, chores, and briefings are now supported; richer multi-action parsing remains separate.
 
-The remaining roadmap items are intentionally separate from the tailnet boundary: tailnet membership controls network reachability, while the passwordless session identifies the household member inside the app.
+The remaining roadmap items are intentionally separate from the tailnet boundary: tailnet membership controls local network reachability, while the hosted Supabase session identifies the household member inside the app. See [`docs/maintainer-handoff.md`](docs/maintainer-handoff.md) for the current implementation map and resume checklist.

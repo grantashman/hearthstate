@@ -1,6 +1,6 @@
 # Hosted deployment
 
-Hearthstate now has a hosted P1.3 boundary:
+Hearthstate has a hosted P1.3 boundary. The maintainer-level architecture and resume checklist live in [`docs/maintainer-handoff.md`](maintainer-handoff.md).
 
 - Supabase project: `hearthstate` in `ap-southeast-2`.
 - Vercel entrypoint: `api/index.py`.
@@ -27,6 +27,8 @@ Set the first two variables for Preview and Production. Set the service-role key
 
 The remote migrations are recorded under `supabase/migrations/`. The hosted schema enables RLS on every public table and returns no security-advisor lints.
 
+The first hosted household is provisioned in Supabase as an operator step. An authenticated account without a membership may use `/setup` to create its first household; an existing member visiting `/setup` is redirected to `/`. The hosted runtime never reads the local SQLite databases.
+
 ## Supabase Auth URLs
 
 Configure Supabase Dashboard → Authentication → URL Configuration for the hosted project:
@@ -44,9 +46,18 @@ PYTHONPYCACHEPREFIX=/tmp/hearthstate-pyc python3 -m unittest tests.test_hosted_a
 PYTHONPYCACHEPREFIX=/tmp/hearthstate-pyc python3 -m compileall -q api hearthstate tests
 ```
 
+Hosted smoke checks:
+
+```bash
+curl --fail --silent --show-error https://hearthstate.vercel.app/api/health
+curl --fail --silent --show-error https://hearthstate.vercel.app/api/auth/config
+```
+
+The hosted health response should include `{"status":"ok","service":"hearthstate","backend":"supabase"}`. The local dashboard health response is a separate SQLite integrity check.
+
 ## Cutover
 
-The hosted migration is now the application path for Vercel. Add the three variables above in the Vercel project for Preview and Production, then deploy the branch or promote it to the project's production branch. Existing local SQLite data is not uploaded automatically; a deliberate export/import adapter is required before moving household records into Supabase.
+The hosted migration is now the application path for Vercel. Add the three variables above in the Vercel project for Preview and Production, then deploy the branch or promote it to the project's production branch. Existing local SQLite data is not uploaded automatically; a deliberate export/import adapter is required before moving household records into Supabase. Do not inspect or upload the live SQLite database during normal agent work.
 
 ## GitHub-driven production
 
@@ -61,4 +72,4 @@ SUPABASE_DB_PASSWORD
 
 `SUPABASE_PROJECT_ID` is already pinned to `zcfzdqtjglelrbyhcvcu` in the workflow. The Vercel project must have `grantashman/hearthstate` connected with `main` as its Production Branch. It must also contain `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` environment variables for Production.
 
-If using the native Supabase GitHub Integration as well, configure it for working directory `.` and production deployment from `main`. Keep Vercel deployment in the Vercel Git integration and Supabase migrations in one GitHub/Supabase path to avoid duplicate deployments.
+If using the native Supabase GitHub Integration as well, configure it for working directory `.` and production deployment from `main`. Keep Vercel deployment in the Vercel Git integration and Supabase migrations in one GitHub/Supabase path to avoid duplicate deployments. The workflow intentionally does not call the Vercel CLI: Vercel owns the deployment from its connected Git integration.

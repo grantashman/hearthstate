@@ -1,5 +1,7 @@
 # Briefing scheduler and delivery
 
+> Scope: this is the local/tailnet AgentMail delivery boundary. It is not a Vercel cron job and does not run against hosted Supabase data. The hosted architecture and production ownership map are in [`docs/maintainer-handoff.md`](maintainer-handoff.md).
+
 The scheduler runs the morning briefing once per day for Grant in the account-backed `home` household. It now delivers through the verified AgentMail inbox rather than writing briefing contents to a local file.
 
 The delivery path is deliberately split into four boundaries:
@@ -38,7 +40,7 @@ Authenticated dashboard members can read and update their own morning preference
 
 Only the email channel is enabled in this slice. Photon/iMessage and push remain separate future adapters.
 
-## Production service
+## Local production-style service
 
 The service resolves the viewer's email from the account database and uses the AgentMail secrets outside the repository:
 

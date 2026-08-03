@@ -2,7 +2,7 @@
 
 > **Purpose:** Preserve the product decision, market research, pricing hypothesis, and implementation sequence so future sessions can resume without reconstructing the discussion.
 >
-> **Current status:** P1.1 and P1.2 are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, account-backed dashboard sessions, owner administration, and AgentMail sign-in/invitation delivery are covered by the test suite. P2.4 now has per-member briefing preferences, an authenticated Notifications settings page, atomic delivery claims, bounded retry state, and AgentMail briefing delivery in production. Hosted provisioning, data portability, and pilot instrumentation remain before a commercial pilot.
+> **Current status:** P1.1, P1.2, and the hosted P1.3 boundary are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, hosted Supabase Auth sessions, Vercel API transport, owner administration, and AgentMail sign-in/invitation delivery are covered by the test suite. P2.4 has per-member briefing preferences, an authenticated Notifications settings page, atomic delivery claims, bounded retry state, and AgentMail briefing delivery for the local deployment. Hosted provisioning is operator-assisted; data portability, pilot instrumentation, and public onboarding remain before a commercial pilot.
 
 ## Executive decision
 
@@ -37,9 +37,9 @@ The repository contains a working local vertical slice:
 - Calendar/task conflict detection.
 - Dashboard signals for conflicts, recent activity, and chore rotation.
 - CI on Python 3.11 and 3.12.
-- 115 automated tests passing at the current release.
+- 123 automated tests passing at the current release.
 
-The current deployment is not yet a commercial SaaS product. It is a single-household, local SQLite application bound to the Tailscale interface. It has a local account-backed household boundary and email delivery, but still lacks hosted multi-tenancy, external calendar sync, commercial billing, native push infrastructure, and a public onboarding path.
+The current deployment is not yet a commercial SaaS product. Hosted production now runs on Vercel and Supabase, while the local SQLite application remains bound to the Tailscale interface for compatibility and Photon/iMessage operation. It still lacks external calendar sync, commercial billing, native push infrastructure, pilot instrumentation, and a public onboarding path.
 
 ## Market and competitor notes
 
@@ -140,7 +140,7 @@ The implementation sequence is:
 5. Paid pilot and retention iteration.
 6. Broader automation and Android.
 
-The next coding session should start with **Phase 1, task P1.3: introduce a hosted API boundary**, while keeping the local SQLite mode working for the pilot.
+The next coding session should start with hosted provisioning/onboarding, data portability, and pilot instrumentation while keeping the local SQLite mode working for Photon and regression tests. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
 
 ---
 
@@ -224,6 +224,8 @@ Keep the planner logic separate from transport. The current `Hearthstate` applic
 
 **Done when:** Web clients do not access SQLite directly, API requests carry authenticated household context, and the local test suite still exercises the application boundary.
 
+**Status:** Complete on `main`. Vercel serves `api/index.py`; Supabase is the hosted Auth/data boundary; membership-scoped RLS protects hosted records; local SQLite remains a compatibility/test path.
+
 ### P1.4 Add data export and deletion
 
 Export household records and activity history in a documented JSON format. Add deletion that requires explicit owner confirmation and preserves no recoverable personal data after the retention window.
@@ -299,7 +301,7 @@ The briefing scheduler now has:
 - AgentMail email delivery for the production `home` household.
 - Privacy-filtered content and concurrency coverage.
 
-**Status:** Complete for the local account-backed delivery boundary, including the authenticated Notifications settings page. Photon/iMessage and push adapters, hosted provisioning, and an exactly-once provider contract remain future work.
+**Status:** Complete for the local account-backed delivery boundary, including the authenticated Notifications settings page. Photon/iMessage and push adapters, hosted scheduling, and an exactly-once provider contract remain future work.
 
 **Done when:** A briefing can be generated, claimed atomically, delivered once, and audited.
 

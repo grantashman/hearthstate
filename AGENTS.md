@@ -8,8 +8,13 @@
 - Python package: `hearthstate`.
 - Main application class: `Hearthstate`.
 - Default live database: `/home/ubuntu/workspace/hearthstate/hearthstate.db`.
+- Hosted production: `https://hearthstate.vercel.app`.
+- Hosted canonical database/Auth: Supabase project `zcfzdqtjglelrbyhcvcu` in `ap-southeast-2`.
+- Current local Mac checkout: `/Users/grant/Documents/Hearthstate`; Hermes/Linux normally uses the repository path above.
 
 Do not reintroduce `family_planner`, `FamilyPlanner`, `FAMILY_PLANNER_DB`, or `family-planner` service/path names. Use Hearthstate naming consistently in code, docs, tests, deployment files, and Hermes skills.
+
+For the full subsystem map and hosted Auth/session flow, read [`docs/maintainer-handoff.md`](docs/maintainer-handoff.md). In brief: `api/index.py` is the Vercel/Supabase boundary; `hearthstate/dashboard.py` is the local SQLite/tailnet boundary; `hearthstate/app.py` and `hearthstate/store.py` are the planner/application boundary; `supabase/migrations/` owns hosted schema changes; and `vercel.json` owns hosted route rewrites.
 
 ## Working rules
 
@@ -33,18 +38,26 @@ for file in hearthstate/dashboard/*.js; do node --check "$file"; done
 git diff --check
 ```
 
-For dashboard or deployment changes, also verify:
+For local dashboard or deployment changes, also verify:
 
 ```bash
 systemctl --user is-active hearthstate-dashboard.service
 curl --fail --silent --show-error http://vnic.tail015325.ts.net:8788/health
 ```
 
-Expected health response includes:
+Expected local health response includes:
 
 ```json
 {"status":"ok","service":"hearthstate","database":"ok","integrity":"ok"}
 ```
+
+Hosted smoke checks use the production API instead of the local service:
+
+```bash
+curl --fail --silent --show-error https://hearthstate.vercel.app/api/health
+```
+
+Expected hosted fields include `{"status":"ok","service":"hearthstate","backend":"supabase"}`. The hosted runtime does not read the local SQLite database.
 
 ## GitHub workflow
 
