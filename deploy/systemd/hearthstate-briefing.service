@@ -1,0 +1,11 @@
+[Unit]
+Description=Hearthstate morning briefing
+After=hearthstate-dashboard.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/workspace/hearthstate
+ExecStart=/usr/bin/python3 -m hearthstate.briefings --database /home/ubuntu/workspace/hearthstate/hearthstate.db --household-id home --viewer grant --briefing-type morning
+Environment=TZ=Australia/Sydney
+Nice=15
+UMask=0077

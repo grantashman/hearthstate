@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule Hearthstate morning briefing
+
+[Timer]
+OnCalendar=*-*-* 07:30:00
+Persistent=true
+Unit=hearthstate-briefing.service
+
+[Install]
+WantedBy=timers.target
