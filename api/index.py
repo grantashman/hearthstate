@@ -113,7 +113,10 @@ def _supabase_admin_request(method: str, path: str, *, payload: object | None = 
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     if not service_key:
         raise SupabaseHTTPError(503, "Supabase service role environment is not configured")
-    return _supabase_request(method, path, payload=payload, query=query, prefer=prefer, api_key=service_key)
+    # `apikey` identifies the Supabase project; the bearer token determines
+    # the PostgREST database role. Supplying only the former can be treated as
+    # an unauthenticated request and yields permission denied on bridge tables.
+    return _supabase_request(method, path, token=service_key, payload=payload, query=query, prefer=prefer, api_key=service_key)
 
 
 def _normalize_channel_identity(value: object) -> str:

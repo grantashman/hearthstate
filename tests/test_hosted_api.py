@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _uuid, handler
+from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _supabase_admin_request, _uuid, handler
 
 
 class HostedApiContractTests(unittest.TestCase):
@@ -136,6 +136,13 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertEqual(len(_channel_token_hash("x" * 32)), 64)
         with self.assertRaises(Exception):
             _channel_token_hash("too-short")
+
+    @patch.dict("os.environ", {"SUPABASE_SERVICE_ROLE_KEY": "service-role-test-key"})
+    @patch("api.index._supabase_request")
+    def test_admin_requests_send_service_role_as_bearer_and_api_key(self, supabase_request):
+        _supabase_admin_request("GET", "/rest/v1/channel_integrations")
+        self.assertEqual(supabase_request.call_args.kwargs["token"], "service-role-test-key")
+        self.assertEqual(supabase_request.call_args.kwargs["api_key"], "service-role-test-key")
 
     def test_photon_bridge_contract_is_server_side_and_phone_bound(self):
         api = (Path(__file__).parents[1] / "api" / "index.py").read_text()
