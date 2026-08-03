@@ -72,13 +72,14 @@ The tailnet dashboard is available at [http://vnic.tail015325.ts.net:8788](http:
 - `/meals` plans breakfast/lunch/dinner, records the cook and ingredients, lets each planned meal be edited in place (date, meal type, title, cook, and ingredients), deletes meals with browser confirmation, and sends ingredients into Groceries.
 - `/recipes` shows the curated recipe catalogue with local illustrative photos, supports save/plan actions, and accepts user-supplied recipes with optional permitted photo URLs. The 22 seeded themes now use **Hearthstate Original** ingredient lists authored locally; external Coles/Taste links remain inspiration/source links and their instructions are not copied. When saving or planning a user/local recipe, the Ingredient check list lets the household mark pantry items as already owned; only unchecked/missing ingredients are added to Groceries. **Plan dinner** opens a dialog for the dinner date and cook, then uses the same ownership check while creating the meal. The catalogue includes a Protein-forward filter covering chicken, salmon, beef, tofu, eggs, lentils, beans, and sausage.
 - `/groceries` shows the open list, inline editable quantities, quantity-aware line totals, a weekly budget, priced subtotal, remaining amount, and unknown-price count. Every open item is checked against the curated Coles matcher when it is added, when the API is read, and by the hourly background review; manual prices are preserved and unsafe/unresolved items fail closed.
+- The Overview includes a **Household Inbox** for loose threads: capture original text from the dashboard or iMessage, preserve source/creator metadata, then convert an item into a task, event, meal, or grocery item, or archive it without deleting its history.
 - Groceries automatically apply explainable Coles-preferred matches using aliases for common household wording. The current curated set includes milk, eggs, oat milk, bananas, bread, mince, chicken breast, tortillas, white pepper, potatoes, sweet potatoes, carrots, cannellini beans, celery, diced tomatoes, chicken stock, kale, lemon, popping corn kernels, vegetable oil, table spread, beef strips, broccoli, brown onion, garlic, and ginger; Coles products are preferred before considering other products.
 - The milk default is **Coles Australian Full Cream Long Life Milk 1L**. Each item exposes a quantity field and Save action; changing quantity recalculates its line total.
 - Each Coles price stores the product title, source URL, observed date, and a note about location/weight variability. Unknown items are excluded from the subtotal rather than guessed.
 - Unknown items support manual price entry; the page labels those prices separately from Coles observations.
 - All pages preserve the light/dark preference in the browser.
 
-- The JSON read/action endpoints are `/health`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, and recording grocery prices; destructive operations remain unavailable until confirmation and permission rules are added.
+- The JSON read/action endpoints are `/health`, `/api/dashboard`, `/api/inbox`, `/api/inbox/{id}/archive`, `/api/inbox/{id}/convert`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support capturing and triaging Inbox items, adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, and recording grocery prices; destructive operations remain unavailable until confirmation and permission rules are added.
 
 ## Backups and verification
 
@@ -118,7 +119,7 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 - Private-by-default reminder note. The API still accepts a `viewer` selector for local read-model testing, but it is not authentication.
 
 - The dashboard supports safe shared mutations: adding/editing/completing/deleting tasks, assigning tasks, setting task recurrence, adding/editing calendar events, planning meals, syncing meal ingredients to Groceries, setting a weekly grocery budget, and recording grocery prices. Destructive task deletion requires browser confirmation.
-- The API read model is available at `/api/dashboard?viewer=you` or `/api/dashboard?viewer=partner`; it includes `attention_items`, `today_items`, `planning_week`, `grocery_summary`, and the existing page-specific fields.
+- The API read model is available at `/api/dashboard?viewer=you` or `/api/dashboard?viewer=partner`; it includes `attention_items`, `today_items`, `planning_week`, `inbox`, `grocery_summary`, and the existing page-specific fields.
 - Theme toggle: click the sun/moon button in the top-right. The preference persists in that browser via `localStorage`.
 - The welcome greeting follows the browser's local time: morning (05:00–11:59), afternoon (12:00–16:59), evening (17:00–20:59), and quiet late-night copy (21:00–04:59).
 - Grocery messages handled through the iMessage/Photon planner boundary write to the same SQLite store the dashboard reads, so shared items appear for both household views.
@@ -126,6 +127,7 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 ## Privacy behavior so far
 
 - Grocery items are shared household records.
+- Inbox captures are shared by default; private Inbox captures are visible only to their creator through the tested viewer filter.
 - `Remind me ...` creates a private task owned by the sender.
 - `family tasks` creates an unassigned shared task.
 - Every stored record keeps its creator.

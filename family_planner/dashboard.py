@@ -17,6 +17,19 @@ from .timezone import local_now
 
 
 _DASHBOARD_DIR = Path(__file__).with_name("dashboard")
+_MAX_INBOX_ACTOR_LENGTH = 120
+_MAX_INBOX_SOURCE_LENGTH = 80
+
+
+def _inbox_actor(payload: dict, field: str = "created_by", *, default: str | None = None) -> str:
+    if field not in payload and default is None:
+        raise ValueError(f"{field} is required")
+    value = str(payload.get(field, default) or "").strip()
+    if not value:
+        raise ValueError(f"{field} is required")
+    if len(value) > _MAX_INBOX_ACTOR_LENGTH:
+        raise ValueError(f"{field} is too long")
+    return value
 
 
 def _format_time(value: datetime) -> str:
@@ -340,6 +353,7 @@ def build_dashboard_snapshot(
         if item["starts_at"][:10] == current.date().isoformat()
     ]
     grocery_summary = store.grocery_budget_snapshot()
+    inbox_items = store.list_inbox_items(viewer=viewer)
     attention_items = _connected_attention(attention, [
         meal for meal in store.list_meals(
             start_date=current.date().isoformat(),
@@ -355,6 +369,7 @@ def build_dashboard_snapshot(
             "attention": len(attention),
             "today_events": len(today),
             "groceries": len(store.list_grocery_items()),
+            "inbox": len(inbox_items),
         },
         "attention": attention[:8],
         "attention_items": attention_items,
@@ -365,6 +380,7 @@ def build_dashboard_snapshot(
         "planning_week": planning_week,
         "calendar": calendar_items,
         "grocery_summary": grocery_summary,
+        "inbox": inbox_items[:12],
         "groceries": [
             {
                 "id": item["id"],
@@ -397,6 +413,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"status": "ok" if status == 200 else "degraded", "service": "hearthstate", **health}, status=status)
             except sqlite3.Error:
                 self._send_json({"status": "degraded", "service": "hearthstate", "database": "unavailable"}, status=503)
+            return
+        if parsed.path == "/api/inbox":
+            viewer = parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
+            items = self.server.store.list_inbox_items(viewer=viewer)
+            self._send_json({"viewer": viewer, "items": items, "generated_at": self.server.now().replace(second=0, microsecond=0).isoformat()})
             return
         if parsed.path == "/api/groceries":
             apply_known_coles_prices(self.server.store)
@@ -492,6 +513,48 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         try:
             recipe_parts = parsed.path.strip("/").split("/")
+            if parsed.path == "/api/inbox":
+                created_by = _inbox_actor(payload)
+                source = str(payload.get("source", "dashboard") or "dashboard").strip()
+                if len(source) > _MAX_INBOX_SOURCE_LENGTH:
+                    raise ValueError("source is too long")
+                private = payload.get("private", False)
+                if not isinstance(private, bool):
+                    raise ValueError("private must be a boolean")
+                item_id = self.server.store.add_inbox_item(
+                    str(payload.get("original_text", "")),
+                    created_by,
+                    source=source,
+                    private=private,
+                )
+                item = self.server.store.get_inbox_item(item_id, include_closed=True)
+                self._send_json({"item": item}, status=201)
+                return
+
+            if parsed.path.startswith("/api/inbox/"):
+                route_parts = parsed.path.removeprefix("/api/inbox/").strip("/").split("/")
+                if len(route_parts) != 2 or not route_parts[0].isdigit() or route_parts[1] not in {"archive", "convert"}:
+                    self._send_json({"error": "not found"}, status=404)
+                    return
+                item_id = int(route_parts[0])
+                viewer = str(payload.get("viewer", payload.get("created_by", "you"))).strip() or "you"
+                self.server.store.get_inbox_item(item_id, viewer=viewer)
+                if route_parts[1] == "archive":
+                    item = self.server.store.archive_inbox_item(item_id)
+                    self._send_json({"item": item})
+                    return
+                converted_type = str(payload.get("type", "")).strip().lower()
+                created_by = str(payload.get("created_by", viewer)).strip() or viewer
+                result = self.server.store.convert_inbox_item(
+                    item_id,
+                    converted_type,
+                    payload,
+                    created_by=created_by,
+                )
+                item = self.server.store.get_inbox_item(item_id, viewer=viewer, include_closed=True)
+                self._send_json({converted_type: result, "item": item}, status=201)
+                return
+
             if parsed.path == "/api/groceries/budget":
                 budget = self.server.store.set_weekly_budget(float(payload["budget"]), str(payload.get("updated_by", "grant")))
                 snapshot = self.server.store.grocery_budget_snapshot()

@@ -163,6 +163,19 @@ class PlannerStore:
                     saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (recipe_id, saved_by)
                 );
+
+                CREATE TABLE IF NOT EXISTS inbox_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    original_text TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'dashboard',
+                    private INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    converted_type TEXT,
+                    converted_id INTEGER,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at TEXT
+                );
                 """
             )
             self._ensure_column("tasks", "assignee", "TEXT")
@@ -190,6 +203,142 @@ class PlannerStore:
         }
         if column not in columns:
             self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def add_inbox_item(
+        self,
+        original_text: str,
+        created_by: str,
+        *,
+        source: str = "dashboard",
+        private: bool = False,
+    ) -> int:
+        original_text = str(original_text).strip()
+        created_by = str(created_by).strip()
+        source = str(source or "dashboard").strip()
+        if not original_text:
+            raise ValueError("original_text is required")
+        if len(original_text) > 4000:
+            raise ValueError("original_text is too long")
+        if not created_by:
+            raise ValueError("created_by is required")
+        if len(created_by) > 120:
+            raise ValueError("created_by is too long")
+        if len(source) > 80:
+            raise ValueError("source is too long")
+        if not isinstance(private, bool):
+            raise ValueError("private must be a boolean")
+        with self._lock:
+            cursor = self.connection.execute(
+                "INSERT INTO inbox_items (original_text, source, private, created_by) VALUES (?, ?, ?, ?)",
+                (original_text, source or "dashboard", int(private), created_by),
+            )
+            self.connection.commit()
+            return int(cursor.lastrowid)
+
+    def get_inbox_item(
+        self,
+        item_id: int,
+        *,
+        viewer: str | None = None,
+        include_closed: bool = False,
+    ) -> dict[str, Any]:
+        with self._lock:
+            row = self.connection.execute("SELECT * FROM inbox_items WHERE id = ?", (item_id,)).fetchone()
+            if row is None or (not include_closed and row["status"] != "open"):
+                raise ValueError("inbox item not found")
+            if viewer is not None and row["private"] and row["created_by"] != viewer:
+                raise ValueError("inbox item not found")
+            return dict(row)
+
+    def list_inbox_items(self, *, viewer: str = "you", include_closed: bool = False) -> list[dict[str, Any]]:
+        with self._lock:
+            status_clause = "" if include_closed else " AND status = 'open'"
+            rows = self.connection.execute(
+                f"SELECT * FROM inbox_items WHERE (private = 0 OR created_by = ?){status_clause} ORDER BY id DESC",
+                (viewer,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def archive_inbox_item(self, item_id: int) -> dict[str, Any]:
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE inbox_items SET status = 'archived', resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'open'",
+                (item_id,),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("inbox item not found")
+            self.connection.commit()
+            return dict(self.connection.execute("SELECT * FROM inbox_items WHERE id = ?", (item_id,)).fetchone())
+
+    def convert_inbox_item(
+        self,
+        item_id: int,
+        converted_type: str,
+        payload: dict[str, Any],
+        *,
+        created_by: str,
+    ) -> dict[str, Any]:
+        converted_type = str(converted_type).strip().lower()
+        if converted_type not in {"task", "event", "meal", "grocery"}:
+            raise ValueError("unsupported inbox conversion")
+        self.get_inbox_item(item_id)
+        payload = payload or {}
+        if converted_type == "task":
+            title = str(payload.get("title", "")).strip()
+            if not title:
+                raise ValueError("title is required")
+            new_id = self.add_task(
+                title,
+                str(payload.get("due_at", "")).strip() or None,
+                str(created_by) if payload.get("private") else None,
+                bool(payload.get("private")),
+                str(created_by),
+                assignee=payload.get("assignee"),
+                recurrence=payload.get("recurrence", "none"),
+            )
+            result = next(task for task in self.list_tasks() if task["id"] == new_id)
+        elif converted_type == "event":
+            title = str(payload.get("title", "")).strip()
+            starts_at = str(payload.get("starts_at", "")).strip()
+            if not title or not starts_at:
+                raise ValueError("title and starts_at are required")
+            new_id = self.add_event(
+                title, starts_at, payload.get("person") or None, str(created_by),
+                assignee=payload.get("assignee"),
+            )
+            result = next(event for event in self.list_events() if event["id"] == new_id)
+        elif converted_type == "meal":
+            title = str(payload.get("title", "")).strip()
+            meal_date = str(payload.get("meal_date", "")).strip()
+            if not title or not meal_date:
+                raise ValueError("title and meal_date are required")
+            ingredients = [str(item).strip().lower() for item in payload.get("ingredients", []) if str(item).strip()]
+            new_id = self.add_meal(
+                meal_date,
+                str(payload.get("meal_type", "dinner")),
+                title,
+                payload.get("cook") or None,
+                ingredients,
+                str(created_by),
+            )
+            result = next(meal for meal in self.list_meals() if meal["id"] == new_id)
+        else:
+            name = str(payload.get("name", payload.get("title", ""))).strip()
+            if not name:
+                raise ValueError("name is required")
+            self.add_grocery_item(name, str(created_by))
+            result = next(item for item in self.list_grocery_items() if item["name"].lower() == name.lower())
+            new_id = result["id"]
+
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE inbox_items SET status = 'converted', converted_type = ?, converted_id = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'open'",
+                (converted_type, new_id, item_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("inbox item not found")
+            self.connection.commit()
+        return result
 
     def health_check(self) -> dict[str, str]:
         with self._lock:

@@ -155,7 +155,14 @@ class FamilyPlanner:
             suffix = f" — {assignee_label(assignee)}" if assignee else (f" — {person}" if person else "")
             return f"Added: {title} — {self._format_datetime(starts_at)}{suffix}."
 
+        if self._should_capture_inbox(lowered):
+            item_id = self.store.add_inbox_item(text, sender, source="imessage")
+            return f"Captured in Inbox for later triage: {text}. Inbox item {item_id}."
         return "I can add events, reminders, and groceries, or show what needs attention."
+
+    @staticmethod
+    def _should_capture_inbox(lowered: str) -> bool:
+        return bool(re.search(r"\b(?:need to|need|remember|maybe|check|sort|should we|could we|can we|don't forget)\b", lowered))
 
     def _task_query(self, assignee: str | None) -> str:
         tasks = self.store.list_tasks(assignee)

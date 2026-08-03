@@ -69,6 +69,7 @@ class DashboardSnapshotTests(unittest.TestCase):
             "attention": 2,
             "today_events": 1,
             "groceries": 1,
+            "inbox": 0,
         })
         self.assertEqual(
             [item["title"] for item in snapshot["attention"]],
@@ -134,7 +135,11 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn('id="attentionList"', page)
         self.assertIn('id="todayTimeline"', page)
         self.assertIn('id="planningStrip"', page)
-        self.assertIn('href="/favicon.svg?v=hearthstate-1"', page)
+        self.assertIn('id="inboxPanel"', page)
+        self.assertIn('id="inboxList"', page)
+        self.assertIn('id="inboxCaptureForm"', page)
+        self.assertIn('id="inboxConvertForm"', page)
+        self.assertIn('href="/favicon.svg?v=hearthstate-2"', page)
         self.assertIn('class="welcome-utility"', page)
         self.assertIn('class="welcome-note-panel note-panel"', page)
         self.assertLess(page.index('class="welcome-note-panel note-panel"'), page.index('id="weeklyPlan"'))
@@ -145,6 +150,9 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn("planning_week", script)
         self.assertIn("attention-complete", script)
         self.assertIn("getTimeOfDayGreeting", script)
+        self.assertIn("renderInbox", script)
+        self.assertIn("/api/inbox", script)
+        self.assertIn("inboxConvertForm", script)
         self.assertIn("localStorage", script)
 
     def test_hearthstate_brand_is_available_on_every_page(self):
@@ -182,7 +190,7 @@ class DashboardHTTPTests(unittest.TestCase):
                     html = response.read().decode()
                 self.assertIn('class="mobile-nav-toggle"', html)
                 self.assertIn('aria-controls="primaryNav"', html)
-                self.assertIn('/nav.js?v=hearthstate-1', html)
+                self.assertIn('/nav.js?v=hearthstate-2', html)
             with urlopen(base_url + "/nav.js", timeout=2) as response:
                 self.assertEqual(response.status, 200)
                 self.assertIn("mobile-nav-toggle", response.read().decode())

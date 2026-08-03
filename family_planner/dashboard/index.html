@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f3ede3" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-2" />
     <title>Hearthstate · Household dashboard</title>
     <script>
       (() => {
@@ -16,7 +16,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=hearthstate-1" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-2" />
   </head>
   <body>
     <div class="app-shell">
@@ -200,11 +200,65 @@
 
           </aside>
         </section>
+
+        <section class="panel inbox-panel" id="inboxPanel" aria-labelledby="inboxTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">THE HOUSEHOLD INBOX</p>
+              <h2 id="inboxTitle">Loose threads</h2>
+            </div>
+            <span class="panel-badge inbox-badge" id="inboxBadge">0 open</span>
+          </div>
+          <p class="panel-intro">Capture first. Decide what it becomes when you have the headspace.</p>
+          <form class="inbox-capture-form" id="inboxCaptureForm">
+            <label class="sr-only" for="inboxCaptureText">Capture a household note</label>
+            <textarea id="inboxCaptureText" rows="2" maxlength="4000" placeholder="Capture a loose thread…"></textarea>
+            <button class="small-action" type="submit">Add to Inbox <span aria-hidden="true">↗</span></button>
+          </form>
+          <ol class="inbox-list" id="inboxList" aria-live="polite"></ol>
+          <div class="empty-state is-hidden" id="inboxEmpty">
+            <div class="empty-mark quiet">✦</div>
+            <strong>Inbox is clear.</strong>
+            <span>Ambiguous thoughts can land here until they are ready.</span>
+          </div>
+          <form class="inbox-convert-form is-hidden" id="inboxConvertForm">
+            <div class="inbox-convert-heading">
+              <strong>Turn this into…</strong>
+              <button class="text-action" id="inboxConvertCancel" type="button">Cancel</button>
+            </div>
+            <input id="inboxConvertId" type="hidden" />
+            <label>Type
+              <select id="inboxConvertType">
+                <option value="task">Task</option>
+                <option value="event">Calendar event</option>
+                <option value="meal">Meal</option>
+                <option value="grocery">Grocery item</option>
+              </select>
+            </label>
+            <label id="inboxTitleField">Title
+              <input id="inboxConvertTitle" type="text" maxlength="240" required />
+            </label>
+            <label class="is-hidden" id="inboxNameField">Grocery name
+              <input id="inboxConvertName" type="text" maxlength="240" />
+            </label>
+            <label id="inboxDateTimeField">Due date and time
+              <input id="inboxConvertDateTime" type="datetime-local" />
+            </label>
+            <label class="is-hidden" id="inboxMealDateField">Meal date
+              <input id="inboxConvertMealDate" type="date" />
+            </label>
+            <label class="is-hidden" id="inboxIngredientsField">Ingredients, comma separated
+              <input id="inboxConvertIngredients" type="text" maxlength="1000" />
+            </label>
+            <button class="primary-action" type="submit">Save and clear Inbox item <span aria-hidden="true">↗</span></button>
+            <div class="form-feedback is-hidden" id="inboxConvertFeedback" role="alert"></div>
+          </form>
+        </section>
         <div class="error-banner is-hidden" id="errorBanner" role="alert">Could not load the household state.</div>
         <footer class="page-footer"><span>hearthstate</span><span>Last refreshed <time id="footerTime">—</time></span></footer>
       </main>
     </div>
-    <script src="/nav.js?v=hearthstate-1" defer></script>
-    <script src="/app.js?v=hearthstate-1" defer></script>
+    <script src="/nav.js?v=hearthstate-2" defer></script>
+    <script src="/app.js?v=hearthstate-2" defer></script>
   </body>
 </html>

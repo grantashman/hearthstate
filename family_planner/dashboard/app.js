@@ -27,6 +27,26 @@ const els = {
   planningStrip: document.querySelector('#planningStrip'),
   footerTime: document.querySelector('#footerTime'),
   error: document.querySelector('#errorBanner'),
+  inboxBadge: document.querySelector('#inboxBadge'),
+  inboxList: document.querySelector('#inboxList'),
+  inboxEmpty: document.querySelector('#inboxEmpty'),
+  inboxCaptureForm: document.querySelector('#inboxCaptureForm'),
+  inboxCaptureText: document.querySelector('#inboxCaptureText'),
+  inboxConvertForm: document.querySelector('#inboxConvertForm'),
+  inboxConvertId: document.querySelector('#inboxConvertId'),
+  inboxConvertType: document.querySelector('#inboxConvertType'),
+  inboxConvertTitle: document.querySelector('#inboxConvertTitle'),
+  inboxConvertName: document.querySelector('#inboxConvertName'),
+  inboxConvertDateTime: document.querySelector('#inboxConvertDateTime'),
+  inboxConvertMealDate: document.querySelector('#inboxConvertMealDate'),
+  inboxConvertIngredients: document.querySelector('#inboxConvertIngredients'),
+  inboxConvertCancel: document.querySelector('#inboxConvertCancel'),
+  inboxConvertFeedback: document.querySelector('#inboxConvertFeedback'),
+  inboxTitleField: document.querySelector('#inboxTitleField'),
+  inboxNameField: document.querySelector('#inboxNameField'),
+  inboxDateTimeField: document.querySelector('#inboxDateTimeField'),
+  inboxMealDateField: document.querySelector('#inboxMealDateField'),
+  inboxIngredientsField: document.querySelector('#inboxIngredientsField'),
 };
 
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
@@ -190,6 +210,144 @@ function renderGroceries(items, summary) {
   }
 }
 
+function renderInbox(items) {
+  els.inboxBadge.textContent = `${items.length} open`;
+  els.inboxList.innerHTML = items.map((item) => `
+    <li class="inbox-item">
+      <div class="inbox-item-copy">
+        <div class="inbox-original">${escapeHTML(item.original_text)}</div>
+        <div class="inbox-meta"><span>${escapeHTML(item.source || 'dashboard')}</span><span>·</span><span>${escapeHTML(item.created_by || 'household')}</span></div>
+      </div>
+      <div class="inbox-actions">
+        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="task">Task</button>
+        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="event">Event</button>
+        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="meal">Meal</button>
+        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="grocery">Grocery</button>
+        <button class="inbox-action inbox-archive" type="button" data-inbox-id="${escapeHTML(item.id)}">Archive</button>
+      </div>
+    </li>
+  `).join('');
+  els.inboxList.classList.toggle('is-hidden', items.length === 0);
+  els.inboxEmpty.classList.toggle('is-hidden', items.length !== 0);
+  els.inboxList.querySelectorAll('[data-inbox-type]').forEach((button) => {
+    button.addEventListener('click', () => openInboxConversion(items.find((item) => item.id === Number(button.dataset.inboxId)), button.dataset.inboxType));
+  });
+  els.inboxList.querySelectorAll('.inbox-archive').forEach((button) => {
+    button.addEventListener('click', () => archiveInboxItem(button.dataset.inboxId));
+  });
+}
+
+function setInboxConversionFields() {
+  const type = els.inboxConvertType.value;
+  const isTask = type === 'task';
+  const isEvent = type === 'event';
+  const isMeal = type === 'meal';
+  const isGrocery = type === 'grocery';
+  els.inboxTitleField.classList.toggle('is-hidden', isGrocery);
+  els.inboxNameField.classList.toggle('is-hidden', !isGrocery);
+  els.inboxDateTimeField.classList.toggle('is-hidden', !(isTask || isEvent));
+  els.inboxMealDateField.classList.toggle('is-hidden', !isMeal);
+  els.inboxIngredientsField.classList.toggle('is-hidden', !isMeal);
+  els.inboxConvertTitle.required = !isGrocery;
+  els.inboxConvertName.required = isGrocery;
+  els.inboxConvertDateTime.required = isEvent;
+  els.inboxConvertMealDate.required = isMeal;
+  els.inboxDateTimeField.firstChild.textContent = isEvent ? 'Starts date and time' : 'Due date and time';
+}
+
+function openInboxConversion(item, type) {
+  if (!item) return;
+  els.inboxConvertId.value = item.id;
+  els.inboxConvertType.value = type;
+  els.inboxConvertTitle.value = item.original_text;
+  els.inboxConvertName.value = item.original_text;
+  els.inboxConvertDateTime.value = '';
+  els.inboxConvertMealDate.value = new Date().toISOString().slice(0, 10);
+  els.inboxConvertIngredients.value = '';
+  els.inboxConvertFeedback.classList.add('is-hidden');
+  els.inboxConvertForm.classList.remove('is-hidden');
+  setInboxConversionFields();
+  (type === 'grocery' ? els.inboxConvertName : els.inboxConvertTitle).focus();
+}
+
+function closeInboxConversion() {
+  els.inboxConvertForm.classList.add('is-hidden');
+  els.inboxConvertFeedback.classList.add('is-hidden');
+}
+
+async function archiveInboxItem(itemId) {
+  try {
+    const response = await fetch(`/api/inbox/${encodeURIComponent(itemId)}/archive`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ viewer: 'you' }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Could not archive Inbox item');
+    await loadDashboard();
+  } catch (error) {
+    els.error.textContent = error.message;
+    els.error.classList.remove('is-hidden');
+  }
+}
+
+async function submitInboxConversion(event) {
+  event.preventDefault();
+  const type = els.inboxConvertType.value;
+  const payload = { type, viewer: 'you', created_by: 'you' };
+  if (type === 'grocery') {
+    payload.name = els.inboxConvertName.value.trim();
+  } else if (type === 'event') {
+    payload.title = els.inboxConvertTitle.value.trim();
+    payload.starts_at = els.inboxConvertDateTime.value;
+  } else if (type === 'meal') {
+    payload.title = els.inboxConvertTitle.value.trim();
+    payload.meal_date = els.inboxConvertMealDate.value;
+    payload.meal_type = 'dinner';
+    payload.ingredients = els.inboxConvertIngredients.value.split(',').map((value) => value.trim()).filter(Boolean);
+  } else {
+    payload.title = els.inboxConvertTitle.value.trim();
+    payload.due_at = els.inboxConvertDateTime.value;
+  }
+  const submit = els.inboxConvertForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    const response = await fetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/convert`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not convert Inbox item');
+    closeInboxConversion();
+    await loadDashboard();
+  } catch (error) {
+    els.inboxConvertFeedback.textContent = error.message;
+    els.inboxConvertFeedback.classList.remove('is-hidden');
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function captureInboxItem(event) {
+  event.preventDefault();
+  const originalText = els.inboxCaptureText.value.trim();
+  if (!originalText) return;
+  const submit = els.inboxCaptureForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  try {
+    const response = await fetch('/api/inbox', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ original_text: originalText, source: 'dashboard', created_by: 'you' }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not capture Inbox item');
+    els.inboxCaptureText.value = '';
+    await loadDashboard();
+  } catch (error) {
+    els.error.textContent = error.message;
+    els.error.classList.remove('is-hidden');
+  } finally {
+    submit.disabled = false;
+  }
+}
+
 function render(snapshot) {
   const current = snapshot.generated_at;
   const todayLabel = formatDate(current, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -216,6 +374,7 @@ function render(snapshot) {
   renderUpcoming(snapshot.upcoming);
   renderPlanningWeek(snapshot.planning_week || []);
   renderGroceries(snapshot.groceries, snapshot.grocery_summary);
+  renderInbox(snapshot.inbox || []);
   els.error.classList.add('is-hidden');
 }
 
@@ -241,6 +400,10 @@ els.themeToggle.addEventListener('click', () => {
   setTheme(nextTheme);
 });
 els.refresh.addEventListener('click', loadDashboard);
+els.inboxCaptureForm.addEventListener('submit', captureInboxItem);
+els.inboxConvertForm.addEventListener('submit', submitInboxConversion);
+els.inboxConvertType.addEventListener('change', setInboxConversionFields);
+els.inboxConvertCancel.addEventListener('click', closeInboxConversion);
 syncThemeButton();
 updateGreeting();
 window.setInterval(updateGreeting, 60_000);
