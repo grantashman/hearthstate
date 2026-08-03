@@ -50,6 +50,13 @@ const els = {
   inboxDateTimeField: document.querySelector('#inboxDateTimeField'),
   inboxMealDateField: document.querySelector('#inboxMealDateField'),
   inboxIngredientsField: document.querySelector('#inboxIngredientsField'),
+  intelligenceBadge: document.querySelector('#intelligenceBadge'),
+  conflictList: document.querySelector('#conflictList'),
+  conflictEmpty: document.querySelector('#conflictEmpty'),
+  activityList: document.querySelector('#activityList'),
+  activityEmpty: document.querySelector('#activityEmpty'),
+  choreList: document.querySelector('#choreList'),
+  choreEmpty: document.querySelector('#choreEmpty'),
 };
 
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
@@ -215,6 +222,30 @@ function renderGroceries(items, summary) {
   }
 }
 
+function renderIntelligence(intelligence) {
+  const conflicts = intelligence.conflicts || [];
+  const activity = intelligence.activity || [];
+  const chores = intelligence.chores || [];
+  els.intelligenceBadge.textContent = conflicts.length ? `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'}` : 'Clear';
+  els.intelligenceBadge.classList.toggle('is-warning', conflicts.length > 0);
+  els.conflictList.innerHTML = conflicts.slice(0, 4).map((item) => `<li><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.assignee || 'Household')}</span></li>`).join('');
+  els.activityList.innerHTML = activity.slice(0, 4).map((item) => {
+    const state = item.after || item.before || {};
+    const label = state.title || state.name || item.entity_type;
+    return `<li><strong>${escapeHTML(label)}</strong><span>${escapeHTML(item.action.replace('.', ' '))} · ${escapeHTML(item.actor)}</span></li>`;
+  }).join('');
+  els.choreList.innerHTML = chores.slice(0, 4).map((item) => {
+    const next = item.participants?.[item.next_index % item.participants.length] || '—';
+    return `<li><strong>${escapeHTML(item.title)}</strong><span>Next: ${escapeHTML(next)} · ${escapeHTML(item.cadence)}</span></li>`;
+  }).join('');
+  els.conflictList.classList.toggle('is-hidden', conflicts.length === 0);
+  els.conflictEmpty.classList.toggle('is-hidden', conflicts.length !== 0);
+  els.activityList.classList.toggle('is-hidden', activity.length === 0);
+  els.activityEmpty.classList.toggle('is-hidden', activity.length !== 0);
+  els.choreList.classList.toggle('is-hidden', chores.length === 0);
+  els.choreEmpty.classList.toggle('is-hidden', chores.length !== 0);
+}
+
 function renderInbox(items) {
   els.inboxBadge.textContent = `${items.length} open`;
   els.inboxList.innerHTML = items.map((item) => `
@@ -353,7 +384,7 @@ async function captureInboxItem(event) {
   }
 }
 
-function render(snapshot) {
+function render(snapshot, intelligence = {}) {
   const current = snapshot.generated_at;
   currentViewerName = snapshot.viewer_name || 'family';
   updateGreeting(new Date(), currentViewerName);
@@ -385,16 +416,26 @@ function render(snapshot) {
   renderPlanningWeek(snapshot.planning_week || []);
   renderGroceries(snapshot.groceries, snapshot.grocery_summary);
   renderInbox(snapshot.inbox || []);
+  renderIntelligence(intelligence);
   els.error.classList.add('is-hidden');
 }
 
 async function loadDashboard() {
   setLoading(true);
   try {
-    const viewer = encodeURIComponent('you');
-    const response = await fetch('/api/dashboard', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`Dashboard request failed: ${response.status}`);
-    render(await response.json());
+    const [dashboardResponse, conflictsResponse, activityResponse, choresResponse] = await Promise.all([
+      fetch('/api/dashboard', { cache: 'no-store' }),
+      fetch('/api/conflicts', { cache: 'no-store' }),
+      fetch('/api/activity?viewer=you', { cache: 'no-store' }),
+      fetch('/api/chores', { cache: 'no-store' }),
+    ]);
+    if (!dashboardResponse.ok) throw new Error(`Dashboard request failed: ${dashboardResponse.status}`);
+    const intelligence = {
+      conflicts: conflictsResponse.ok ? (await conflictsResponse.json()).conflicts : [],
+      activity: activityResponse.ok ? (await activityResponse.json()).activity : [],
+      chores: choresResponse.ok ? (await choresResponse.json()).chores : [],
+    };
+    render(await dashboardResponse.json(), intelligence);
   } catch (error) {
     els.error.textContent = 'Could not load the household state. Is the local Hearthstate service still running?';
     els.error.classList.remove('is-hidden');

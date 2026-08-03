@@ -92,9 +92,12 @@ class PlannerMutationTests(unittest.TestCase):
         self.store.delete_meal(meal_id)
 
         self.assertEqual(self.store.list_meals(), [])
-        self.assertIsNone(self.store.connection.execute(
-            "SELECT id FROM meal_ingredients WHERE meal_id = ?", (meal_id,)
-        ).fetchone())
+        self.assertEqual(
+            self.store.connection.execute(
+                "SELECT status FROM meals WHERE id = ?", (meal_id,)
+            ).fetchone()["status"],
+            "archived",
+        )
         with self.assertRaises(ValueError):
             self.store.delete_meal(meal_id)
 

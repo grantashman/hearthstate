@@ -111,6 +111,7 @@ class PlannerStore:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
                     starts_at TEXT NOT NULL,
+                    ends_at TEXT,
                     person TEXT,
                     assignee TEXT,
                     status TEXT NOT NULL DEFAULT 'confirmed',
@@ -176,11 +177,44 @@ class PlannerStore:
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     resolved_at TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    actor TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    entity_id INTEGER NOT NULL,
+                    before_json TEXT,
+                    after_json TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    undone_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS briefing_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    viewer TEXT NOT NULL,
+                    briefing_type TEXT NOT NULL,
+                    run_date TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(viewer, briefing_type, run_date)
+                );
+
+                CREATE TABLE IF NOT EXISTS chore_templates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    cadence TEXT NOT NULL DEFAULT 'weekly',
+                    participants_json TEXT NOT NULL,
+                    next_index INTEGER NOT NULL DEFAULT 0,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             self._ensure_column("tasks", "assignee", "TEXT")
             self._ensure_column("tasks", "recurrence", "TEXT NOT NULL DEFAULT 'none'")
             self._ensure_column("events", "assignee", "TEXT")
+            self._ensure_column("events", "ends_at", "TEXT")
             self._ensure_column("meals", "recipe_id", "INTEGER")
             for column, definition in {
                 "quantity": "REAL NOT NULL DEFAULT 1",
@@ -203,6 +237,140 @@ class PlannerStore:
         }
         if column not in columns:
             self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _record_activity(
+        self,
+        actor: str,
+        action: str,
+        entity_type: str,
+        entity_id: int,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+    ) -> None:
+        self.connection.execute(
+            """INSERT INTO activity_log
+               (actor, action, entity_type, entity_id, before_json, after_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (str(actor or "system"), action, entity_type, entity_id,
+             json.dumps(before, sort_keys=True) if before is not None else None,
+             json.dumps(after, sort_keys=True) if after is not None else None),
+        )
+
+    @staticmethod
+    def _decode_activity(row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["before"] = json.loads(item.pop("before_json")) if item.get("before_json") else None
+        item["after"] = json.loads(item.pop("after_json")) if item.get("after_json") else None
+        return item
+
+    def list_activity(self, *, viewer: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self.connection.execute(
+                "SELECT * FROM activity_log ORDER BY id DESC LIMIT ?", (max(1, min(int(limit), 200)),)
+            ).fetchall()
+            result = []
+            for row in rows:
+                item = self._decode_activity(row)
+                state = item.get("after") or item.get("before") or {}
+                if viewer is not None and item["entity_type"] == "task" and state.get("private") and state.get("owner") != viewer and state.get("created_by") != viewer:
+                    continue
+                result.append(item)
+            return result
+
+    def undo_last(self, actor: str) -> dict[str, Any]:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM activity_log WHERE actor = ? AND undone_at IS NULL AND action NOT LIKE '%.undone' ORDER BY id DESC LIMIT 1",
+                (actor,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("nothing to undo")
+            activity = self._decode_activity(row)
+            before = activity["before"]
+            after = activity["after"]
+            entity_type = activity["entity_type"]
+            entity_id = activity["entity_id"]
+            entity_info = {
+                "task": ("tasks", ("title", "due_at", "owner", "assignee", "private", "recurrence", "status", "created_by")),
+                "event": ("events", ("title", "starts_at", "ends_at", "person", "assignee", "status", "created_by")),
+                "meal": ("meals", ("meal_date", "meal_type", "title", "cook", "status", "created_by", "recipe_id")),
+                "grocery": ("grocery_items", ("name", "quantity", "unit", "category", "price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note", "status", "created_by")),
+            }
+            table_info = entity_info.get(entity_type)
+            if table_info is None or after is None:
+                raise ValueError("change cannot be undone")
+            table, columns = table_info
+            if before is None:
+                self.connection.execute("UPDATE " + table + " SET status = 'archived' WHERE id = ?", (entity_id,))
+            else:
+                assignments = ", ".join(column + " = ?" for column in columns)
+                self.connection.execute(
+                    "UPDATE " + table + " SET " + assignments + " WHERE id = ?",
+                    tuple(before.get(column) for column in columns) + (entity_id,),
+                )
+                if entity_type == "meal" and "ingredients" in before:
+                    self.connection.execute("DELETE FROM meal_ingredients WHERE meal_id = ?", (entity_id,))
+                    self.connection.executemany(
+                        "INSERT INTO meal_ingredients (meal_id, name) VALUES (?, ?)",
+                        [(entity_id, ingredient) for ingredient in before["ingredients"]],
+                    )
+            self.connection.execute("UPDATE activity_log SET undone_at = CURRENT_TIMESTAMP WHERE id = ?", (activity["id"],))
+            self.connection.commit()
+            return {"entity_type": entity_type, "entity_id": entity_id, "action": activity["action"]}
+
+    def add_chore(self, title: str, cadence: str, participants: list[str], created_by: str) -> int:
+        title = str(title).strip()
+        cadence = str(cadence).strip().lower()
+        participants = [normalize_assignee(item) for item in participants]
+        participants = list(dict.fromkeys(item for item in participants if item and item != "all"))
+        if not title or cadence not in {"daily", "weekly", "fortnightly", "monthly"} or len(participants) < 2:
+            raise ValueError("a chore needs a title, supported cadence, and at least two participants")
+        with self._lock:
+            cursor = self.connection.execute(
+                "INSERT INTO chore_templates (title, cadence, participants_json, created_by) VALUES (?, ?, ?, ?)",
+                (title, cadence, json.dumps(participants), created_by),
+            )
+            self.connection.commit()
+            return int(cursor.lastrowid)
+
+    def list_chores(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self.connection.execute("SELECT * FROM chore_templates WHERE active = 1 ORDER BY title COLLATE NOCASE, id").fetchall()
+            result = []
+            for row in rows:
+                item = dict(row)
+                item["participants"] = json.loads(item.pop("participants_json"))
+                result.append(item)
+            return result
+
+    def assign_next_chore(self, chore_id: int, due_date: str, created_by: str) -> dict[str, Any]:
+        with self._lock:
+            row = self.connection.execute("SELECT * FROM chore_templates WHERE id = ? AND active = 1", (chore_id,)).fetchone()
+            if row is None:
+                raise ValueError("chore not found")
+            participants = json.loads(row["participants_json"])
+            index = int(row["next_index"]) % len(participants)
+            assignee = participants[index]
+            task_id = self.add_task(row["title"], f"{due_date}T09:00:00", None, False, created_by, assignee=assignee, recurrence=row["cadence"], actor=created_by)
+            self.connection.execute("UPDATE chore_templates SET next_index = ? WHERE id = ?", ((index + 1) % len(participants), chore_id))
+            self.connection.commit()
+            return next(task for task in self.list_tasks() if task["id"] == task_id)
+
+    def claim_briefing(self, viewer: str, briefing_type: str, run_date: str) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                "INSERT OR IGNORE INTO briefing_runs (viewer, briefing_type, run_date) VALUES (?, ?, ?)",
+                (viewer, briefing_type, run_date),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def briefing_claimed(self, viewer: str, briefing_type: str, run_date: str) -> bool:
+        with self._lock:
+            return self.connection.execute(
+                "SELECT 1 FROM briefing_runs WHERE viewer = ? AND briefing_type = ? AND run_date = ?",
+                (viewer, briefing_type, run_date),
+            ).fetchone() is not None
 
     def add_inbox_item(
         self,
@@ -350,7 +518,7 @@ class PlannerStore:
         with self._lock:
             self.connection.close()
 
-    def add_grocery_item(self, name: str, created_by: str) -> bool:
+    def add_grocery_item(self, name: str, created_by: str, *, actor: str | None = None) -> bool:
         with self._lock:
             existing = self.connection.execute(
                 "SELECT 1 FROM grocery_items WHERE lower(name) = lower(?) AND status = 'open'",
@@ -358,16 +526,31 @@ class PlannerStore:
             ).fetchone()
             if existing:
                 return False
-            self.connection.execute(
+            cursor = self.connection.execute(
                 "INSERT INTO grocery_items (name, created_by) VALUES (?, ?)",
                 (name, created_by),
             )
+            item_id = int(cursor.lastrowid)
+            after = dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
+            self._record_activity(actor or created_by, "grocery.created", "grocery", item_id, None, after)
             self.connection.commit()
         # Match immediately on every successful grocery capture so callers never
         # have to wait for a page refresh or press a separate retailer button.
         from .pricing import apply_known_coles_prices
         apply_known_coles_prices(self)
         return True
+
+    def archive_grocery_item(self, item_id: int, *, actor: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            before_row = self.connection.execute("SELECT * FROM grocery_items WHERE id = ? AND status = 'open'", (item_id,)).fetchone()
+            if before_row is None:
+                raise ValueError("grocery item not found")
+            before = dict(before_row)
+            self.connection.execute("UPDATE grocery_items SET status = 'archived' WHERE id = ?", (item_id,))
+            after = dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
+            self._record_activity(actor or before["created_by"], "grocery.archived", "grocery", item_id, before, after)
+            self.connection.commit()
+            return after
 
     def list_grocery_items(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -383,11 +566,13 @@ class PlannerStore:
         quantity: float | None = None,
         unit: str | None = None,
         category: str | None = None,
+        actor: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             current = self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone()
             if current is None:
                 raise ValueError("grocery item not found")
+            before = dict(current)
             self.connection.execute(
                 "UPDATE grocery_items SET quantity = ?, unit = ?, category = ? WHERE id = ?",
                 (
@@ -397,8 +582,10 @@ class PlannerStore:
                     item_id,
                 ),
             )
+            result = dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
+            self._record_activity(actor or result["created_by"], "grocery.updated", "grocery", item_id, before, result)
             self.connection.commit()
-            return dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
+            return result
 
     def set_grocery_price(
         self,
@@ -409,12 +596,14 @@ class PlannerStore:
         confidence: str,
         checked_at: str,
         note: str = "",
+        actor: str | None = None,
     ) -> dict[str, Any]:
         if price < 0:
             raise ValueError("price cannot be negative")
         with self._lock:
             if not self.connection.execute("SELECT 1 FROM grocery_items WHERE id = ?", (item_id,)).fetchone():
                 raise ValueError("grocery item not found")
+            before = dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
             self.connection.execute(
                 """UPDATE grocery_items
                    SET price = ?, price_source = ?, price_url = ?, price_confidence = ?,
@@ -422,9 +611,10 @@ class PlannerStore:
                    WHERE id = ?""",
                 (round(float(price), 2), source.strip(), url, confidence.strip(), checked_at.strip(), note.strip(), item_id),
             )
+            result = dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
+            self._record_activity(actor or result["created_by"], "grocery.repriced", "grocery", item_id, before, result)
             self.connection.commit()
-            return dict(self.connection.execute("SELECT * FROM grocery_items WHERE id = ?", (item_id,)).fetchone())
-
+            return result
     def set_weekly_budget(self, amount: float, updated_by: str) -> float:
         if amount < 0:
             raise ValueError("budget cannot be negative")
@@ -480,6 +670,7 @@ class PlannerStore:
         created_by: str,
         assignee: str | None = None,
         recurrence: str = "none",
+        actor: str | None = None,
     ) -> int:
         normalized_recurrence = normalize_recurrence(recurrence)
         if normalized_recurrence != "none" and not due_at:
@@ -492,8 +683,11 @@ class PlannerStore:
                 """,
                 (title, due_at, owner, normalize_assignee(assignee), int(private), normalized_recurrence, created_by),
             )
+            task_id = int(cursor.lastrowid)
+            after = dict(self.connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
+            self._record_activity(actor or created_by, "task.created", "task", task_id, None, after)
             self.connection.commit()
-            return int(cursor.lastrowid)
+            return task_id
 
     def list_tasks(self, assignee: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
@@ -514,11 +708,16 @@ class PlannerStore:
         due_at: str | None,
         assignee: str | None,
         recurrence: str = "none",
+        actor: str | None = None,
     ) -> dict[str, Any]:
         normalized_recurrence = normalize_recurrence(recurrence)
         if normalized_recurrence != "none" and not due_at:
             raise ValueError("recurrence requires a due date")
         with self._lock:
+            before_row = self.connection.execute("SELECT * FROM tasks WHERE id = ? AND status = 'open'", (task_id,)).fetchone()
+            if before_row is None:
+                raise ValueError("task not found")
+            before = dict(before_row)
             cursor = self.connection.execute(
                 """
                 UPDATE tasks
@@ -529,27 +728,41 @@ class PlannerStore:
             )
             if cursor.rowcount != 1:
                 raise ValueError("task not found")
-            self.connection.commit()
             row = self.connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            return dict(row)
+            result = dict(row)
+            self._record_activity(actor or result["created_by"], "task.updated", "task", task_id, before, result)
+            self.connection.commit()
+            return result
 
-    def complete_task(self, task_id: int) -> dict[str, Any]:
+    def complete_task(self, task_id: int, *, actor: str | None = None) -> dict[str, Any]:
         with self._lock:
+            before_row = self.connection.execute("SELECT * FROM tasks WHERE id = ? AND status = 'open'", (task_id,)).fetchone()
+            if before_row is None:
+                raise ValueError("task not found")
+            before = dict(before_row)
             cursor = self.connection.execute(
                 "UPDATE tasks SET status = 'done' WHERE id = ? AND status = 'open'",
                 (task_id,),
             )
             if cursor.rowcount != 1:
                 raise ValueError("task not found")
-            self.connection.commit()
             row = self.connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-            return dict(row)
+            result = dict(row)
+            self._record_activity(actor or result["created_by"], "task.completed", "task", task_id, before, result)
+            self.connection.commit()
+            return result
 
-    def delete_task(self, task_id: int) -> None:
+    def delete_task(self, task_id: int, *, actor: str | None = None) -> None:
         with self._lock:
-            cursor = self.connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            before_row = self.connection.execute("SELECT * FROM tasks WHERE id = ? AND status = 'open'", (task_id,)).fetchone()
+            if before_row is None:
+                raise ValueError("task not found")
+            before = dict(before_row)
+            cursor = self.connection.execute("UPDATE tasks SET status = 'archived' WHERE id = ? AND status = 'open'", (task_id,))
             if cursor.rowcount != 1:
                 raise ValueError("task not found")
+            after = dict(self.connection.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
+            self._record_activity(actor or before["created_by"], "task.archived", "task", task_id, before, after)
             self.connection.commit()
 
     def add_event(
@@ -559,17 +772,22 @@ class PlannerStore:
         person: str | None,
         created_by: str,
         assignee: str | None = None,
+        ends_at: str | None = None,
+        actor: str | None = None,
     ) -> int:
         with self._lock:
             cursor = self.connection.execute(
                 """
-                INSERT INTO events (title, starts_at, person, assignee, created_by)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO events (title, starts_at, ends_at, person, assignee, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (title, starts_at, person, normalize_assignee(assignee), created_by),
+                (title, starts_at, ends_at, person, normalize_assignee(assignee), created_by),
             )
+            event_id = int(cursor.lastrowid)
+            after = dict(self.connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone())
+            self._record_activity(actor or created_by, "event.created", "event", event_id, None, after)
             self.connection.commit()
-            return int(cursor.lastrowid)
+            return event_id
 
     def update_event(
         self,
@@ -578,17 +796,22 @@ class PlannerStore:
         starts_at: str,
         person: str | None,
         assignee: str | None,
+        ends_at: str | None = None,
+        actor: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
-            self.connection.execute(
-                "UPDATE events SET title = ?, starts_at = ?, person = ?, assignee = ? WHERE id = ?",
-                (title, starts_at, person, normalize_assignee(assignee), event_id),
-            )
-            self.connection.commit()
-            row = self.connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
-            if row is None:
+            before_row = self.connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+            if before_row is None:
                 raise ValueError("event not found")
-            return dict(row)
+            before = dict(before_row)
+            self.connection.execute(
+                "UPDATE events SET title = ?, starts_at = ?, ends_at = ?, person = ?, assignee = ? WHERE id = ?",
+                (title, starts_at, ends_at, person, normalize_assignee(assignee), event_id),
+            )
+            result = dict(self.connection.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone())
+            self._record_activity(actor or result["created_by"], "event.updated", "event", event_id, before, result)
+            self.connection.commit()
+            return result
 
     def add_meal(
         self,
@@ -599,6 +822,7 @@ class PlannerStore:
         ingredients: list[str],
         created_by: str,
         recipe_id: int | None = None,
+        actor: str | None = None,
     ) -> int:
         with self._lock:
             cursor = self.connection.execute(
@@ -611,9 +835,10 @@ class PlannerStore:
                     "INSERT INTO meal_ingredients (meal_id, name) VALUES (?, ?)",
                     (meal_id, ingredient),
                 )
+            after = dict(self.connection.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone())
+            self._record_activity(actor or created_by, "meal.created", "meal", meal_id, None, after)
             self.connection.commit()
             return meal_id
-
     def update_meal(
         self,
         meal_id: int,
@@ -622,10 +847,18 @@ class PlannerStore:
         title: str,
         cook: str | None,
         ingredients: list[str],
+        actor: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
-            if not self.connection.execute("SELECT 1 FROM meals WHERE id = ?", (meal_id,)).fetchone():
+            before_row = self.connection.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone()
+            if before_row is None:
                 raise ValueError("meal not found")
+            before = dict(before_row)
+            before["ingredients"] = [
+                row["name"] for row in self.connection.execute(
+                    "SELECT name FROM meal_ingredients WHERE meal_id = ? ORDER BY id", (meal_id,)
+                ).fetchall()
+            ]
             self.connection.execute(
                 "UPDATE meals SET meal_date = ?, meal_type = ?, title = ?, cook = ? WHERE id = ?",
                 (meal_date, meal_type.lower(), title, normalize_assignee(cook), meal_id),
@@ -636,7 +869,6 @@ class PlannerStore:
                     "INSERT INTO meal_ingredients (meal_id, name) VALUES (?, ?)",
                     (meal_id, ingredient),
                 )
-            self.connection.commit()
             meal = dict(self.connection.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone())
             meal["ingredients"] = [
                 row["name"]
@@ -645,13 +877,21 @@ class PlannerStore:
                     (meal_id,),
                 ).fetchall()
             ]
+            self._record_activity(actor or before["created_by"], "meal.updated", "meal", meal_id, before, meal)
+            self.connection.commit()
             return meal
 
-    def delete_meal(self, meal_id: int) -> None:
+    def delete_meal(self, meal_id: int, *, actor: str | None = None) -> None:
         with self._lock:
-            cursor = self.connection.execute("DELETE FROM meals WHERE id = ?", (meal_id,))
+            before_row = self.connection.execute("SELECT * FROM meals WHERE id = ? AND status = 'planned'", (meal_id,)).fetchone()
+            if before_row is None:
+                raise ValueError("meal not found")
+            before = dict(before_row)
+            cursor = self.connection.execute("UPDATE meals SET status = 'archived' WHERE id = ? AND status = 'planned'", (meal_id,))
             if cursor.rowcount != 1:
                 raise ValueError("meal not found")
+            after = dict(self.connection.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone())
+            self._record_activity(actor or before["created_by"], "meal.archived", "meal", meal_id, before, after)
             self.connection.commit()
 
     def add_recipe(
