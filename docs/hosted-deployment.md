@@ -10,6 +10,8 @@ Hearthstate runs as a hosted Vercel/Supabase application.
 
 Supabase is the only application data store. The hosted app uses Supabase email OTP authentication plus a temporary password fallback, an HttpOnly session cookie, household membership RLS, and dashboard routes for tasks, calendar, meals, groceries, recipes, Inbox, chores, preferences, administration, and invitations.
 
+Photon/iMessage integration uses a trusted server-to-server bridge at `/api/integrations/photon/*`. Its token is stored only in Hermes secret storage; Supabase stores only the token hash and the explicit external-sender-to-household identity mapping. The Hermes skill lives at `~/.hermes/skills/productivity/hearthstate-photon-bridge/` and must use the bridge rather than any local database runtime.
+
 ## Environment
 
 For Vercel Production and Preview, set:
@@ -36,6 +38,8 @@ The login page sends its current `/login` origin explicitly when requesting a ma
 ## Provisioning
 
 The first hosted household is provisioned in Supabase as an operator step. An authenticated account without a membership may use `/setup` to create its first household; an existing member visiting `/setup` is redirected to `/`.
+
+The initial Photon mapping is the configured Australian sender to `grant@ashman.net.au`. The migration binds it automatically when the profile already exists; otherwise run the protected identity bind command from the Hermes skill after the account signs in and joins a household.
 
 ## Verification
 

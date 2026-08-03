@@ -20,10 +20,12 @@ The repository is hosted-only. Retired SQLite/account databases may remain as ig
 | `api/index.py` | Hosted Vercel handler: Auth/session boundary, Supabase REST calls, RLS-scoped reads/mutations, asset routing, and owner administration. |
 | `hearthstate/dashboard/` | Branded HTML, CSS, JavaScript, and static images served by the hosted handler. |
 | `supabase/migrations/` | Hosted schema, RLS policies/functions, grants, invitations, notification preferences, recipes, and feature tables. |
+| `supabase/migrations/*photon_hosted_bridge.sql` | Trusted Photon bridge credential hash and sender-to-user/household mapping. |
 | `vercel.json` | Rewrites browser routes and `/api/*` requests to `api/index.py`. |
 | `.github/workflows/ci.yml` | Hosted API contract tests, Python compilation, and browser JavaScript syntax checks. |
 | `.github/workflows/production.yml` | On `main`, applies committed Supabase migrations when that directory changes; Vercel deploys through its native Git integration. |
 | `docs/hosted-deployment.md` | Hosted environment, Auth URL, migration, and GitHub/Vercel setup. |
+| `~/.hermes/skills/productivity/hearthstate-photon-bridge/` | Photon/iMessage client workflow for hosted state and explicit household actions. |
 
 ## Hosted Auth and request flow
 
@@ -34,6 +36,8 @@ The repository is hosted-only. Retired SQLite/account databases may remain as ig
 5. `/api/me` resolves the account's household memberships.
 6. Members go to `/`; an authenticated member visiting `/setup` is redirected to `/`. A genuinely unprovisioned account may still use `/setup` to create its first household.
 7. `/api/dashboard` and page-specific endpoints read or mutate only the active household.
+
+Photon bridge requests use `X-Hearthstate-Photon-Key`, resolve the sender through `channel_identities`, re-check membership, and then use the server-only Supabase service role for the mapped household. The bridge exposes state plus a finite command set; it does not accept arbitrary table names or SQL.
 
 The temporary password panel is an intentional fallback while email delivery or rate limits are unreliable. It calls Supabase's normal password token endpoint; it is not a second application auth system. Do not hard-code passwords or service keys.
 

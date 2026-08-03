@@ -13,6 +13,8 @@ Hearthstate is a hosted Vercel/Supabase application:
 
 The browser dashboard assets live under [`hearthstate/dashboard/`](hearthstate/dashboard/). The hosted API is the only application runtime in this repository. Retired local SQLite files, if present on a maintainer workstation, are ignored artifacts and are not read, uploaded, or deployed.
 
+Photon/iMessage remains available as a messaging transport through the Hermes `hearthstate-photon-bridge` skill. The bridge maps the configured Photon sender identity to the hosted Hearthstate account and uses server-side, household-scoped commands; it does not restore the retired local runtime.
+
 ## Hosted request flow
 
 1. The browser loads the branded pages from `hearthstate/dashboard/`.

@@ -116,6 +116,25 @@ def _supabase_admin_request(method: str, path: str, *, payload: object | None = 
     return _supabase_request(method, path, payload=payload, query=query, prefer=prefer, api_key=service_key)
 
 
+def _normalize_channel_identity(value: object) -> str:
+    """Normalize an external sender identifier without trusting its formatting."""
+    normalized = "".join(character for character in str(value or "") if character.isdigit() or character == "+")
+    if normalized.startswith("00"):
+        normalized = "+" + normalized[2:]
+    if normalized and not normalized.startswith("+"):
+        normalized = "+" + normalized
+    if len(normalized) < 8 or len(normalized) > 16 or not normalized[1:].isdigit():
+        raise ValueError("invalid channel sender")
+    return normalized
+
+
+def _channel_token_hash(value: object) -> str:
+    token = str(value or "").strip()
+    if len(token) < 32:
+        raise SupabaseHTTPError(401, "bridge authentication required")
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def _uuid(value: object, field: str) -> str:
     try:
         return str(UUID(str(value)))
@@ -482,6 +501,142 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         except (SupabaseHTTPError, ValueError):
             return None
 
+    def _channel_integration(self, channel: str) -> dict:
+        """Authenticate a trusted channel bridge without exposing a user token."""
+        supplied = self.headers.get("X-Hearthstate-Photon-Key", "")
+        token_hash = _channel_token_hash(supplied)
+        integration = _first(_supabase_admin_request(
+            "GET", "/rest/v1/channel_integrations",
+            query=[
+                ("select", "id,channel,name,allowed_email,enabled"),
+                ("channel", f"eq.{channel}"),
+                ("token_hash", f"eq.{token_hash}"),
+                ("enabled", "eq.true"),
+            ],
+        ))
+        if not integration:
+            raise SupabaseHTTPError(401, "bridge authentication required")
+        return integration
+
+    def _channel_context(self, integration: dict, sender: object) -> tuple[dict, str, str, dict]:
+        external_id = _normalize_channel_identity(sender)
+        identity = _first(_supabase_admin_request(
+            "GET", "/rest/v1/channel_identities",
+            query=[
+                ("select", "external_user_id,user_id,household_id"),
+                ("integration_id", f"eq.{integration['id']}"),
+                ("external_user_id", f"eq.{external_id}"),
+            ],
+        ))
+        if not identity:
+            raise SupabaseHTTPError(403, "channel sender is not mapped")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        membership = _first(_supabase_admin_request(
+            "GET", "/rest/v1/memberships",
+            query=[
+                ("select", "household_id,role"),
+                ("household_id", f"eq.{identity['household_id']}"),
+                ("user_id", f"eq.{identity['user_id']}"),
+            ],
+        ))
+        if not membership:
+            raise SupabaseHTTPError(403, "channel sender is not a household member")
+        profile = _first(_supabase_admin_request(
+            "GET", "/rest/v1/profiles",
+            query=[("select", "user_id,email,display_name"), ("user_id", f"eq.{identity['user_id']}")],
+        )) or {}
+        return identity, str(identity["user_id"]), service_key, {**profile, "role": membership.get("role")}
+
+    def _channel_sender(self) -> str:
+        query = self._query()
+        return str(query.get("sender", [""])[0] or "").strip()
+
+    def _photon_state(self) -> dict:
+        integration = self._channel_integration("photon")
+        identity, user_id, service_key, profile = self._channel_context(integration, self._channel_sender())
+        state = self._dashboard(str(identity["household_id"]), user_id, service_key, {"email": profile.get("email", "")})
+        state["channel"] = "photon"
+        state["sender"] = identity["external_user_id"]
+        state["viewer_email"] = profile.get("email")
+        return state
+
+    def _bind_photon_identity(self, payload: dict) -> dict:
+        integration = self._channel_integration("photon")
+        email = str(payload.get("email", "")).strip().lower()
+        allowed_email = str(integration.get("allowed_email") or "").strip().lower()
+        if not email or email != allowed_email:
+            raise SupabaseHTTPError(403, "channel identity email is not permitted")
+        external_id = _normalize_channel_identity(payload.get("sender"))
+        profile = _first(_supabase_admin_request(
+            "GET", "/rest/v1/profiles",
+            query=[("select", "user_id,email,display_name"), ("email", f"eq.{email}")],
+        ))
+        if not profile:
+            raise SupabaseHTTPError(409, "Hearthstate profile must sign in before channel binding")
+        membership = _first(_supabase_admin_request(
+            "GET", "/rest/v1/memberships",
+            query=[("select", "household_id,role"), ("user_id", f"eq.{profile['user_id']}"), ("order", "created_at.asc")],
+        ))
+        if not membership:
+            raise SupabaseHTTPError(409, "Hearthstate user must belong to a household before channel binding")
+        identity = _first(_supabase_admin_request(
+            "POST", "/rest/v1/channel_identities",
+            query=[("on_conflict", "integration_id,external_user_id")],
+            payload={"integration_id": integration["id"], "external_user_id": external_id, "user_id": profile["user_id"], "household_id": membership["household_id"]},
+            prefer="return=representation,resolution=merge-duplicates",
+        )) or {}
+        return {"channel": "photon", "sender": external_id, "email": profile.get("email"), "household_id": membership["household_id"], "identity": identity}
+
+    def _photon_command(self, payload: dict) -> dict:
+        integration = self._channel_integration("photon")
+        identity, user_id, service_key, profile = self._channel_context(integration, payload.get("sender"))
+        household_id = str(identity["household_id"])
+        action = str(payload.get("action", "")).strip().lower()
+        if action in {"state", "list_state"}:
+            return self._photon_state()
+        if action == "capture":
+            text = str(payload.get("text", "")).strip()
+            if not text or len(text) > 4000:
+                raise ValueError("text is required and must be 4000 characters or fewer")
+            private = payload.get("private", False)
+            if not isinstance(private, bool):
+                raise ValueError("private must be a boolean")
+            item = self._post_record("inbox_items", household_id, user_id, service_key, {"original_text": text, "source": "photon", "private": private})
+            self._log(household_id, user_id, service_key, "inbox.created", "inbox", item.get("id"), after=item)
+            return {"action": action, "item": item}
+        if action == "create_task":
+            title = str(payload.get("title", "")).strip()
+            if not title:
+                raise ValueError("title is required")
+            task = self._post_record("tasks", household_id, user_id, service_key, payload)
+            return {"action": action, "task": task}
+        if action == "complete_task":
+            task_id = _uuid(payload.get("task_id"), "task id")
+            task = self._patch_record("tasks", task_id, household_id, service_key, {"status": "done"})
+            self._log(household_id, user_id, service_key, "task.completed", "task", task_id, after=task)
+            return {"action": action, "task": task}
+        if action == "add_grocery":
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                raise ValueError("name is required")
+            item = self._post_record("grocery_items", household_id, user_id, service_key, payload)
+            return {"action": action, "item": item}
+        if action == "create_event":
+            if not str(payload.get("title", "")).strip() or not str(payload.get("starts_at", "")).strip():
+                raise ValueError("title and starts_at are required")
+            event = self._post_record("events", household_id, user_id, service_key, payload)
+            return {"action": action, "event": event}
+        if action == "create_meal":
+            if not str(payload.get("title", "")).strip() or not str(payload.get("meal_date", "")).strip():
+                raise ValueError("title and meal_date are required")
+            meal = self._post_record("meals", household_id, user_id, service_key, payload)
+            return {"action": action, "meal": meal}
+        if action == "archive_inbox":
+            item_id = _uuid(payload.get("item_id"), "inbox id")
+            item = self._patch_record("inbox_items", item_id, household_id, service_key, {"status": "archived"})
+            return {"action": action, "item": item}
+        raise ValueError("unsupported Photon action")
+
     def _handle_asset(self, route: str) -> bool:
         pages = {
             "/login": ("hosted-login.html", "text/html; charset=utf-8", False),
@@ -567,6 +722,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             url, key = _config()
             self._respond({"hosted": True, "account_backed": True, "supabase_url": url, "supabase_publishable_key": key})
             return
+        if route == "/integrations/photon/state":
+            self._respond(self._photon_state())
+            return
         if route == "/auth/invitations/inspect":
             token = self._query().get("token", [""])[0].strip()
             if not token:
@@ -646,6 +804,12 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
 
     def _handle_post(self, route: str) -> None:
         payload = _json_body(self)
+        if route == "/integrations/photon/identity":
+            self._respond(self._bind_photon_identity(payload), status=201)
+            return
+        if route == "/integrations/photon/command":
+            self._respond(self._photon_command(payload))
+            return
         if route in {"/auth/session", "/auth/sign-in/session"}:
             supplied = str(payload.get("access_token") or "").strip()
             user_id, token, user = self._authenticate(supplied or None)

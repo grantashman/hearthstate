@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from api.index import _inject_viewer_bootstrap, _rows, _uuid, handler
+from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _uuid, handler
 
 
 class HostedApiContractTests(unittest.TestCase):
@@ -127,6 +127,26 @@ class HostedApiContractTests(unittest.TestCase):
     def test_invalid_household_context_is_rejected(self):
         with self.assertRaises(ValueError):
             _uuid("not-a-uuid", "household id")
+
+    def test_photon_sender_identity_is_normalized_to_e164(self):
+        self.assertEqual(_normalize_channel_identity("+61 (400) 025-889"), "+61400025889")
+        self.assertEqual(_normalize_channel_identity("00614000025889"), "+614000025889")
+
+    def test_photon_bridge_token_is_hashed_and_short_tokens_are_rejected(self):
+        self.assertEqual(len(_channel_token_hash("x" * 32)), 64)
+        with self.assertRaises(Exception):
+            _channel_token_hash("too-short")
+
+    def test_photon_bridge_contract_is_server_side_and_phone_bound(self):
+        api = (Path(__file__).parents[1] / "api" / "index.py").read_text()
+        migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_photon_hosted_bridge.sql")).read_text()
+        self.assertIn("/integrations/photon/state", api)
+        self.assertIn("/integrations/photon/command", api)
+        self.assertIn("X-Hearthstate-Photon-Key", api)
+        self.assertIn("channel_identities", migration)
+        self.assertIn("+61400025889", migration)
+        self.assertIn("grant@ashman.net.au", migration)
+        self.assertIn("service_role", migration)
 
     def test_supabase_rows_accept_object_or_array(self):
         self.assertEqual(_rows({"id": "one"}), [{"id": "one"}])
