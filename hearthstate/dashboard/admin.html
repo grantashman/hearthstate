@@ -15,7 +15,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=hearthstate-admin-1" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-admin-2" />
   </head>
   <body>
     <div class="app-shell">
@@ -91,6 +91,18 @@
           </section>
         </div>
 
+        <section class="panel admin-panel admin-data-panel" aria-labelledby="dataTitle">
+          <div class="panel-heading">
+            <div><p class="section-kicker">YOUR HOUSEHOLD DATA</p><h2 id="dataTitle">Export or leave</h2></div>
+            <span class="panel-badge">Owner only</span>
+          </div>
+          <p class="panel-intro">Download a portable JSON copy of this household, or permanently delete the household and its records. Invitation and bridge secrets are never included in exports.</p>
+          <div class="admin-data-actions">
+            <button class="primary-action" id="exportDataButton" type="button">Download JSON export <span aria-hidden="true">↓</span></button>
+            <button class="text-action danger-action" id="deleteHouseholdButton" type="button">Delete household</button>
+          </div>
+        </section>
+
         <section class="panel admin-panel" aria-labelledby="membersTitle">
           <div class="panel-heading">
             <div><p class="section-kicker">PEOPLE WITH A KEY</p><h2 id="membersTitle">Household members</h2></div>
@@ -111,8 +123,8 @@
         </section>
       </main>
     </div>
-    <script src="/nav.js?v=hearthstate-admin-1"></script>
-    <script src="/admin.js?v=hearthstate-admin-1"></script>
+    <script src="/nav.js?v=hearthstate-admin-2"></script>
+    <script src="/admin.js?v=hearthstate-admin-2"></script>
     <script>
       window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>

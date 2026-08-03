@@ -970,6 +970,16 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if not name: raise ValueError("name is required")
             household = _first(_supabase_request("PATCH", "/rest/v1/households", token=token, query=[("id", f"eq.{household_id}")], payload={"name": name})) or {}
             self._respond({"household": household}); return
+        if route == "/admin/export":
+            if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")
+            exported = _supabase_request("POST", "/rest/v1/rpc/export_household", token=token, payload={"target_household_id": household_id})
+            self._respond(exported); return
+        if route == "/admin/delete":
+            if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")
+            confirmation_name = str(payload.get("confirmation_name", "")).strip()
+            if not confirmation_name or len(confirmation_name) > 120: raise ValueError("confirmation_name is required")
+            deleted = _supabase_request("POST", "/rest/v1/rpc/delete_household", token=token, payload={"target_household_id": household_id, "confirmation_name": confirmation_name})
+            self._respond({"deleted": bool(deleted)}); return
         if route.startswith("/admin/members/"):
             if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")
             parts = route.removeprefix("/admin/members/").strip("/").split("/"); member_id = _uuid(parts[0], "member id")
