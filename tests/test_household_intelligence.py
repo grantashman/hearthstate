@@ -128,6 +128,29 @@ class BriefingTests(unittest.TestCase):
 
         self.assertIn("school form", output.getvalue())
 
+    def test_briefing_cli_writes_private_output_file(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        import os
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        from hearthstate.briefings import main
+
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "briefing.db"
+            output_path = Path(directory) / "latest-briefing.txt"
+            argv = ["briefings", "--database", str(database_path), "--output-file", str(output_path)]
+            output = StringIO()
+            with patch.object(sys, "argv", argv), patch("hearthstate.briefings.local_now", return_value=datetime(2026, 8, 3, 7, 30)), redirect_stdout(output):
+                main()
+
+            self.assertIn("Hearthstate briefing", output_path.read_text())
+            self.assertEqual(os.stat(output_path).st_mode & 0o777, 0o600)
+            self.assertEqual(output.getvalue(), "")
+
 
 class ChoreRotationTests(unittest.TestCase):
     def setUp(self):

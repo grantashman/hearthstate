@@ -2,7 +2,7 @@
 
 The first scheduler slice runs the existing morning briefing composer once per day for Grant in the account-backed `home` household. It enforces the 07:00–21:00 quiet window and claims the `(viewer, briefing type, local date)` dedupe key before returning output, so concurrent scheduler invocations cannot emit the same briefing twice.
 
-The current transport boundary is journald: the service renders the message and exits. Photon/iMessage or another delivery transport can be added around `run_briefing()` without moving scheduling or dedupe logic into the transport layer.
+The scheduled service writes the latest generated briefing atomically to `/home/ubuntu/.local/state/hearthstate/morning-briefing.txt` with owner-only `0600` permissions. Briefing contents are not sent to journald; service errors remain journal-visible. Photon/iMessage delivery can consume this private output boundary later without moving scheduling or dedupe logic into the transport layer.
 
 ## Install the user timer
 
@@ -20,6 +20,7 @@ Run one production-style invocation manually:
 ```bash
 systemctl --user start hearthstate-briefing.service
 journalctl --user -u hearthstate-briefing.service -n 20 --no-pager
+cat ~/.local/state/hearthstate/morning-briefing.txt
 ```
 
 The timer uses the host's `Australia/Sydney` timezone through `TZ` and is persistent, so a missed run is caught up after the user service returns. The service passes `--household-id home`, matching the account-backed dashboard's sibling `hearthstate.db.home` store. Do not run smoke tests against the production database with mutation commands.

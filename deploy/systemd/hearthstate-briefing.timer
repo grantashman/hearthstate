@@ -2,7 +2,7 @@
 Description=Schedule Hearthstate morning briefing
 
 [Timer]
-OnCalendar=*-*-* 07:30:00
+OnCalendar=*-*-* 07:30:00 Australia/Sydney
 Persistent=true
 Unit=hearthstate-briefing.service
 
