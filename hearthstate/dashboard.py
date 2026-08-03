@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
+from .conflicts import detect_conflicts
 from .pricing import apply_known_coles_prices
 from .store import TASK_RECURRENCES, PlannerStore, assignee_label, normalize_assignee, normalize_recurrence
 from .timezone import local_now
@@ -330,6 +331,7 @@ def build_dashboard_snapshot(
                 "source_id": event["id"],
                 "title": event["title"],
                 "starts_at": event["starts_at"],
+                "ends_at": event.get("ends_at"),
                 "time_label": _format_time(starts_at),
                 "day_label": _format_day(starts_at, current),
                 "person": event["person"],
@@ -372,6 +374,7 @@ def build_dashboard_snapshot(
         )
     ], grocery_summary, current)
     planning_week = _planning_week(current, calendar_items, meal_items)
+    conflicts = detect_conflicts(store)
 
     return {
         "viewer": viewer,
@@ -391,6 +394,7 @@ def build_dashboard_snapshot(
         "today_items": today_items,
         "upcoming": upcoming[:8],
         "planning_week": planning_week,
+        "conflicts": conflicts,
         "calendar": calendar_items,
         "grocery_summary": grocery_summary,
         "inbox": inbox_items[:12],
@@ -438,6 +442,16 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             viewer = self.server.session_user(self.headers) or parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
             items = self.server.store.list_inbox_items(viewer=viewer)
             self._send_json({"viewer": viewer, "items": items, "generated_at": self.server.now().replace(second=0, microsecond=0).isoformat()})
+            return
+        if parsed.path == "/api/activity":
+            viewer = self.server.session_user(self.headers) or parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
+            self._send_json({"viewer": viewer, "activity": self.server.store.list_activity(viewer=viewer)})
+            return
+        if parsed.path == "/api/conflicts":
+            self._send_json({"conflicts": detect_conflicts(self.server.store)})
+            return
+        if parsed.path == "/api/chores":
+            self._send_json({"chores": self.server.store.list_chores()})
             return
         if parsed.path == "/api/groceries":
             apply_known_coles_prices(self.server.store)
@@ -600,6 +614,27 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({converted_type: result, "item": item}, status=201)
                 return
 
+            if parsed.path == "/api/activity/undo":
+                undo = self.server.store.undo_last(actor or str(payload.get("viewer", "you")))
+                self._send_json({"undone": undo})
+                return
+            if parsed.path == "/api/chores":
+                title = str(payload.get("title", "")).strip()
+                participants = payload.get("participants", [])
+                if not isinstance(participants, list):
+                    raise ValueError("participants must be a list")
+                chore_id = self.server.store.add_chore(title, str(payload.get("cadence", "weekly")), participants, actor or str(payload.get("created_by", "grant")))
+                self._send_json({"chore": next(item for item in self.server.store.list_chores() if item["id"] == chore_id)}, status=201)
+                return
+            if parsed.path.startswith("/api/chores/"):
+                route_parts = parsed.path.removeprefix("/api/chores/").strip("/").split("/")
+                if len(route_parts) != 1 or not route_parts[0].isdigit():
+                    self._send_json({"error": "not found"}, status=404)
+                    return
+                chore_id = int(route_parts[0])
+                task = self.server.store.assign_next_chore(chore_id, str(payload["due_date"]), actor or str(payload.get("created_by", "grant")))
+                self._send_json({"task": task}, status=201)
+                return
             if parsed.path == "/api/groceries/budget":
                 budget = self.server.store.set_weekly_budget(float(payload["budget"]), actor or str(payload.get("updated_by", "grant")))
                 snapshot = self.server.store.grocery_budget_snapshot()
@@ -733,10 +768,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     return
                 task_id = int(route_parts[0])
                 if route_parts[1] == "complete":
-                    task = self.server.store.complete_task(task_id)
+                    task = self.server.store.complete_task(task_id, actor=actor)
                     self._send_json({"task": task})
                 else:
-                    self.server.store.delete_task(task_id)
+                    self.server.store.delete_task(task_id, actor=actor)
                     self._send_json({"deleted": task_id})
                 return
 
@@ -748,7 +783,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 recurrence = normalize_recurrence(payload.get("recurrence"))
                 if payload.get("id"):
                     task = self.server.store.update_task(
-                        int(payload["id"]), title, due_at, payload.get("assignee"), recurrence,
+                        int(payload["id"]), title, due_at, payload.get("assignee"), recurrence, actor=actor,
                     )
                     self._send_json({"task": task})
                 else:
@@ -773,12 +808,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 if payload.get("id"):
                     event = self.server.store.update_event(
                         int(payload["id"]), title, starts_at, payload.get("person") or None, payload.get("assignee"),
+                        ends_at=str(payload.get("ends_at", "")).strip() or None, actor=actor,
                     )
                     self._send_json({"event": event})
                 else:
                     event_id = self.server.store.add_event(
                         title, starts_at, payload.get("person") or None,
                         actor or str(payload.get("created_by", "grant")), assignee=payload.get("assignee"),
+                        ends_at=str(payload.get("ends_at", "")).strip() or None, actor=actor,
                     )
                     event = next(item for item in self.server.store.list_events() if item["id"] == event_id)
                     self._send_json({"event": event}, status=201)
@@ -793,14 +830,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 ingredients = [str(item).strip().lower() for item in payload.get("ingredients", []) if str(item).strip()]
                 if payload.get("id"):
                     meal = self.server.store.update_meal(
-                        int(payload["id"]), meal_date, meal_type, title, payload.get("cook") or None, ingredients,
+                        int(payload["id"]), meal_date, meal_type, title, payload.get("cook") or None, ingredients, actor=actor,
                     )
                     meal["cook_label"] = assignee_label(meal.get("cook"))
                     self._send_json({"meal": meal})
                 else:
                     meal_id = self.server.store.add_meal(
                         meal_date, meal_type, title, payload.get("cook") or None,
-                        ingredients, actor or str(payload.get("created_by", "grant")),
+                        ingredients, actor or str(payload.get("created_by", "grant")), actor=actor,
                     )
                     meal = next(item for item in self.server.store.list_meals() if item["id"] == meal_id)
                     meal["cook_label"] = assignee_label(meal.get("cook"))
@@ -820,7 +857,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     self._send_json({"error": "not found"}, status=404)
                     return
                 meal_id = int(route_parts[0])
-                self.server.store.delete_meal(meal_id)
+                self.server.store.delete_meal(meal_id, actor=actor)
                 self._send_json({"deleted": meal_id})
                 return
 

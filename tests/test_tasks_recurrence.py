@@ -117,7 +117,10 @@ class TaskDashboardHTTPTests(unittest.TestCase):
             with urlopen(delete_request) as response:
                 self.assertEqual(response.status, 200)
                 self.assertEqual(json.loads(response.read())["deleted"], delete_id)
-            self.assertIsNone(store.connection.execute("SELECT id FROM tasks WHERE id = ?", (delete_id,)).fetchone())
+            self.assertEqual(
+                store.connection.execute("SELECT status FROM tasks WHERE id = ?", (delete_id,)).fetchone()["status"],
+                "archived",
+            )
         finally:
             server.shutdown()
             server.server_close()

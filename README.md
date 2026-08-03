@@ -80,7 +80,7 @@ The tailnet dashboard is available at [http://vnic.tail015325.ts.net:8788](http:
 - Unknown items support manual price entry; the page labels those prices separately from Coles observations.
 - All pages preserve the light/dark preference in the browser.
 
-- The JSON read/action endpoints are `/health`, `/api/session`, `/api/dashboard`, `/api/inbox`, `/api/inbox/{id}/archive`, `/api/inbox/{id}/convert`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support capturing and triaging Inbox items, adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, and recording grocery prices.
+- The JSON read/action endpoints are `/health`, `/api/session`, `/api/dashboard`, `/api/inbox`, `/api/inbox/{id}/archive`, `/api/inbox/{id}/convert`, `/api/activity`, `/api/activity/undo`, `/api/conflicts`, `/api/chores`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support capturing and triaging Inbox items, auditing/reversing household mutations, adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, recording grocery prices, creating chores, and advancing round-robin chore assignments.
 
 ## Backups and verification
 
@@ -145,12 +145,16 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 - Every stored record keeps its creator.
 
 
-## Next level roadmap
+- The dashboard now includes an append-only activity feed with actor, timestamp, before/after snapshots, and reversible task, event, meal, and grocery mutations. `Undo that` restores the sender's most recent reversible change; archived records remain available for history instead of being physically deleted.
+- The planner accepts conversational `Mark <task> done`, `Assign <task> to <person>`, grocery removal, `Undo that`, and `What conflicts are there?` queries. Calendar conflicts use explicit event end times when supplied and a one-hour default otherwise; task deadlines falling inside an event are also reported.
+- Chores can be created with a cadence and at least two household participants, then advanced through round-robin assignment into recurring tasks. The morning briefing engine is available through `python3 -m hearthstate.briefings`; it respects 07:00–21:00 quiet hours and deduplicates one briefing per viewer per day. Delivery wiring remains deliberately separate from message composition.
+
+## Remaining roadmap
 
 1. **Household identity and permissions** — **partially complete:** the dashboard now derives the active actor from its passwordless session; explicit permission checks before destructive mutations remain.
-2. **Audit history** — record who changed, completed, deleted, or repriced a household item, with timestamps and a small human-readable activity view.
+2. **Audit history** — **complete:** append-only activity records, before/after snapshots, archive semantics, undo, and activity API.
 3. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
 4. **Scheduled backups** — **mostly complete:** the tested backup helper runs from a user-level timer with retention; a stale-age alert remains.
-5. **Conversation depth** — add natural-language completion, editing, grocery removal, and “what changed?” queries through the same tested planner boundary.
+5. **Conversation depth** — **expanded:** natural-language completion, assignment, grocery removal, undo, conflict queries, chores, and briefings are now supported; richer multi-action parsing remains separate.
 
 The remaining roadmap items are intentionally separate from the tailnet boundary: tailnet membership controls network reachability, while the passwordless session identifies the household member inside the app.

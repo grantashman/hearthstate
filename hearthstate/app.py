@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Callable
 
 from .store import HOUSEHOLD_MEMBERS, PlannerStore, assignee_label, normalize_assignee
+from .conflicts import detect_conflicts
 from .timezone import local_now
 
 
@@ -32,6 +33,82 @@ class Hearthstate:
 
         if lowered in {"what needs attention?", "what needs attention", "family state"}:
             return self._family_state(sender)
+
+        if lowered in {"what conflicts?", "what conflicts are there?", "show conflicts"}:
+            conflicts = detect_conflicts(self.store)
+            if not conflicts:
+                return "No calendar conflicts found."
+            return "Conflicts:\n" + "\n".join(f"{index}. {item['title']}" for index, item in enumerate(conflicts[:8], start=1))
+
+        if lowered in {"what changed?", "what has changed?", "show recent changes"}:
+            activity = self.store.list_activity(limit=8)
+            if not activity:
+                return "No household changes recorded yet."
+            return "Recent changes:\n" + "\n".join(
+                f"{index}. {item['action'].replace('.', ' ')} — {item['after'].get('title', item['after'].get('name', 'item')) if item.get('after') else 'item'}"
+                for index, item in enumerate(activity, start=1)
+            )
+
+        if lowered in {"undo that", "undo the last change", "undo"}:
+            try:
+                undone = self.store.undo_last(sender)
+            except ValueError:
+                return "There is nothing for me to undo."
+            return f"Restored the last {undone['entity_type']} change."
+
+        completion_match = re.fullmatch(r"(?:mark|complete|finish) (.+?)(?: as done| done)?", text, flags=re.IGNORECASE)
+        if completion_match:
+            title = self._clean_name(completion_match.group(1))
+            tasks = [task for task in self.store.list_tasks() if title in task["title"].lower()]
+            if not tasks:
+                return f"I couldn't find an open task matching {title}."
+            self.store.complete_task(tasks[0]["id"], actor=sender)
+            return f"Completed: {tasks[0]['title']}."
+
+        grocery_remove_match = re.fullmatch(r"(?:remove|delete|take off) (.+?) from (?:the )?(?:grocery list|shopping list|groceries)", text, flags=re.IGNORECASE)
+        if grocery_remove_match:
+            name = self._clean_name(grocery_remove_match.group(1))
+            items = [item for item in self.store.list_grocery_items() if name in item["name"].lower()]
+            if not items:
+                return f"I couldn't find {name} on groceries."
+            self.store.archive_grocery_item(items[0]["id"], actor=sender)
+            return f"Removed from groceries: {items[0]['name']}."
+
+        assign_match = re.fullmatch(r"assign (.+?) to (grant|billie|skye)", lowered, flags=re.IGNORECASE)
+        if assign_match:
+            title = self._clean_name(assign_match.group(1))
+            tasks = [task for task in self.store.list_tasks() if title in task["title"].lower()]
+            if not tasks:
+                return f"I couldn't find an open task matching {title}."
+            task = tasks[0]
+            updated = self.store.update_task(task["id"], task["title"], task["due_at"], assign_match.group(2), task.get("recurrence", "none"), actor=sender)
+            return f"Assigned {updated['title']} to {assignee_label(updated['assignee'])}."
+
+        rename_match = re.fullmatch(r"rename (?:task )?(.+?) to (.+)", text, flags=re.IGNORECASE)
+        if rename_match:
+            old_title = self._clean_name(rename_match.group(1))
+            new_title = self._clean_name(rename_match.group(2))
+            tasks = [task for task in self.store.list_tasks() if old_title in task["title"].lower()]
+            if not tasks:
+                return f"I couldn't find an open task matching {old_title}."
+            task = tasks[0]
+            updated = self.store.update_task(task["id"], new_title, task["due_at"], task.get("assignee"), task.get("recurrence", "none"), actor=sender)
+            return f"Renamed task to: {updated['title']}."
+
+        move_match = re.fullmatch(
+            r"move (.+?) to (today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if move_match:
+            old_title = self._clean_name(move_match.group(1))
+            events = [event for event in self.store.list_events() if old_title in event["title"].lower()]
+            if not events:
+                return f"I couldn't find an event matching {old_title}."
+            event = events[0]
+            starts_at = self._parse_datetime(move_match.group(2), move_match.group(3), move_match.group(4), move_match.group(5))
+            updated = self.store.update_event(event["id"], event["title"], starts_at.isoformat(), event.get("person"), event.get("assignee"), event.get("ends_at"), actor=sender)
+            return f"Moved: {updated['title']} — {self._format_datetime(starts_at)}."
 
         task_query = re.fullmatch(
             r"(?:what|show) (?:are )?(?:the )?tasks?(?: are)?(?: assigned to| for) (grant|billie|skye|all)\??",
@@ -133,6 +210,27 @@ class Hearthstate:
             self.store.add_task(title, now.isoformat(), None, False, sender, assignee=assignee)
             suffix = f" for {assignee_label(assignee)}" if assignee else ""
             return f"Added shared task{suffix}: {title}."
+
+        chore_match = re.fullmatch(
+            r"add (.+?) as a (daily|weekly|fortnightly|monthly) chore for (grant|billie|skye)(?: and (grant|billie|skye))+",
+            lowered,
+            flags=re.IGNORECASE,
+        )
+        if chore_match:
+            title = self._clean_name(chore_match.group(1))
+            participants = re.findall(r"grant|billie|skye", chore_match.group(0), flags=re.IGNORECASE)
+            chore_id = self.store.add_chore(title, chore_match.group(2), participants, sender)
+            return f"Added chore: {title}. Chore id {chore_id}."
+
+        chore_query = re.fullmatch(r"who(?:'s| is) next for (.+?)(?: chore)?\??", lowered, flags=re.IGNORECASE)
+        if chore_query:
+            title = self._clean_name(chore_query.group(1))
+            chores = [chore for chore in self.store.list_chores() if title in chore["title"].lower()]
+            if not chores:
+                return f"I couldn't find a chore matching {title}."
+            chore = chores[0]
+            next_person = chore["participants"][chore["next_index"] % len(chore["participants"])]
+            return f"Next for {chore['title']}: {assignee_label(next_person)}."
 
         event_match = re.fullmatch(
             r"add (.+?)\s+(?:on\s+)?(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
