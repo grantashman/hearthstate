@@ -73,6 +73,20 @@ COLES_PRICE_CATALOG = {
         "aliases": ("franks hot sauce", "frank's hot sauce", "franks redhot", "frank's redhot", "franks redhot original", "frank's redhot original"),
         "note": "Standard Frank's RedHot Original Cayenne Pepper Sauce selected: 148mL; Buffalo and Xtra Hot variants are not substituted. Price is location-sensitive.",
     },
+    "hotdogs": {
+        "price": 5.00,
+        "source": "The Deli Thin Frankfurts 500g",
+        "url": "https://www.coles.com.au/product/the-deli-thin-frankfurts-500g-3566100",
+        "aliases": ("hotdogs", "hot dogs", "frankfurts", "franks", "hot dog sausages"),
+        "note": "Plain The Deli Thin Frankfurts selected for generic hotdogs: 500g; check the pack label for allergens and dietary requirements.",
+    },
+    "hotdog buns": {
+        "price": 2.60,
+        "source": "Coles Simply Hot Dog Rolls 450g",
+        "url": "https://www.coles.com.au/product/coles-simply-hot-dog-rolls-450g-5696762",
+        "aliases": ("hotdog buns", "hot dog buns", "hot dog rolls", "hotdog rolls"),
+        "note": "Coles Simply Hot Dog Rolls selected: 450g, six rolls; price and availability are location-sensitive.",
+    },
     "tortillas": {
         "price": 3.75,
         "source": "Coles Street Tortilla Wraps 10 Pack 280g",

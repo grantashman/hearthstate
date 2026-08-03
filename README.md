@@ -174,10 +174,11 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 
 ## Remaining roadmap
 
-1. **Household identity and permissions** — **P1.1/P1.2 complete:** `HouseholdDirectory` models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household; owner invitations, one-time invitation acceptance, one-time sign-in tokens, and account-backed dashboard sessions are implemented. Email/SMS delivery, hosted provisioning, and explicit per-route role policy remain.
-2. **Audit history** — **complete:** append-only activity records, before/after snapshots, archive semantics, undo, and activity API.
-3. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
-4. **Scheduled backups** — **mostly complete:** the tested backup helper runs from a user-level timer with retention; a stale-age alert remains.
-5. **Conversation depth** — **expanded:** natural-language completion, assignment, grocery removal, undo, conflict queries, chores, and briefings are now supported; richer multi-action parsing remains separate.
+1. **Household identity and permissions** — **P1.1/P1.2 complete:** `HouseholdDirectory` models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household; owner invitations, one-time invitation acceptance, one-time sign-in tokens, AgentMail delivery, and account-backed dashboard sessions are implemented. Hosted provisioning and a public onboarding path remain.
+2. **Notification preferences and briefing delivery** — **P2.4 complete for the local deployment:** authenticated Notifications settings, per-member delivery preferences, atomic claims, bounded retries, and AgentMail email delivery are implemented. Photon/iMessage, push, and provider idempotency remain.
+3. **Data portability** — add owner-confirmed household export and deletion with documented retention behavior.
+4. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
+5. **Scheduled backups** — **mostly complete:** the tested backup helper runs from a user-level timer with retention; a stale-age alert remains.
+6. **Conversation depth** — **expanded:** natural-language completion, assignment, grocery removal, undo, conflict queries, chores, and briefings are now supported; richer multi-action parsing remains separate.
 
 The remaining roadmap items are intentionally separate from the tailnet boundary: tailnet membership controls network reachability, while the passwordless session identifies the household member inside the app.

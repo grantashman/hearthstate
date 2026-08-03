@@ -133,6 +133,15 @@ class GroceryBudgetStoreTests(unittest.TestCase):
         self.assertEqual(item["price_source"], "Frank's Redhot Original Sauce 148mL")
         self.assertEqual(item["price_url"], "https://www.coles.com.au/product/frank's-redhot-original-sauce-148ml-1957139")
 
+    def test_hotdogs_and_hotdog_buns_match_curated_products(self):
+        self.assertTrue(self.store.add_grocery_item("hotdogs", "grant"))
+        self.assertTrue(self.store.add_grocery_item("hotdog buns", "grant"))
+        items = {item["name"]: item for item in self.store.list_grocery_items()}
+        self.assertEqual(items["hotdogs"]["price"], 5.00)
+        self.assertEqual(items["hotdogs"]["price_source"], "The Deli Thin Frankfurts 500g")
+        self.assertEqual(items["hotdog buns"]["price"], 2.60)
+        self.assertEqual(items["hotdog buns"]["price_source"], "Coles Simply Hot Dog Rolls 450g")
+
     def test_manual_price_is_not_overwritten_by_continuous_matching(self):
         item = next(item for item in self.store.list_grocery_items() if item["name"] == "milk")
         manual_item_id = item["id"]

@@ -2,7 +2,7 @@
 
 > **Purpose:** Preserve the product decision, market research, pricing hypothesis, and implementation sequence so future sessions can resume without reconstructing the discussion.
 >
-> **Current status:** P1.1 and P1.2 are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, account-backed dashboard sessions, owner administration, and AgentMail sign-in/invitation delivery are covered by the test suite. P2.4 now has per-member briefing preferences, atomic delivery claims, bounded retry state, and AgentMail briefing delivery in production. Hosted provisioning, data portability, and pilot instrumentation remain before a commercial pilot.
+> **Current status:** P1.1 and P1.2 are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, account-backed dashboard sessions, owner administration, and AgentMail sign-in/invitation delivery are covered by the test suite. P2.4 now has per-member briefing preferences, an authenticated Notifications settings page, atomic delivery claims, bounded retry state, and AgentMail briefing delivery in production. Hosted provisioning, data portability, and pilot instrumentation remain before a commercial pilot.
 
 ## Executive decision
 
@@ -37,9 +37,9 @@ The repository contains a working local vertical slice:
 - Calendar/task conflict detection.
 - Dashboard signals for conflicts, recent activity, and chore rotation.
 - CI on Python 3.11 and 3.12.
-- 77 automated tests passing at the last release.
+- 115 automated tests passing at the current release.
 
-The current deployment is not yet a commercial SaaS product. It is a single-household, local SQLite application bound to the Tailscale interface. It lacks hosted multi-tenancy, account invitations, external calendar sync, commercial billing, native push infrastructure, and a public onboarding path.
+The current deployment is not yet a commercial SaaS product. It is a single-household, local SQLite application bound to the Tailscale interface. It has a local account-backed household boundary and email delivery, but still lacks hosted multi-tenancy, external calendar sync, commercial billing, native push infrastructure, and a public onboarding path.
 
 ## Market and competitor notes
 
@@ -140,7 +140,7 @@ The implementation sequence is:
 5. Paid pilot and retention iteration.
 6. Broader automation and Android.
 
-The next coding session should start with **Phase 1, task P1.1: define the hosted household/account boundary**.
+The next coding session should start with **Phase 1, task P1.3: introduce a hosted API boundary**, while keeping the local SQLite mode working for the pilot.
 
 ---
 
@@ -216,7 +216,7 @@ Use email magic links or an equivalent low-friction authentication method. Keep 
 
 **Done when:** A household owner can invite a second member, the invitee can join, and both can see shared records without seeing private records they do not own.
 
-**Status:** Complete for the local account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the SQLite claim, and bound to the active household; invitation acceptance is transactional, API sessions revalidate household membership, and the owner-only `/admin` section manages household settings, members, roles, and invitation revocation. The dashboard exposes delivery callback boundaries for email/SMS integration before hosted pilot use.
+**Status:** Complete for the local account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the SQLite claim, and bound to the active household; invitation acceptance is transactional, API sessions revalidate household membership, and the owner-only `/admin` section manages household settings, members, roles, and invitation revocation. AgentMail invitation/sign-in delivery is wired for the local deployment.
 
 ### P1.3 Introduce a hosted API boundary
 
@@ -299,7 +299,7 @@ The briefing scheduler now has:
 - AgentMail email delivery for the production `home` household.
 - Privacy-filtered content and concurrency coverage.
 
-**Status:** Complete for the local account-backed delivery boundary. Photon/iMessage and push adapters, hosted provisioning, user-facing preference controls, and an exactly-once provider contract remain future work.
+**Status:** Complete for the local account-backed delivery boundary, including the authenticated Notifications settings page. Photon/iMessage and push adapters, hosted provisioning, and an exactly-once provider contract remain future work.
 
 **Done when:** A briefing can be generated, claimed atomically, delivered once, and audited.
 
@@ -455,16 +455,13 @@ Reconsider positioning or scope if:
 
 Start here when development resumes:
 
-1. **Commercial boundary decision:** Choose hosted deployment target and authentication approach.
-2. **Household schema:** Add account/household/membership migrations without breaking the local SQLite test mode.
-3. **Authorization tests:** Prove cross-household isolation and private-record filtering.
-4. **Invitation flow:** Add owner invite and member acceptance.
-5. **Notification preferences:** **complete for the store/runner boundary**; add authenticated dashboard controls.
-6. **Briefing delivery record:** **complete for AgentMail**; add Photon/push adapters and provider idempotency when supported.
-7. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile.
-8. **PWA pass:** Make capture and grocery mode mobile-first.
-9. **Pilot instrumentation:** Emit the events listed in Phase 0.
-10. **Pilot recruitment:** Start interviews before beginning native iOS work.
+1. **Hosted API boundary:** Choose hosted deployment target and expose authenticated household-scoped API transport.
+2. **Data portability:** Add owner-confirmed household export and deletion with documented retention behavior.
+3. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals.
+4. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile.
+5. **PWA pass:** Make capture and grocery mode mobile-first.
+6. **Pilot recruitment:** Start interviews before beginning native iOS work.
+7. **Delivery adapters:** Add Photon/iMessage or push only after the email path has pilot evidence.
 
 # Decisions deliberately postponed
 
