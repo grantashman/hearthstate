@@ -6,6 +6,8 @@ const memberCount = document.querySelector('#memberCount');
 const invitationCount = document.querySelector('#invitationCount');
 const householdName = document.querySelector('#householdName');
 const themeToggle = document.querySelector('#themeToggle');
+const exportDataButton = document.querySelector('#exportDataButton');
+const deleteHouseholdButton = document.querySelector('#deleteHouseholdButton');
 
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -127,6 +129,56 @@ async function revokeInvitation(invitationId) {
   }
 }
 
+function exportFilename() {
+  const slug = householdName.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'household';
+  return `hearthstate-${slug}-export.json`;
+}
+
+async function exportHousehold() {
+  exportDataButton.disabled = true;
+  try {
+    const payload = await api('/api/admin/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = exportFilename();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showFeedback('Household export downloaded.');
+  } catch (error) {
+    showFeedback(error.message, 'error');
+  } finally {
+    exportDataButton.disabled = false;
+  }
+}
+
+async function deleteHousehold() {
+  const currentName = householdName.value.trim();
+  const confirmation = window.prompt(`This permanently deletes “${currentName}” and all of its records. Type the exact household name to continue.`);
+  if (confirmation === null) return;
+  if (confirmation.trim() !== currentName) {
+    showFeedback('The household name did not match. Nothing was deleted.', 'error');
+    return;
+  }
+  if (!window.confirm('There is no undo after deletion. Permanently delete this household?')) return;
+  deleteHouseholdButton.disabled = true;
+  try {
+    await api('/api/admin/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmation_name: confirmation.trim() }),
+    });
+    showFeedback('Household deleted. Redirecting to setup.');
+    window.setTimeout(() => { window.location.assign('/setup'); }, 500);
+  } catch (error) {
+    showFeedback(error.message, 'error');
+    deleteHouseholdButton.disabled = false;
+  }
+}
+
 document.querySelector('#settingsForm').addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
@@ -161,6 +213,9 @@ document.querySelector('#inviteForm').addEventListener('submit', async (event) =
     submit.disabled = false;
   }
 });
+
+exportDataButton.addEventListener('click', exportHousehold);
+deleteHouseholdButton.addEventListener('click', deleteHousehold);
 
 themeToggle.addEventListener('click', () => {
   const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';

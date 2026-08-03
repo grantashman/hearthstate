@@ -2,7 +2,7 @@
 
 > **Purpose:** Preserve the product decision, market research, pricing hypothesis, and implementation sequence so future sessions can resume without reconstructing the discussion.
 >
-> **Current status:** P1.1, P1.2, and the hosted P1.3 boundary are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, hosted Supabase Auth sessions, Vercel API transport, owner administration, and AgentMail sign-in/invitation delivery are covered by the test suite. P2.4 has per-member briefing preferences, an authenticated Notifications settings page, atomic delivery claims, bounded retry state, and AgentMail briefing delivery for the local deployment. Hosted provisioning is operator-assisted; data portability, pilot instrumentation, and public onboarding remain before a commercial pilot.
+> **Current status:** P1.1, P1.2, P1.3, and the hosted Photon capture boundary are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, hosted Supabase Auth sessions, Vercel API transport, owner administration, AgentMail sign-in/invitation delivery, and authenticated Photon-to-Hearthstate commands are covered by the test suite. P2.4 has per-member briefing preferences, an authenticated Notifications settings page, atomic delivery claims, bounded retry state, and AgentMail briefing delivery for the local deployment. The next release is P1.4 data portability, followed by P0.1 pilot instrumentation and P2.1/P2.2 confirmation-first capture. Hosted provisioning remains operator-assisted; public onboarding and pilot recruitment remain before a commercial pilot.
 
 ## Executive decision
 
@@ -138,7 +138,7 @@ The implementation sequence is:
 5. Paid pilot and retention iteration.
 6. Broader automation and Android.
 
-The next coding session should start with hosted provisioning/onboarding, data portability, and pilot instrumentation. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
+The next coding sequence is **P1.4 data portability → P0.1 pilot instrumentation → P2.1/P2.2 universal Inbox and confirmation-first suggestions**. Each phase must ship with behavior tests, privacy/authorization probes, hosted deployment verification, and an explicit gate before the next phase begins. Hosted provisioning/onboarding remains an operational prerequisite for pilot households rather than a reason to delay the trust boundary. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
 
 ---
 
@@ -229,6 +229,8 @@ Keep the hosted planner logic separate from HTTP transport so the API boundary r
 Export household records and activity history in a documented JSON format. Add deletion that requires explicit owner confirmation and preserves no recoverable personal data after the retention window.
 
 **Done when:** A test creates a household, exports it, deletes it, and confirms the account cannot read the deleted records.
+
+**Release slice:** Owner-only `POST /api/admin/export` returns a documented JSON export without invitation bearer hashes or bridge secrets. Owner-only `POST /api/admin/delete` requires the exact current household name and deletes the household transactionally through a security-definer function; members receive `403`, anonymous callers receive `401`, and the deleted household is no longer readable. The Administration page exposes both actions with explicit confirmation and no automatic production-data test fixture.
 
 ### P1.5 Add notification preferences and consent state
 
@@ -455,10 +457,10 @@ Reconsider positioning or scope if:
 
 Start here when development resumes:
 
-1. **Hosted API boundary:** Choose hosted deployment target and expose authenticated household-scoped API transport.
-2. **Data portability:** Add owner-confirmed household export and deletion with documented retention behavior.
-3. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals.
-4. **Capture contract:** Define one Inbox payload shared by web, email, and mobile.
+1. **Data portability:** Ship owner-confirmed household export and deletion with documented retention behavior. **Current release.**
+2. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals. **Next gate.**
+3. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile.
+4. **Confirmation-first suggestions:** Let owners/members accept, edit, reject, or leave captures unresolved without silent mutations.
 5. **PWA pass:** Make capture and grocery mode mobile-first.
 6. **Pilot recruitment:** Start interviews before beginning native iOS work.
 7. **Delivery adapters:** Add push only after the email path has pilot evidence.
