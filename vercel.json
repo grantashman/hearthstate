@@ -1,6 +1,31 @@
 {
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index.py?route=/:path*" },
-    { "source": "/:path*", "destination": "/api/index.py?route=/:path*" }
+    { "source": "/", "destination": "/api/index.py?route=/" },
+    { "source": "/login", "destination": "/api/index.py?route=/login" },
+    { "source": "/setup", "destination": "/api/index.py?route=/setup" },
+    { "source": "/invite", "destination": "/api/index.py?route=/invite" },
+    { "source": "/index.html", "destination": "/api/index.py?route=/index.html" },
+    { "source": "/calendar", "destination": "/api/index.py?route=/calendar" },
+    { "source": "/tasks", "destination": "/api/index.py?route=/tasks" },
+    { "source": "/meals", "destination": "/api/index.py?route=/meals" },
+    { "source": "/groceries", "destination": "/api/index.py?route=/groceries" },
+    { "source": "/recipes", "destination": "/api/index.py?route=/recipes" },
+    { "source": "/admin", "destination": "/api/index.py?route=/admin" },
+    { "source": "/notifications", "destination": "/api/index.py?route=/notifications" },
+    { "source": "/login.js", "destination": "/api/index.py?route=/login.js" },
+    { "source": "/invite.js", "destination": "/api/index.py?route=/invite.js" },
+    { "source": "/nav.js", "destination": "/api/index.py?route=/nav.js" },
+    { "source": "/app.js", "destination": "/api/index.py?route=/app.js" },
+    { "source": "/section.js", "destination": "/api/index.py?route=/section.js" },
+    { "source": "/meals.js", "destination": "/api/index.py?route=/meals.js" },
+    { "source": "/groceries.js", "destination": "/api/index.py?route=/groceries.js" },
+    { "source": "/recipes.js", "destination": "/api/index.py?route=/recipes.js" },
+    { "source": "/admin.js", "destination": "/api/index.py?route=/admin.js" },
+    { "source": "/notifications.js", "destination": "/api/index.py?route=/notifications.js" },
+    { "source": "/styles.css", "destination": "/api/index.py?route=/styles.css" },
+    { "source": "/favicon.svg", "destination": "/api/index.py?route=/favicon.svg" },
+    { "source": "/recipe-images/:path*", "destination": "/api/index.py?route=/recipe-images/:path*" },
+    { "source": "/user-images/:path*", "destination": "/api/index.py?route=/user-images/:path*" }
   ]
 }
