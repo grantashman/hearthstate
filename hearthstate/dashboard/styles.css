@@ -772,6 +772,8 @@ textarea:focus-visible {
 .primary-button:disabled { cursor: wait; opacity: .6; transform: none; }
 .login-note { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 14px 0 0; color: var(--ink-faint); font-size: 10px; text-align: center; }
 .login-note-dot { width: 6px; height: 6px; background: var(--evergreen); border-radius: 50%; box-shadow: 0 0 0 3px var(--evergreen-wash); }
+.login-method-toggle { display: block; margin: 18px auto 0; padding: 0; color: var(--evergreen-deep); border: 0; background: transparent; font: inherit; font-size: 11px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.login-method-toggle:hover, .login-method-toggle:focus-visible { color: var(--ink); outline: 0; }
 .login-feedback { position: relative; z-index: 1; max-width: 560px; margin: 16px auto 0; padding: 11px 13px; color: var(--ember-deep); border: 1px solid #e5b2a6; border-radius: 10px; background: var(--ember-wash); font-size: 11px; line-height: 1.45; text-align: center; }
 .login-footer { margin: 18px 0 0; color: var(--ink-faint); font-size: 10px; letter-spacing: .08em; text-align: center; text-transform: lowercase; }
 html[data-theme="dark"] .login-card { background: rgba(40, 35, 33, .92); }

@@ -75,7 +75,7 @@ The owner-only `/admin` section manages the household name, member roles, member
 
 ## Hosted boundary
 
-The hosted application is available under `api/index.py` for Vercel and uses the dedicated Supabase project described in [`docs/hosted-deployment.md`](docs/hosted-deployment.md). Supabase is the canonical hosted database: email OTP authentication, an HTTP-only session cookie, household membership RLS, and the full branded dashboard run through Vercel. Local SQLite remains only as a compatibility and test path; it is not used by the hosted runtime.
+The hosted application is available under `api/index.py` for Vercel and uses the dedicated Supabase project described in [`docs/hosted-deployment.md`](docs/hosted-deployment.md). Supabase is the canonical hosted database: email OTP authentication, a temporary password fallback while email is offline, an HTTP-only session cookie, household membership RLS, and the full branded dashboard run through Vercel. Local SQLite remains only as a compatibility and test path; it is not used by the hosted runtime.
 
 Production releases are GitHub-driven through [`.github/workflows/production.yml`](.github/workflows/production.yml): pushes to `main` apply Supabase migrations and deploy Vercel in sequence. The required GitHub/Vercel/Supabase secrets and one-time integration steps are documented in [`docs/hosted-deployment.md`](docs/hosted-deployment.md).
 

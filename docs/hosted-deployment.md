@@ -7,7 +7,11 @@ Hearthstate now has a hosted P1.3 boundary:
 - Root hosted page: the existing full branded dashboard under `hearthstate/dashboard/`.
 - API routes are rewritten through `vercel.json`.
 
-Supabase is the canonical hosted data store. SQLite remains only as a local compatibility and test path; the Vercel runtime does not read the server's SQLite database. The hosted app uses the existing branded login and dashboard pages, Supabase email OTP authentication, an HTTP-only session cookie, household membership RLS, and the full dashboard routes for tasks, calendar, meals, groceries, recipes, Inbox, chores, preferences, administration, and invitations.
+Supabase is the canonical hosted data store. SQLite remains only as a local compatibility and test path; the Vercel runtime does not read the server's SQLite database. The hosted app uses the existing branded login and dashboard pages, Supabase email OTP authentication plus a temporary password fallback, an HTTP-only session cookie, household membership RLS, and the full dashboard routes for tasks, calendar, meals, groceries, recipes, Inbox, chores, preferences, administration, and invitations.
+
+## Temporary password fallback
+
+The hosted login includes a temporary password option while email delivery is unavailable. It calls Supabase Auth's standard password token endpoint and then uses the same `/api/auth/session` boundary as email OTP, so it does not bypass Auth, memberships, or RLS. Use the email address of the existing Supabase Auth user and its password. This UI is intentionally marked for removal once email delivery is restored; do not use a shared or hard-coded application password.
 
 ## Environment
 

@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -6,6 +7,14 @@ from api.index import _rows, _uuid, handler
 
 
 class HostedApiContractTests(unittest.TestCase):
+    def test_branded_login_exposes_temporary_password_fallback(self):
+        dashboard = Path(__file__).parents[1] / "hearthstate" / "dashboard"
+        login_html = (dashboard / "login.html").read_text()
+        login_js = (dashboard / "login.js").read_text()
+        self.assertIn('id="passwordPanel"', login_html)
+        self.assertIn('/auth/v1/token?grant_type=password', login_js)
+        self.assertIn('establishHostedSession(session.access_token)', login_js)
+
     def test_rewritten_vercel_route_is_normalized(self):
         request = object.__new__(handler)
         request.path = "/api/index.py?route=/dashboard"

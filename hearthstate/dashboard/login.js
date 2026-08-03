@@ -2,11 +2,16 @@ const feedback = document.querySelector('#loginFeedback');
 const legacyChooser = document.querySelector('#legacyChooser');
 const magicLinkPanel = document.querySelector('#magicLinkPanel');
 const verificationPanel = document.querySelector('#verificationPanel');
+const passwordPanel = document.querySelector('#passwordPanel');
+const passwordToggle = document.querySelector('#passwordToggle');
 const loginTitle = document.querySelector('#loginTitle');
 const loginDescription = document.querySelector('.login-copy p:last-child');
 const emailInput = document.querySelector('#magicLinkEmail');
 const codeInput = document.querySelector('#magicLinkCode');
+const passwordEmailInput = document.querySelector('#passwordEmail');
+const passwordInput = document.querySelector('#passwordInput');
 let hostedConfig = null;
+let passwordMode = false;
 
 function showFeedback(message) {
   feedback.textContent = message;
@@ -115,6 +120,40 @@ verificationPanel.addEventListener('submit', async (event) => {
   }
 });
 
+passwordPanel.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const submitButton = passwordPanel.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  setButtonLabel(passwordPanel, 'Signing in…');
+  try {
+    const session = await supabaseAuth('/auth/v1/token?grant_type=password', {
+      email: passwordEmailInput.value.trim(),
+      password: passwordInput.value,
+    });
+    if (!session.access_token) throw new Error('Supabase did not return a session.');
+    await establishHostedSession(session.access_token);
+  } catch (error) {
+    showFeedback(error.message);
+    submitButton.disabled = false;
+    setButtonLabel(passwordPanel, 'Sign in');
+  }
+});
+
+passwordToggle.addEventListener('click', () => {
+  passwordMode = !passwordMode;
+  magicLinkPanel.classList.toggle('is-hidden', passwordMode);
+  verificationPanel.classList.add('is-hidden');
+  passwordPanel.classList.toggle('is-hidden', !passwordMode);
+  passwordToggle.textContent = passwordMode ? 'Use email code instead' : 'Use temporary password sign-in';
+  feedback.classList.add('is-hidden');
+  if (passwordMode) {
+    passwordEmailInput.value = emailInput.value.trim();
+    passwordEmailInput.focus();
+  } else {
+    emailInput.focus();
+  }
+});
+
 (async () => {
   const token = new URLSearchParams(window.location.search).get('token');
   try {
@@ -123,6 +162,7 @@ verificationPanel.addEventListener('submit', async (event) => {
     if (hostedConfig.hosted) {
       legacyChooser.classList.add('is-hidden');
       magicLinkPanel.classList.remove('is-hidden');
+      passwordToggle.classList.remove('is-hidden');
       loginTitle.textContent = 'Sign in to your household';
       loginDescription.textContent = 'Use your email and we will send a secure, one-time code to your inbox.';
       if (token) {
