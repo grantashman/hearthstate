@@ -14,16 +14,13 @@ concurrency:
 
 jobs:
   deploy:
-    name: Migrate Supabase and deploy Vercel
+    name: Apply Supabase migrations
     runs-on: ubuntu-latest
     environment: production
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_ID: zcfzdqtjglelrbyhcvcu
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     steps:
       - name: Check out repository
@@ -58,28 +55,5 @@ jobs:
           supabase link --project-ref "$SUPABASE_PROJECT_ID"
           supabase db push
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install Vercel CLI
-        run: npm install --global vercel@58.4.4
-
-      - name: Link the Vercel project for CI
-        run: |
-          node -e 'const fs = require("fs"); fs.mkdirSync(".vercel", { recursive: true }); fs.writeFileSync(".vercel/project.json", JSON.stringify({ orgId: process.env.VERCEL_ORG_ID, projectId: process.env.VERCEL_PROJECT_ID }));'
-
-      - name: Pull Vercel production environment
-        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-
-      - name: Build Vercel deployment
-        run: vercel build --prod --token="$VERCEL_TOKEN"
-
-      - name: Deploy Vercel build to production
-        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
-
-      - name: Smoke test production
-        run: |
-          curl --fail --silent --show-error https://hearthstate.vercel.app/api/health
-          curl --fail --silent --show-error https://hearthstate.vercel.app/ >/dev/null
+      - name: Confirm Vercel deployment ownership
+        run: echo "Vercel deploys main through the connected Git integration."

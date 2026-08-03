@@ -40,18 +40,15 @@ The hosted migration is now the application path for Vercel. Add the three varia
 
 ## GitHub-driven production
 
-The repository includes [`.github/workflows/production.yml`](../.github/workflows/production.yml). Every push to `main` deploys the Vercel build to `https://hearthstate.vercel.app`; when `supabase/migrations/` changes, the workflow applies those committed migrations first.
+The repository includes [`.github/workflows/production.yml`](../.github/workflows/production.yml). Vercel deploys every push to `main` through its connected Git integration; when `supabase/migrations/` changes, GitHub Actions applies those committed migrations.
 
 Add these GitHub Actions secrets in the repository's `production` environment:
 
 ```text
 SUPABASE_ACCESS_TOKEN
 SUPABASE_DB_PASSWORD
-VERCEL_TOKEN
-VERCEL_ORG_ID
-VERCEL_PROJECT_ID
 ```
 
-`SUPABASE_PROJECT_ID` is already pinned to `zcfzdqtjglelrbyhcvcu` in the workflow. `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` must come from the connected Vercel project settings; they are not available through the current Vercel connector. The Vercel project must also contain `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` environment variables for Production.
+`SUPABASE_PROJECT_ID` is already pinned to `zcfzdqtjglelrbyhcvcu` in the workflow. The Vercel project must have `grantashman/hearthstate` connected with `main` as its Production Branch. It must also contain `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` environment variables for Production.
 
-If using native integrations instead of the included workflow, connect `grantashman/hearthstate` in Vercel Project Settings → Git with `main` as the Production Branch, and connect the same repository in Supabase Project Settings → Integrations → GitHub Integration with working directory `.` and production deployment from `main`. Use one deployment mechanism, not both, to avoid duplicate production deploys.
+If using the native Supabase GitHub Integration as well, configure it for working directory `.` and production deployment from `main`. Keep Vercel deployment in the Vercel Git integration and Supabase migrations in one GitHub/Supabase path to avoid duplicate deployments.
