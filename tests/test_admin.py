@@ -198,6 +198,27 @@ class AdminHTTPTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 302)
         self.assertEqual(error.exception.headers["Location"], "/")
 
+    def test_notifications_page_requires_authentication_and_serves_settings_contract(self):
+        class RejectRedirects(HTTPRedirectHandler):
+            def redirect_request(self, request, fp, code, msg, headers, newurl):
+                return None
+
+        request = Request(self.base_url + "/notifications")
+        with self.assertRaises(HTTPError) as error:
+            build_opener(RejectRedirects).open(request, timeout=2)
+        self.assertEqual(error.exception.code, 302)
+        self.assertEqual(error.exception.headers["Location"], "/login")
+
+        request = Request(self.base_url + "/notifications", headers={"Cookie": self.member_cookie})
+        with urlopen(request, timeout=2) as response:
+            page = response.read().decode()
+        self.assertEqual(response.status, 200)
+        self.assertIn("Notification settings", page)
+        self.assertIn("/notifications.js?v=hearthstate-notifications-1", page)
+        with urlopen(Request(self.base_url + "/notifications.js"), timeout=2) as response:
+            script = response.read().decode()
+        self.assertIn("/api/notifications/preferences", script)
+
 
 if __name__ == "__main__":
     unittest.main()

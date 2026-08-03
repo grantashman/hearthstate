@@ -427,7 +427,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/" and not self.server.session_user(self.headers):
             self._send_asset("login.html", "text/html; charset=utf-8")
             return
-        protected_pages = {"/index.html", "/admin", "/admin/", "/calendar", "/calendar/", "/tasks", "/tasks/", "/meals", "/meals/", "/groceries", "/groceries/", "/recipes", "/recipes/"}
+        protected_pages = {"/index.html", "/admin", "/admin/", "/notifications", "/notifications/", "/calendar", "/calendar/", "/tasks", "/tasks/", "/meals", "/meals/", "/groceries", "/groceries/", "/recipes", "/recipes/"}
         if parsed.path in {"/admin", "/admin/"}:
             actor = self.server.session_user(self.headers)
             if actor is None:
@@ -581,6 +581,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             "/admin": ("admin.html", "text/html; charset=utf-8"),
             "/admin/": ("admin.html", "text/html; charset=utf-8"),
             "/admin.js": ("admin.js", "text/javascript; charset=utf-8"),
+            "/notifications": ("notifications.html", "text/html; charset=utf-8"),
+            "/notifications/": ("notifications.html", "text/html; charset=utf-8"),
+            "/notifications.js": ("notifications.js", "text/javascript; charset=utf-8"),
             "/": ("index.html", "text/html; charset=utf-8"),
             "/index.html": ("index.html", "text/html; charset=utf-8"),
             "/calendar": ("calendar.html", "text/html; charset=utf-8"),
