@@ -73,6 +73,10 @@ P1.2 adds account-backed invitation and sign-in routes when the dashboard is lau
 
 The owner-only `/admin` section manages the household name, member roles, member removal, invitation creation, and pending-invitation revocation. Its data boundary is `/api/admin`; member and invitation listings never return raw invitation credentials. Owners cannot demote or remove the last household owner. Compatibility-mode households do not expose the administration section.
 
+## Hosted boundary
+
+The first hosted API boundary is available under `api/index.py` for Vercel and uses the dedicated Supabase project described in [`docs/hosted-deployment.md`](docs/hosted-deployment.md). It uses Supabase email OTP authentication and RLS-backed household membership for hosted Inbox, task, calendar, meal, and grocery records. Local SQLite remains the tested compatibility and Photon path while the remaining dashboard parity and data-portability adapters are migrated incrementally.
+
 Example account-backed launch:
 
 ```bash

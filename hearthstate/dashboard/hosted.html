@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hearthstate</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #f4f0e8; color: #26231f; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top right, #fffaf0, #f4f0e8 48%); }
+    main { width: min(960px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 72px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 40px; }
+    h1, h2, p { margin-top: 0; } h1 { font-size: clamp(2rem, 5vw, 3.8rem); letter-spacing: -.06em; margin-bottom: 8px; }
+    h2 { font-size: 1.15rem; letter-spacing: -.02em; } p { color: #6c655c; line-height: 1.55; }
+    .eyebrow { color: #a24b2a; text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; font-weight: 800; }
+    .card { background: rgba(255,255,255,.78); border: 1px solid #e4dbce; border-radius: 22px; box-shadow: 0 18px 60px rgba(74, 54, 28, .08); padding: 24px; margin-bottom: 18px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+    label { display: block; color: #6c655c; font-size: .84rem; font-weight: 700; margin-bottom: 7px; }
+    input, select, button { box-sizing: border-box; font: inherit; border-radius: 12px; border: 1px solid #d8cbbb; padding: 11px 13px; }
+    input, select { width: 100%; background: #fffdf9; color: #26231f; } button { cursor: pointer; background: #a24b2a; border-color: #a24b2a; color: white; font-weight: 750; } button.secondary { background: transparent; color: #7b3b24; }
+    form { display: grid; gap: 12px; } .row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; } .row > * { flex: 1 1 180px; }
+    .muted { color: #8b8175; font-size: .88rem; } .error { color: #a83232; min-height: 1.3em; } .success { color: #39704d; min-height: 1.3em; }
+    .hidden { display: none !important; } ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; } li { padding: 12px 14px; border-radius: 12px; background: #faf6ef; border: 1px solid #eee5d8; }
+    .stat { font-size: 2rem; font-weight: 800; letter-spacing: -.05em; } .stat-label { color: #776f65; font-size: .82rem; }
+    @media (max-width: 640px) { main { padding-top: 28px; } header { display: block; } header .muted { margin-top: 12px; } .card { padding: 18px; border-radius: 17px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><div class="eyebrow">Household operations</div><h1>Hearthstate</h1><p>Notice what matters, decide who owns it, and get it done.</p></div>
+    <div id="identity" class="muted"></div>
+  </header>
+
+  <section id="auth" class="card">
+    <h2>Sign in without a password</h2>
+    <p>We’ll email a short verification code. Your hosted household data stays behind Supabase Auth and membership policies.</p>
+    <form id="request-form"><label for="email">Email address</label><div class="row"><input id="email" type="email" autocomplete="email" required placeholder="you@example.com"><button>Send code</button></div></form>
+    <form id="verify-form" class="hidden"><label for="code">Verification code</label><div class="row"><input id="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="123456"><button>Verify and continue</button></div></form>
+    <div id="auth-message" class="error"></div>
+  </section>
+
+  <section id="setup" class="card hidden"><h2>Create your household</h2><p>This creates the first owner membership. You can invite other members from the hosted administration flow as it is added.</p><form id="household-form"><label for="household-name">Household name</label><div class="row"><input id="household-name" required maxlength="120" placeholder="The Ashman Home"><button>Create household</button></div></form><div id="setup-message" class="error"></div></section>
+
+  <section id="app" class="hidden">
+    <div class="card"><div class="row"><div><label for="household-select">Active household</label><select id="household-select"></select></div><div><button id="refresh" class="secondary">Refresh</button><button id="sign-out" class="secondary">Sign out</button></div></div></div>
+    <div id="stats" class="grid"></div>
+    <div class="grid">
+      <section class="card"><h2>What needs attention?</h2><ul id="attention"></ul></section>
+      <section class="card"><h2>Quick capture</h2><form id="capture-form"><label for="capture">Capture a thought, request, or reminder</label><input id="capture" required maxlength="4000" placeholder="Buy oat milk for Saturday"><label><input id="private" type="checkbox" style="width:auto"> Keep this private</label><button>Save to Inbox</button></form><div id="capture-message" class="success"></div></section>
+    </div>
+    <div class="grid"><section class="card"><h2>Groceries</h2><ul id="groceries"></ul></section><section class="card"><h2>Inbox</h2><ul id="inbox"></ul></section></div>
+  </section>
+</main>
+<script>
+(() => {
+  const tokenKey = 'hearthstate.access_token';
+  const householdKey = 'hearthstate.household_id';
+  const state = { config: null, token: localStorage.getItem(tokenKey), me: null, householdId: localStorage.getItem(householdKey) };
+  const $ = (id) => document.getElementById(id);
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  const show = (id, visible) => $(id).classList.toggle('hidden', !visible);
+  const setMessage = (id, text, error = true) => { $(id).textContent = text; $(id).className = error ? 'error' : 'success'; };
+  async function hostedConfig() { const response = await fetch('/api/auth/config'); if (!response.ok) throw new Error('Hosted configuration is unavailable.'); return response.json(); }
+  async function authRequest(path, payload) { const response = await fetch(`${state.config.supabase_url}${path}`, { method: 'POST', headers: { apikey: state.config.supabase_publishable_key, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.msg || body.message || body.error_description || 'Authentication request failed.'); return body; }
+  async function api(path, options = {}) { const headers = { ...(options.headers || {}), Authorization: `Bearer ${state.token}` }; if (state.householdId) headers['X-Hearthstate-Household'] = state.householdId; const response = await fetch(path, { ...options, headers }); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error || 'Request failed.'); return body; }
+  function setToken(token) { state.token = token; if (token) localStorage.setItem(tokenKey, token); else localStorage.removeItem(tokenKey); }
+  async function loadMe() { state.me = await api('/api/me'); if (!state.householdId || !state.me.households.some((household) => household.id === state.householdId)) state.householdId = state.me.households[0]?.id || null; if (state.householdId) localStorage.setItem(householdKey, state.householdId); }
+  function renderHouseholds() { $('household-select').innerHTML = state.me.households.map((household) => `<option value="${escapeHtml(household.id)}">${escapeHtml(household.name)} · ${escapeHtml(household.role)}</option>`).join(''); $('household-select').value = state.householdId || ''; }
+  function renderList(id, items, empty, formatter) { $(id).innerHTML = items.length ? items.map(formatter).join('') : `<li class="muted">${empty}</li>`; }
+  async function loadDashboard() { const snapshot = await api('/api/dashboard'); $('stats').innerHTML = [['Attention', snapshot.counts.attention], ['Groceries', snapshot.counts.groceries], ['Inbox', snapshot.counts.inbox], ['Today', snapshot.counts.today_events]].map(([label, value]) => `<div class="card"><div class="stat">${escapeHtml(value)}</div><div class="stat-label">${label}</div></div>`).join(''); renderList('attention', snapshot.attention_items, 'Nothing urgent right now.', (item) => `<li><strong>${escapeHtml(item.title)}</strong><br><span class="muted">${escapeHtml(item.urgency)}${item.due_at ? ` · ${escapeHtml(item.due_at)}` : ''}</span></li>`); renderList('groceries', snapshot.groceries, 'Your list is clear.', (item) => `<li><strong>${escapeHtml(item.name)}</strong><br><span class="muted">${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}</span></li>`); renderList('inbox', snapshot.inbox, 'No open captures.', (item) => `<li><strong>${escapeHtml(item.original_text)}</strong><br><span class="muted">${escapeHtml(item.source)} · ${escapeHtml(item.created_at)}</span></li>`); }
+  async function enterApp() { show('auth', false); show('setup', !state.me.households.length); show('app', Boolean(state.me.households.length)); $('identity').textContent = state.me.user.email || state.me.user.id; if (state.me.households.length) { renderHouseholds(); await loadDashboard(); } }
+  $('request-form').addEventListener('submit', async (event) => { event.preventDefault(); try { await authRequest('/auth/v1/otp', { email: $('email').value.trim(), create_user: true }); $('verify-form').classList.remove('hidden'); setMessage('auth-message', 'Code sent. Check your email.', false); } catch (error) { setMessage('auth-message', error.message); } });
+  $('verify-form').addEventListener('submit', async (event) => { event.preventDefault(); try { const session = await authRequest('/auth/v1/verify', { email: $('email').value.trim(), token: $('code').value.trim(), type: 'email' }); setToken(session.access_token); await loadMe(); await enterApp(); } catch (error) { setMessage('auth-message', error.message); } });
+  $('household-form').addEventListener('submit', async (event) => { event.preventDefault(); try { await api('/api/households', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: $('household-name').value.trim() }) }); await loadMe(); await enterApp(); } catch (error) { setMessage('setup-message', error.message); } });
+  $('capture-form').addEventListener('submit', async (event) => { event.preventDefault(); try { await api('/api/inbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ original_text: $('capture').value.trim(), private: $('private').checked, source: 'hosted-dashboard' }) }); $('capture').value = ''; $('private').checked = false; setMessage('capture-message', 'Saved to Inbox.', false); await loadDashboard(); } catch (error) { setMessage('capture-message', error.message); } });
+  $('household-select').addEventListener('change', async () => { state.householdId = $('household-select').value; localStorage.setItem(householdKey, state.householdId); await loadDashboard(); });
+  $('refresh').addEventListener('click', () => loadDashboard().catch((error) => setMessage('capture-message', error.message)));
+  $('sign-out').addEventListener('click', () => { setToken(null); localStorage.removeItem(householdKey); location.reload(); });
+  (async () => { try { state.config = await hostedConfig(); if (!state.token) return; await loadMe(); await enterApp(); } catch (error) { setToken(null); setMessage('auth-message', error.message); } })();
+})();
+</script>
+</body>
+</html>
