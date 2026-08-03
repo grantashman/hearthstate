@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from api.index import _rows, _uuid, handler
@@ -9,6 +10,16 @@ class HostedApiContractTests(unittest.TestCase):
         request = object.__new__(handler)
         request.path = "/api/index.py?route=/dashboard"
         self.assertEqual(request._route(), "/dashboard")
+
+    def test_api_prefix_is_removed_from_direct_function_routes(self):
+        request = object.__new__(handler)
+        request.path = "/api/index.py?route=/api/dashboard"
+        self.assertEqual(request._route(), "/dashboard")
+
+    def test_hosted_session_cookie_is_used_when_authorization_header_is_absent(self):
+        request = object.__new__(handler)
+        request.headers = SimpleNamespace(get=lambda key, default="": "HearthstateHostedSession=session-token" if key == "Cookie" else default)
+        self.assertEqual(request._token(), "session-token")
 
     def test_invalid_household_context_is_rejected(self):
         with self.assertRaises(ValueError):

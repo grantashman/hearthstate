@@ -266,7 +266,7 @@ function renderInbox(items) {
   els.inboxList.classList.toggle('is-hidden', items.length === 0);
   els.inboxEmpty.classList.toggle('is-hidden', items.length !== 0);
   els.inboxList.querySelectorAll('[data-inbox-type]').forEach((button) => {
-    button.addEventListener('click', () => openInboxConversion(items.find((item) => item.id === Number(button.dataset.inboxId)), button.dataset.inboxType));
+    button.addEventListener('click', () => openInboxConversion(items.find((item) => String(item.id) === String(button.dataset.inboxId)), button.dataset.inboxType));
   });
   els.inboxList.querySelectorAll('.inbox-archive').forEach((button) => {
     button.addEventListener('click', () => archiveInboxItem(button.dataset.inboxId));

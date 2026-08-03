@@ -21,7 +21,10 @@
           <p id="inviteSummary">Checking your invitation…</p>
         </div>
         <form class="invite-form" id="inviteForm">
+          <label class="form-field" for="inviteEmail"><span>Invited email</span><input id="inviteEmail" name="email" type="email" autocomplete="email" readonly /></label>
           <label class="form-field" for="displayName"><span>Your name</span><input id="displayName" name="displayName" type="text" autocomplete="name" required maxlength="200" placeholder="Billie Ashman" /></label>
+          <div class="form-field is-hidden" id="inviteCodeWrap"><span>Verification code</span><input id="inviteCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" /></div>
+          <button class="quiet-action" type="button" id="sendInviteCode">Send sign-in code</button>
           <button class="primary-action" type="submit">Accept invitation</button>
         </form>
         <div class="login-feedback is-hidden" id="inviteFeedback" role="alert"></div>

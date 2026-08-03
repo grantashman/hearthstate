@@ -57,7 +57,7 @@ function resetMealForm() {
 }
 
 function startEditMeal(mealId) {
-  const meal = currentMeals.find((item) => item.id === Number(mealId));
+  const meal = currentMeals.find((item) => String(item.id) === String(mealId));
   if (!meal) return;
   els.id.value = meal.id;
   els.date.value = meal.meal_date;
@@ -72,7 +72,7 @@ function startEditMeal(mealId) {
 }
 
 async function deleteMeal(mealId) {
-  const meal = currentMeals.find((item) => item.id === Number(mealId));
+  const meal = currentMeals.find((item) => String(item.id) === String(mealId));
   if (!meal || !window.confirm(`Delete “${meal.title}”? This cannot be undone.`)) return;
   try {
     const response = await fetch(`/api/meals/${meal.id}/delete`, {
@@ -82,7 +82,7 @@ async function deleteMeal(mealId) {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Could not delete that meal.');
-    if (Number(els.id.value) === meal.id) resetMealForm();
+    if (String(els.id.value) === String(meal.id)) resetMealForm();
     els.feedback.textContent = 'Meal deleted.';
     els.feedback.classList.remove('is-hidden');
     await loadMeals();
@@ -143,7 +143,7 @@ async function syncGroceries(button) {
     const response = await fetch('/api/meals/sync-groceries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ meal_id: Number(button.dataset.mealId), created_by: 'grant' }),
+      body: JSON.stringify({ meal_id: button.dataset.mealId, created_by: 'grant' }),
     });
     const payload = await response.json();
     button.textContent = payload.added.length ? 'added ✓' : 'already there';
@@ -165,7 +165,7 @@ els.form.addEventListener('submit', async (event) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...(id ? { id: Number(id) } : {}),
+        ...(id ? { id } : {}),
         meal_date: data.get('meal_date'), meal_type: data.get('meal_type'), title: data.get('title'),
         cook: data.get('cook'), ingredients, created_by: 'grant',
       }),

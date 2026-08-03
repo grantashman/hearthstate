@@ -67,7 +67,7 @@ async function load() {
   finally { els.refresh.classList.remove('is-loading'); }
 }
 async function saveManualPrice(event) {
-  event.preventDefault(); const form = event.currentTarget; const response = await fetch('/api/groceries/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: Number(form.dataset.itemId), price: Number(new FormData(form).get('price')), source: 'Manual entry', confidence: 'manual', note: 'Entered by household' }) });
+  event.preventDefault(); const form = event.currentTarget; const response = await fetch('/api/groceries/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, price: Number(new FormData(form).get('price')), source: 'Manual entry', confidence: 'manual', note: 'Entered by household' }) });
   if (!response.ok) { els.error.textContent = 'Could not save that price.'; els.error.classList.remove('is-hidden'); return; } await load();
 }
 async function saveQuantity(event) {
@@ -79,7 +79,7 @@ async function saveQuantity(event) {
     els.error.classList.remove('is-hidden');
     return;
   }
-  const response = await fetch('/api/groceries/item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: Number(form.dataset.itemId), quantity }) });
+  const response = await fetch('/api/groceries/item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, quantity }) });
   if (!response.ok) { els.error.textContent = 'Could not update that quantity.'; els.error.classList.remove('is-hidden'); return; }
   await load();
 }

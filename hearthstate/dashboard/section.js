@@ -85,14 +85,14 @@ function renderTasks(items) {
     </article>
   `).join('');
   els.list.querySelectorAll('.edit-record').forEach((button) => {
-    button.addEventListener('click', () => openEditor(items.find((item) => item.id === Number(button.dataset.recordId))));
+    button.addEventListener('click', () => openEditor(items.find((item) => String(item.id) === String(button.dataset.recordId))));
   });
   els.list.querySelectorAll('.complete-record').forEach((button) => {
     button.addEventListener('click', () => mutateTask(button.dataset.recordId, 'complete'));
   });
   els.list.querySelectorAll('.delete-record').forEach((button) => {
     button.addEventListener('click', () => {
-      const task = items.find((item) => item.id === Number(button.dataset.recordId));
+      const task = items.find((item) => String(item.id) === String(button.dataset.recordId));
       if (task && window.confirm(`Delete “${task.title}”? This cannot be undone.`)) mutateTask(task.id, 'delete');
     });
   });
@@ -160,14 +160,14 @@ function closeEditor() {
 async function saveRecord(event) {
   event.preventDefault();
   const body = isCalendar ? {
-    id: els.recordId.value ? Number(els.recordId.value) : undefined,
+    id: els.recordId.value ? els.recordId.value : undefined,
     title: els.recordTitle.value.trim(),
     starts_at: els.recordStartsAt.value,
     person: els.recordPerson.value.trim(),
     assignee: els.recordAssignee.value || null,
     created_by: 'you',
   } : {
-    id: els.recordId.value ? Number(els.recordId.value) : undefined,
+    id: els.recordId.value ? els.recordId.value : undefined,
     title: els.recordTitle.value.trim(),
     due_at: els.recordStartsAt.value || null,
     assignee: els.recordAssignee.value || null,
@@ -204,7 +204,7 @@ async function loadSection() {
     const record = editId
       ? (isCalendar
         ? payload.calendar.find((item) => item.source_type === 'event' && String(item.source_id) === editId)
-        : payload.tasks.find((item) => item.id === Number(editId)))
+        : payload.tasks.find((item) => String(item.id) === String(editId)))
       : null;
     if (record) {
       history.replaceState({}, '', isCalendar ? '/calendar' : '/tasks');

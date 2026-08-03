@@ -96,7 +96,7 @@ function renderRecipes(recipes) {
     image.closest('.recipe-photo')?.replaceWith(placeholder);
   }));
   els.grid.querySelectorAll('.save-recipe').forEach((button) => button.addEventListener('click', () => saveRecipe(button)));
-  els.grid.querySelectorAll('.plan-recipe').forEach((button) => button.addEventListener('click', () => openPlanDialog(recipes.find((recipe) => recipe.id === Number(button.dataset.recipeId)))));
+  els.grid.querySelectorAll('.plan-recipe').forEach((button) => button.addEventListener('click', () => openPlanDialog(recipes.find((recipe) => String(recipe.id) === String(button.dataset.recipeId)))));
   els.grid.querySelectorAll('.grocery-recipe').forEach((button) => button.addEventListener('click', () => addRecipeGroceries(button)));
 }
 
