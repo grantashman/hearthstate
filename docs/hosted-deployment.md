@@ -40,7 +40,7 @@ The hosted migration is now the application path for Vercel. Add the three varia
 
 ## GitHub-driven production
 
-The repository includes [`.github/workflows/production.yml`](../.github/workflows/production.yml). Every push to `main` applies committed Supabase migrations first and then deploys the Vercel build to `https://hearthstate.vercel.app`.
+The repository includes [`.github/workflows/production.yml`](../.github/workflows/production.yml). Every push to `main` deploys the Vercel build to `https://hearthstate.vercel.app`; when `supabase/migrations/` changes, the workflow applies those committed migrations first.
 
 Add these GitHub Actions secrets in the repository's `production` environment:
 

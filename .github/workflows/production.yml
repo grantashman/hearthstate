@@ -30,13 +30,30 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect committed Supabase migrations
+        id: migration_changes
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] || [ "$EVENT_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$EVENT_BEFORE" "$GITHUB_SHA" -- supabase/migrations; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Supabase CLI
+        if: steps.migration_changes.outputs.changed == 'true'
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
       - name: Apply committed Supabase migrations
+        if: steps.migration_changes.outputs.changed == 'true'
         run: |
           supabase link --project-ref "$SUPABASE_PROJECT_ID"
           supabase db push
