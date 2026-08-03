@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
+from .accounts import HouseholdDirectory
 from .conflicts import detect_conflicts
 from .pricing import apply_known_coles_prices
 from .store import TASK_RECURRENCES, PlannerStore, assignee_label, normalize_assignee, normalize_recurrence
@@ -438,6 +439,26 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             except sqlite3.Error:
                 self._send_json({"status": "degraded", "service": "hearthstate", "database": "unavailable"}, status=503)
             return
+        if parsed.path == "/api/auth/config":
+            self._send_json({"account_backed": self.server.accounts is not None})
+            return
+        if parsed.path == "/api/auth/invitations/inspect":
+            if self.server.accounts is None:
+                self._send_json({"error": "account directory unavailable"}, status=503)
+                return
+            token = parse_qs(parsed.query).get("token", [""])[0]
+            try:
+                invitation = self.server.accounts.inspect_invitation(token, now=self.server.now())
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            for key in ("id", "invited_by", "accepted_at", "accepted_account_id", "created_at"):
+                invitation.pop(key, None)
+            self._send_json({"invitation": invitation})
+            return
+        if self.server.accounts is not None and parsed.path.startswith("/api/") and not self.server.session_user(self.headers):
+            self._send_json({"error": "authentication required"}, status=401)
+            return
         if parsed.path == "/api/inbox":
             viewer = self.server.session_user(self.headers) or parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
             items = self.server.store.list_inbox_items(viewer=viewer)
@@ -519,6 +540,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         assets = {
             "/login": ("login.html", "text/html; charset=utf-8"),
             "/login.js": ("login.js", "text/javascript; charset=utf-8"),
+            "/invite": ("invite.html", "text/html; charset=utf-8"),
+            "/invite.js": ("invite.js", "text/javascript; charset=utf-8"),
             "/": ("index.html", "text/html; charset=utf-8"),
             "/index.html": ("index.html", "text/html; charset=utf-8"),
             "/calendar": ("calendar.html", "text/html; charset=utf-8"),
@@ -560,15 +583,87 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         try:
             recipe_parts = parsed.path.strip("/").split("/")
             actor = self.server.session_user(self.headers)
+            if self.server.accounts is not None and actor is None and parsed.path.startswith("/api/") and parsed.path not in {"/api/session", "/api/auth/invitations/accept", "/api/auth/sign-in/request", "/api/auth/sign-in"}:
+                self._send_json({"error": "authentication required"}, status=401)
+                return
             if parsed.path == "/api/session":
+                if self.server.accounts is not None:
+                    raise ValueError("passwordless chooser is disabled for account-backed households")
                 user = str(payload.get("user", "")).strip().lower()
                 if user not in HOUSEHOLD_USERS:
                     raise ValueError("unknown household user")
-                token = secrets.token_urlsafe(32)
-                with self.server.session_lock:
-                    self.server.sessions[token] = (user, time.time())
+                session_payload = {"user": user, "name": HOUSEHOLD_USERS[user]["name"]}
+                token = self.server.create_session(user)
                 self._send_json(
-                    {"user": user, "name": HOUSEHOLD_USERS[user]["name"]},
+                    session_payload,
+                    headers={"Set-Cookie": f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}"},
+                )
+                return
+            if parsed.path == "/api/auth/invitations":
+                if self.server.accounts is None or actor is None:
+                    raise ValueError("authenticated account required")
+                household_id = self.server.accounts.household_for(actor)
+                if household_id is None or self.server.store.household_id != household_id:
+                    raise ValueError("household context unavailable")
+                invitation = self.server.accounts.create_invitation(
+                    household_id,
+                    str(payload.get("email", "")),
+                    str(payload.get("role", "member")),
+                    actor,
+                    now=self.server.now(),
+                )
+                invitation["url"] = f"/invite?token={invitation['token']}"
+                self._send_json({"invitation": invitation}, status=201)
+                return
+            if parsed.path == "/api/auth/invitations/accept":
+                if self.server.accounts is None:
+                    raise ValueError("account directory unavailable")
+                invitation = self.server.accounts.inspect_invitation(str(payload.get("token", "")), now=self.server.now())
+                if invitation["household_id"] != self.server.store.household_id:
+                    raise ValueError("household context unavailable")
+                accepted = self.server.accounts.accept_invitation(
+                    str(payload.get("token", "")),
+                    str(payload.get("display_name", "")),
+                    now=self.server.now(),
+                )
+                if accepted["household_id"] != self.server.store.household_id:
+                    raise ValueError("household context unavailable")
+                token = self.server.create_session(accepted["account_id"], accepted["household_id"])
+                self._send_json(
+                    {"session": {"user": accepted["account_id"], "name": accepted["display_name"], "household_id": accepted["household_id"], "role": accepted["role"]}},
+                    status=201,
+                    headers={"Set-Cookie": f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}"},
+                )
+                return
+            if parsed.path == "/api/auth/sign-in/request":
+                if self.server.accounts is not None:
+                    try:
+                        issued = self.server.accounts.create_sign_in_token(
+                            str(payload.get("email", "")),
+                            household_id=self.server.store.household_id,
+                            now=self.server.now(),
+                        )
+                        if self.server.sign_in_delivery is not None:
+                            self.server.sign_in_delivery({
+                                **issued,
+                                "url": f"/login?token={issued['token']}",
+                            })
+                    except ValueError:
+                        pass
+                self._send_json({"sent": True}, status=202)
+                return
+            if parsed.path == "/api/auth/sign-in":
+                if self.server.accounts is None:
+                    raise ValueError("account directory unavailable")
+                pending = self.server.accounts.inspect_sign_in_token(str(payload.get("token", "")), now=self.server.now())
+                if pending["household_id"] != self.server.store.household_id:
+                    raise ValueError("household context unavailable")
+                signed_in = self.server.accounts.consume_sign_in_token(str(payload.get("token", "")), now=self.server.now())
+                if signed_in["household_id"] != self.server.store.household_id:
+                    raise ValueError("household context unavailable")
+                token = self.server.create_session(signed_in["account_id"], signed_in["household_id"])
+                self._send_json(
+                    {"session": {"user": signed_in["account_id"], "name": signed_in["display_name"], "household_id": signed_in["household_id"], "role": signed_in["role"]}},
                     headers={"Set-Cookie": f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}"},
                 )
                 return
@@ -919,12 +1014,22 @@ class DashboardServer(ThreadingHTTPServer):
         server_address: tuple[str, int],
         store: PlannerStore,
         now: Callable[[], datetime] | None = None,
+        accounts: HouseholdDirectory | None = None,
+        sign_in_delivery: Callable[[dict[str, str]], None] | None = None,
     ) -> None:
         self.store = store
+        self.accounts = accounts
+        self.sign_in_delivery = sign_in_delivery
         self.now = now or local_now
-        self.sessions: dict[str, tuple[str, float]] = {}
+        self.sessions: dict[str, tuple[str, float, str | None]] = {}
         self.session_lock = threading.Lock()
         super().__init__(server_address, DashboardRequestHandler)
+
+    def create_session(self, user: str, household_id: str | None = None) -> str:
+        token = secrets.token_urlsafe(32)
+        with self.session_lock:
+            self.sessions[token] = (user, time.time(), household_id)
+        return token
 
     def session_user(self, headers) -> str | None:
         cookie = SimpleCookie()
@@ -936,11 +1041,16 @@ class DashboardServer(ThreadingHTTPServer):
             session = self.sessions.get(token.value)
             if session is None:
                 return None
-            user, created_at = session
+            user, created_at, household_id = session
             if time.time() - created_at > _SESSION_MAX_AGE:
                 self.sessions.pop(token.value, None)
                 return None
-            return user
+        if self.accounts is not None:
+            if household_id != self.store.household_id or not self.accounts.can_access(user, self.store.household_id):
+                with self.session_lock:
+                    self.sessions.pop(token.value, None)
+                return None
+        return user
 
 
 def main() -> None:
@@ -950,12 +1060,25 @@ def main() -> None:
         default=os.environ.get("HEARTHSTATE_DB", "hearthstate.db"),
         help="SQLite database path (default: HEARTHSTATE_DB or hearthstate.db)",
     )
+    parser.add_argument(
+        "--accounts-database",
+        default=os.environ.get("HEARTHSTATE_ACCOUNTS_DB"),
+        help="Account/household SQLite path; enables account-backed auth when combined with --household-id",
+    )
+    parser.add_argument(
+        "--household-id",
+        default=os.environ.get("HEARTHSTATE_HOUSEHOLD_ID"),
+        help="Named household context for account-backed auth",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8788, type=int)
     args = parser.parse_args()
 
-    store = PlannerStore(args.database)
-    server = DashboardServer((args.host, args.port), store=store)
+    if bool(args.accounts_database) != bool(args.household_id):
+        parser.error("--accounts-database and --household-id must be supplied together")
+    accounts = HouseholdDirectory(args.accounts_database) if args.accounts_database else None
+    store = PlannerStore(args.database, household_id=args.household_id or "default")
+    server = DashboardServer((args.host, args.port), store=store, accounts=accounts)
     print(f"Hearthstate dashboard: http://{args.host}:{args.port}", flush=True)
     try:
         server.serve_forever()
@@ -964,6 +1087,8 @@ def main() -> None:
     finally:
         server.server_close()
         store.close()
+        if accounts is not None:
+            accounts.close()
 
 
 if __name__ == "__main__":

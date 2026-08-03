@@ -20,7 +20,7 @@
           <h1 id="loginTitle">Who is home?</h1>
           <p>Choose your place at the hearth. No password today — just a clear way to see what belongs to you.</p>
         </div>
-        <div class="user-choice-grid" aria-label="Choose a household user">
+        <div class="user-choice-grid" aria-label="Choose a household user" id="legacyChooser">
           <button class="user-choice" type="button" data-user="grant">
             <img src="/user-images/grant.png" alt="" />
             <span><strong>Grant</strong><small>Household admin</small></span>
@@ -37,7 +37,12 @@
             <span class="user-choice-arrow" aria-hidden="true">↗</span>
           </button>
         </div>
-        <p class="login-note">Your choice stays on this device for this Hearthstate session.</p>
+        <form class="is-hidden" id="magicLinkPanel">
+          <label for="magicLinkEmail">Email address</label>
+          <input id="magicLinkEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
+          <button class="primary-button" type="submit">Email me a sign-in link</button>
+          <p class="login-note">The link expires shortly and can only be used once.</p>
+        </form>
         <div class="login-feedback is-hidden" id="loginFeedback" role="alert"></div>
       </section>
       <p class="login-footer">hearthstate · know what needs attention at home</p>

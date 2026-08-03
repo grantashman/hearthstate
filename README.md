@@ -67,7 +67,22 @@ Private reminders are filtered by sender when `What needs attention?` is request
 
 `HouseholdDirectory` stores commercial account, household, membership, and role metadata in a separate SQLite database. The supported roles are `owner`, `member`, `child`, and `guest`; callers can use `can_access`, `role_for`, and `require_access` before selecting a planner context.
 
-`PlannerStore(database, household_id="...")` keeps the existing default database path for local compatibility. A named household context uses a sibling SQLite database derived from the base path, so two households cannot read or mutate each other's planner records. This is the first tenancy boundary; a later hosted API can resolve the authenticated account through `HouseholdDirectory` and open the corresponding planner context.
+`PlannerStore(database, household_id="...")` keeps the existing default database path for local compatibility. A named household context uses a sibling SQLite database derived from the base path, so two households cannot read or mutate each other's planner records.
+
+P1.2 adds account-backed invitation and sign-in routes when the dashboard is launched with both `--accounts-database` and `--household-id` (or `HEARTHSTATE_ACCOUNTS_DB` and `HEARTHSTATE_HOUSEHOLD_ID`). Owners can create a one-time, seven-day invitation through `POST /api/auth/invitations`; the response contains a copyable `/invite?token=...` link. The invite page accepts a display name, creates or finds the account, adds the membership, and signs the invitee in. Existing members can request a one-time sign-in link through `POST /api/auth/sign-in/request` and consume it through `POST /api/auth/sign-in`. The request endpoint deliberately returns the same response for known and unknown email addresses. Provide `DashboardServer(..., sign_in_delivery=callback)` to connect email/SMS delivery; the callback receives the token metadata and relative `/login?token=...` URL, while the HTTP response never returns the token.
+
+Example account-backed launch:
+
+```bash
+python3 -m hearthstate.dashboard \
+  --database /path/to/hearthstate.db \
+  --accounts-database /path/to/hearthstate-accounts.db \
+  --household-id home \
+  --host 127.0.0.1 \
+  --port 8788
+```
+
+In account-backed mode, the legacy passwordless `/api/session` chooser is disabled; users must arrive through an invitation or a sign-in token. The current local deployment remains on the compatibility mode until its account database and household context are provisioned.
 
 ## Dashboard pages and actions
 
@@ -79,14 +94,14 @@ The tailnet dashboard is available at [http://vnic.tail015325.ts.net:8788](http:
 - `/recipes` shows the curated recipe catalogue with local illustrative photos, supports save/plan actions, and accepts user-supplied recipes with optional permitted photo URLs. The 22 seeded themes now use **Hearthstate Original** ingredient lists authored locally; external Coles/Taste links remain inspiration/source links and their instructions are not copied. When saving or planning a user/local recipe, the Ingredient check list lets the household mark pantry items as already owned; only unchecked/missing ingredients are added to Groceries. **Plan dinner** opens a dialog for the dinner date and cook, then uses the same ownership check while creating the meal. The catalogue includes a Protein-forward filter covering chicken, salmon, beef, tofu, eggs, lentils, beans, and sausage.
 - `/groceries` shows the open list, inline editable quantities, quantity-aware line totals, a weekly budget, priced subtotal, remaining amount, and unknown-price count. Every open item is checked against the curated Coles matcher when it is added, when the API is read, and by the hourly background review; manual prices are preserved and unsafe/unresolved items fail closed.
 - The Overview includes a **Household Inbox** for loose threads: capture original text from the dashboard or iMessage, preserve source/creator metadata, then convert an item into a task, event, meal, or grocery item, or archive it without deleting its history.
-- The first dashboard visit opens a passwordless household chooser for **Grant**, **Billie**, or **Skye**. Selection creates a short-lived, HttpOnly session cookie; the overview greeting, sidebar identity, read model, and dashboard-created records use the selected household member.
+- The first dashboard visit opens a passwordless household chooser for **Grant**, **Billie**, or **Skye** in compatibility mode. Account-backed mode replaces that chooser with invitation/sign-in sessions and exposes `/invite?token=...` for one-time household invitations. Selection in compatibility mode creates a short-lived, HttpOnly session cookie; the overview greeting, sidebar identity, read model, and dashboard-created records use the selected household member.
 - Groceries automatically apply explainable Coles-preferred matches using aliases for common household wording. The current curated set includes milk, eggs, oat milk, bananas, bread, mince, chicken breast, 2L Coke Zero, Frank's hot sauce, tortillas, white pepper, potatoes, sweet potatoes, carrots, cannellini beans, celery, diced tomatoes, chicken stock, kale, lemon, popping corn kernels, vegetable oil, table spread, beef strips, broccoli, brown onion, garlic, and ginger; Coles products are preferred before considering other products.
 - The milk default is **Coles Australian Full Cream Long Life Milk 1L**. Each item exposes a quantity field and Save action; changing quantity recalculates its line total.
 - Each Coles price stores the product title, source URL, observed date, and a note about location/weight variability. Unknown items are excluded from the subtotal rather than guessed.
 - Unknown items support manual price entry; the page labels those prices separately from Coles observations.
 - All pages preserve the light/dark preference in the browser.
 
-- The JSON read/action endpoints are `/health`, `/api/session`, `/api/dashboard`, `/api/inbox`, `/api/inbox/{id}/archive`, `/api/inbox/{id}/convert`, `/api/activity`, `/api/activity/undo`, `/api/conflicts`, `/api/chores`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support capturing and triaging Inbox items, auditing/reversing household mutations, adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, recording grocery prices, creating chores, and advancing round-robin chore assignments.
+- The JSON read/action endpoints are `/health`, `/api/auth/config`, `/api/session` (compatibility mode only), `/api/auth/invitations`, `/api/auth/invitations/inspect`, `/api/auth/invitations/accept`, `/api/auth/sign-in/request`, `/api/auth/sign-in`, `/api/dashboard`, `/api/inbox`, `/api/inbox/{id}/archive`, `/api/inbox/{id}/convert`, `/api/activity`, `/api/activity/undo`, `/api/conflicts`, `/api/chores`, `/api/calendar`, `/api/tasks`, `/api/meals`, `/api/meals/sync-groceries`, `/api/groceries`, `/api/groceries/budget`, `/api/groceries/price`, and `/api/groceries/refresh-coles`. `/health` performs a SQLite quick integrity check for service monitoring. Dashboard actions support capturing and triaging Inbox items, auditing/reversing household mutations, adding and editing tasks, setting task recurrence, adding/editing calendar entries, planning meals, syncing meal ingredients, setting a grocery budget, recording grocery prices, creating chores, and advancing round-robin chore assignments. Account-backed API reads and mutations require a live session whose account is a member of the configured household.
 
 ## Backups and verification
 
@@ -157,7 +172,7 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 
 ## Remaining roadmap
 
-1. **Household identity and permissions** — **foundation complete:** `HouseholdDirectory` now models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household. Hosted authentication, invitations, and explicit API permission checks remain.
+1. **Household identity and permissions** — **P1.1/P1.2 complete:** `HouseholdDirectory` models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household; owner invitations, one-time invitation acceptance, one-time sign-in tokens, and account-backed dashboard sessions are implemented. Email/SMS delivery, hosted provisioning, and explicit per-route role policy remain.
 2. **Audit history** — **complete:** append-only activity records, before/after snapshots, archive semantics, undo, and activity API.
 3. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
 4. **Scheduled backups** — **mostly complete:** the tested backup helper runs from a user-level timer with retention; a stale-age alert remains.
