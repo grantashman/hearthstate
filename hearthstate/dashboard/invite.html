@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-4" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-4" />
+    <title>Hearthstate · Join household</title>
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-card" aria-labelledby="inviteTitle">
+        <div class="login-brand">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div><strong>hearthstate</strong><span>household state</span></div>
+        </div>
+        <div class="login-copy">
+          <p class="eyebrow">A PLACE AT THE HEARTH</p>
+          <h1 id="inviteTitle">Join your household</h1>
+          <p id="inviteSummary">Checking your invitation…</p>
+        </div>
+        <form class="invite-form" id="inviteForm">
+          <label class="form-field" for="displayName"><span>Your name</span><input id="displayName" name="displayName" type="text" autocomplete="name" required maxlength="200" placeholder="Billie Ashman" /></label>
+          <button class="primary-action" type="submit">Accept invitation</button>
+        </form>
+        <div class="login-feedback is-hidden" id="inviteFeedback" role="alert"></div>
+      </section>
+      <p class="login-footer">hearthstate · know what needs attention at home</p>
+    </main>
+    <script src="/invite.js?v=hearthstate-4" defer></script>
+  </body>
+</html>

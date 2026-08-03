@@ -95,6 +95,62 @@ class BriefingTests(unittest.TestCase):
         self.assertTrue(claim_briefing(self.store, "grant", "morning", datetime(2026, 8, 3, 7, 30)))
         self.assertIsNone(build_briefing(self.store, "grant", datetime(2026, 8, 3, 8, 0)))
 
+    def test_scheduler_runner_claims_before_emitting(self):
+        from hearthstate.briefings import run_briefing
+
+        self.store.add_task("school form", "2026-08-03T09:00:00", None, False, "grant")
+        first = run_briefing(self.store, "grant", datetime(2026, 8, 3, 7, 30))
+        second = run_briefing(self.store, "grant", datetime(2026, 8, 3, 7, 31))
+
+        self.assertIn("school form", first)
+        self.assertIsNone(second)
+        self.assertTrue(self.store.briefing_claimed("grant", "morning", "2026-08-03"))
+
+    def test_briefing_cli_uses_named_household_database(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        from hearthstate.briefings import main
+
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "hearthstate.db"
+            named_store = PlannerStore(str(database), household_id="home")
+            named_store.add_task("school form", "2026-08-03T09:00:00", None, False, "grant")
+            named_store.close()
+            output = StringIO()
+            argv = ["briefings", "--database", str(database), "--household-id", "home"]
+            with patch.object(sys, "argv", argv), patch("hearthstate.briefings.local_now", return_value=datetime(2026, 8, 3, 7, 30)), redirect_stdout(output):
+                main()
+
+        self.assertIn("school form", output.getvalue())
+
+    def test_briefing_cli_writes_private_output_file(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        import os
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        from hearthstate.briefings import main
+
+        with tempfile.TemporaryDirectory() as directory:
+            database_path = Path(directory) / "briefing.db"
+            output_path = Path(directory) / "latest-briefing.txt"
+            argv = ["briefings", "--database", str(database_path), "--output-file", str(output_path)]
+            output = StringIO()
+            with patch.object(sys, "argv", argv), patch("hearthstate.briefings.local_now", return_value=datetime(2026, 8, 3, 7, 30)), redirect_stdout(output):
+                main()
+
+            self.assertIn("Hearthstate briefing", output_path.read_text())
+            self.assertEqual(os.stat(output_path).st_mode & 0o777, 0o600)
+            self.assertEqual(output.getvalue(), "")
+
 
 class ChoreRotationTests(unittest.TestCase):
     def setUp(self):

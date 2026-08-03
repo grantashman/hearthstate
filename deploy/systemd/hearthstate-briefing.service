@@ -1,0 +1,16 @@
+[Unit]
+Description=Hearthstate morning briefing
+After=hearthstate-dashboard.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/workspace/hearthstate
+ExecStartPre=/usr/bin/install -d -m 0700 /home/ubuntu/.local/state/hearthstate
+ExecStart=/usr/bin/python3 -m hearthstate.briefings --database /home/ubuntu/workspace/hearthstate/hearthstate.db --household-id home --viewer grant --briefing-type morning --output-file /home/ubuntu/.local/state/hearthstate/morning-briefing.txt
+StandardOutput=null
+StandardError=journal
+Environment=TZ=Australia/Sydney
+Nice=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

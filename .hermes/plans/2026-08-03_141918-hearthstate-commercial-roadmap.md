@@ -2,7 +2,7 @@
 
 > **Purpose:** Preserve the product decision, market research, pricing hypothesis, and implementation sequence so future sessions can resume without reconstructing the discussion.
 >
-> **Current status:** Strategy and roadmap agreed in principle. The next development cycle should target commercial-pilot readiness, not a full native-app rewrite.
+> **Current status:** P1.1 and P1.2 are implemented on the active feature branch: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, and account-backed dashboard sessions are covered by the test suite. Email/SMS delivery and hosted provisioning remain before a commercial pilot.
 
 ## Executive decision
 
@@ -208,11 +208,15 @@ Target couples and families with recurring scheduling, school, meal, grocery, or
 
 **Done when:** A record cannot be read or mutated outside the active household and membership role, with tests for cross-household access.
 
+**Status:** Complete in P1.1. `HouseholdDirectory` and named `PlannerStore` contexts establish the account/membership and planner isolation seam.
+
 ### P1.2 Add invitation and sign-in flow
 
 Use email magic links or an equivalent low-friction authentication method. Keep the existing passwordless household chooser only as a local-development convenience; do not use it as the commercial security model.
 
 **Done when:** A household owner can invite a second member, the invitee can join, and both can see shared records without seeing private records they do not own.
+
+**Status:** Complete for the local account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the SQLite claim, and bound to the active household; invitation acceptance is transactional, API sessions revalidate household membership, and the owner-only `/admin` section manages household settings, members, roles, and invitation revocation. The dashboard exposes delivery callback boundaries for email/SMS integration before hosted pilot use.
 
 ### P1.3 Introduce a hosted API boundary
 

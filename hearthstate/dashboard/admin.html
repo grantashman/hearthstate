@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-3" />
+    <title>Hearthstate · Administration</title>
+    <script>
+      (() => {
+        try {
+          if (localStorage.getItem('hearthstate-theme') === 'dark') document.documentElement.dataset.theme = 'dark';
+        } catch (error) {
+          // The admin page still works when browser storage is unavailable.
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-admin-1" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div><div class="brand-name">hearthstate</div><div class="brand-caption">household state</div></div>
+        </div>
+        <div class="sidebar-kicker">Household</div>
+        <button class="mobile-nav-toggle" type="button" aria-controls="primaryNav" aria-expanded="false"><span class="mobile-nav-icon" aria-hidden="true">☰</span><span>Menu</span></button>
+        <nav class="nav-list" id="primaryNav">
+          <a class="nav-item" href="/"><span class="nav-symbol">⌂</span>Overview</a>
+          <a class="nav-item" href="/calendar"><span class="nav-symbol">◷</span>Calendar</a>
+          <a class="nav-item" href="/tasks"><span class="nav-symbol">✓</span>Tasks</a>
+          <a class="nav-item" href="/meals"><span class="nav-symbol">♨</span>Meals</a>
+          <a class="nav-item" href="/recipes"><span class="nav-symbol">✦</span>Recipes</a>
+          <a class="nav-item" href="/groceries"><span class="nav-symbol">+</span>Groceries</a>
+          <a class="nav-item is-active" href="/admin" aria-current="page"><span class="nav-symbol">⚙</span>Administration</a>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="privacy-card"><div class="privacy-icon" aria-hidden="true">✦</div><div><strong>Private by default</strong><p>Only owners can change household access.</p></div></div>
+        <div class="sidebar-footer"><div class="avatar avatar-you">G</div><div class="person-copy"><strong>Owner</strong><span>Household administration</span></div><a class="more-button" href="/login" aria-label="Sign out" title="Sign out">↺</a></div>
+      </aside>
+
+      <main class="main-content section-page admin-page">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Hearthstate</span><span class="slash">/</span><span>Administration</span></div>
+          <div class="topbar-actions">
+            <span class="sync-status"><span class="sync-dot"></span><span id="adminSyncStatus">Live snapshot</span></span>
+            <button class="theme-button" id="themeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+              <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 14.3A7.8 7.8 0 0 1 9.7 4.5 7.8 7.8 0 1 0 19.5 14.3Z"/></svg>
+              <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.8v2M12 19.2v2M21.2 12h-2M4.8 12h-2M18.5 5.5l-1.4 1.4M6.9 17.1l-1.4 1.4M18.5 18.5l-1.4-1.4M6.9 6.9 5.5 5.5"/></svg>
+            </button>
+            <a class="refresh-button admin-refresh" href="/admin" aria-label="Refresh administration" title="Refresh administration">↻</a>
+          </div>
+        </header>
+
+        <section class="section-hero admin-hero" aria-labelledby="adminTitle">
+          <div>
+            <p class="eyebrow">OWNER WORKBENCH</p>
+            <h1 id="adminTitle">Household administration</h1>
+            <p class="section-hero-copy">Keep the people, access, and shared name of home in good shape.</p>
+          </div>
+          <div class="admin-hero-mark" aria-hidden="true"><span>✦</span><small>ACCESS<br />WITH CARE</small></div>
+        </section>
+
+        <div class="admin-feedback is-hidden" id="adminFeedback" role="status" aria-live="polite"></div>
+        <div class="admin-grid">
+          <section class="panel admin-panel admin-settings-panel" aria-labelledby="settingsTitle">
+            <div class="panel-heading">
+              <div><p class="section-kicker">THE HOUSE</p><h2 id="settingsTitle">Household settings</h2></div>
+              <span class="panel-badge">Owner only</span>
+            </div>
+            <p class="panel-intro">This name appears wherever your shared household is identified.</p>
+            <form class="admin-form" id="settingsForm">
+              <label for="householdName">Household name</label>
+              <div class="admin-inline-form"><input id="householdName" name="name" maxlength="200" required /><button class="primary-action" type="submit">Save name <span aria-hidden="true">↗</span></button></div>
+            </form>
+          </section>
+
+          <section class="panel admin-panel admin-invite-panel" aria-labelledby="inviteTitle">
+            <div class="panel-heading">
+              <div><p class="section-kicker">MAKE ROOM</p><h2 id="inviteTitle">Invite someone</h2></div>
+              <span class="admin-panel-mark" aria-hidden="true">＋</span>
+            </div>
+            <p class="panel-intro">Send a one-time link with the smallest role that fits.</p>
+            <form class="admin-form" id="inviteForm">
+              <label for="inviteEmail">Email address</label>
+              <input id="inviteEmail" name="email" type="email" autocomplete="email" maxlength="320" placeholder="someone@example.com" required />
+              <div class="admin-inline-form"><label class="admin-select-label" for="inviteRole">Role<select id="inviteRole" name="role"><option value="member">Member</option><option value="child">Child</option><option value="guest">Guest</option></select></label><button class="primary-action" type="submit">Send invite <span aria-hidden="true">↗</span></button></div>
+            </form>
+          </section>
+        </div>
+
+        <section class="panel admin-panel" aria-labelledby="membersTitle">
+          <div class="panel-heading">
+            <div><p class="section-kicker">PEOPLE WITH A KEY</p><h2 id="membersTitle">Household members</h2></div>
+            <span class="panel-badge" id="memberCount">—</span>
+          </div>
+          <p class="panel-intro">Roles shape access, not belonging. Owners can manage this list; everyone else can use the household.</p>
+          <div class="admin-list" id="memberList" aria-live="polite"></div>
+        </section>
+
+        <section class="panel admin-panel" aria-labelledby="invitationsTitle">
+          <div class="panel-heading">
+            <div><p class="section-kicker">OPEN DOORS</p><h2 id="invitationsTitle">Invitations</h2></div>
+            <span class="panel-badge" id="invitationCount">—</span>
+          </div>
+          <p class="panel-intro">Pending links can be revoked. Raw invitation links are only shown at creation time.</p>
+          <div class="admin-list" id="invitationList" aria-live="polite"></div>
+          <div class="empty-state is-hidden" id="invitationEmpty"><div class="empty-mark quiet">○</div><strong>No invitations yet.</strong><span>Invite a trusted person when you are ready.</span></div>
+        </section>
+      </main>
+    </div>
+    <script src="/nav.js?v=hearthstate-admin-1"></script>
+    <script src="/admin.js?v=hearthstate-admin-1"></script>
+  </body>
+</html>
