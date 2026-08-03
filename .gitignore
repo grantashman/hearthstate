@@ -1,5 +1,6 @@
 # Local household data — never publish the live SQLite store
 *.db
+*.db.*
 *.db-shm
 *.db-wal
 

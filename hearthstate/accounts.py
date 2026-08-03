@@ -65,6 +65,7 @@ class HouseholdDirectory:
                 expires_at TEXT NOT NULL,
                 accepted_at TEXT,
                 accepted_account_id TEXT REFERENCES accounts(id),
+                revoked_at TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -79,6 +80,9 @@ class HouseholdDirectory:
             );
             """
         )
+        invitation_columns = {row[1] for row in self.connection.execute("PRAGMA table_info(invitations)").fetchall()}
+        if "revoked_at" not in invitation_columns:
+            self.connection.execute("ALTER TABLE invitations ADD COLUMN revoked_at TEXT")
         self.connection.commit()
 
     @staticmethod
@@ -217,6 +221,163 @@ class HouseholdDirectory:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    @_serialized
+    def get_household(self, household_id: str) -> dict[str, str]:
+        household_id = self._identifier(household_id, "household id")
+        row = self.connection.execute(
+            "SELECT id, name FROM households WHERE id = ?",
+            (household_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("household not found")
+        return dict(row)
+
+    @_serialized
+    def update_household(self, household_id: str, name: str, updated_by: str) -> dict[str, str]:
+        household_id = self._identifier(household_id, "household id")
+        updated_by = self._identifier(updated_by, "account id")
+        name = self._required_text(name, "household name")
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            if self.role_for(updated_by, household_id) != "owner":
+                raise ValueError("only household owners can update settings")
+            updated = self.connection.execute(
+                "UPDATE households SET name = ? WHERE id = ?",
+                (name, household_id),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("household not found")
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return self.get_household(household_id)
+
+    @_serialized
+    def update_member_role(self, household_id: str, account_id: str, role: str, updated_by: str) -> dict[str, str | None]:
+        household_id = self._identifier(household_id, "household id")
+        account_id = self._identifier(account_id, "account id")
+        updated_by = self._identifier(updated_by, "account id")
+        role = str(role or "").strip().lower()
+        if role not in {"owner", "member", "child", "guest"}:
+            raise ValueError("invalid membership role")
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            if self.role_for(updated_by, household_id) != "owner":
+                raise ValueError("only household owners can manage members")
+            current = self.connection.execute(
+                "SELECT role FROM memberships WHERE household_id = ? AND account_id = ?",
+                (household_id, account_id),
+            ).fetchone()
+            if current is None:
+                raise ValueError("member not found")
+            if current["role"] == "owner" and role != "owner":
+                owners = self.connection.execute(
+                    "SELECT COUNT(*) AS count FROM memberships WHERE household_id = ? AND role = 'owner'",
+                    (household_id,),
+                ).fetchone()["count"]
+                if owners <= 1:
+                    raise ValueError("cannot remove the last owner")
+            self.connection.execute(
+                "UPDATE memberships SET role = ? WHERE household_id = ? AND account_id = ?",
+                (role, household_id, account_id),
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return self._member(household_id, account_id)
+
+    @_serialized
+    def remove_member(self, household_id: str, account_id: str, removed_by: str) -> dict[str, str | None]:
+        household_id = self._identifier(household_id, "household id")
+        account_id = self._identifier(account_id, "account id")
+        removed_by = self._identifier(removed_by, "account id")
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            if self.role_for(removed_by, household_id) != "owner":
+                raise ValueError("only household owners can manage members")
+            member = self._member(household_id, account_id)
+            if member["role"] == "owner":
+                owners = self.connection.execute(
+                    "SELECT COUNT(*) AS count FROM memberships WHERE household_id = ? AND role = 'owner'",
+                    (household_id,),
+                ).fetchone()["count"]
+                if owners <= 1:
+                    raise ValueError("cannot remove the last owner")
+            deleted = self.connection.execute(
+                "DELETE FROM memberships WHERE household_id = ? AND account_id = ?",
+                (household_id, account_id),
+            )
+            if deleted.rowcount != 1:
+                raise ValueError("member not found")
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        member["removed"] = True
+        return member
+
+    @_serialized
+    def list_invitations(self, household_id: str, *, now: datetime | None = None) -> list[dict[str, str | int | None]]:
+        household_id = self._identifier(household_id, "household id")
+        current = self._timestamp(now)
+        rows = self.connection.execute(
+            """SELECT id, email, role, invited_by, expires_at, accepted_at, accepted_account_id,
+                      revoked_at, created_at
+               FROM invitations WHERE household_id = ? ORDER BY id DESC""",
+            (household_id,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            if item["revoked_at"]:
+                status = "revoked"
+            elif item["accepted_at"]:
+                status = "accepted"
+            elif current >= datetime.fromisoformat(str(item["expires_at"])):
+                status = "expired"
+            else:
+                status = "pending"
+            item["status"] = status
+            item.pop("accepted_account_id", None)
+            result.append(item)
+        return result
+
+    @_serialized
+    def revoke_invitation(self, household_id: str, invitation_id: int, revoked_by: str, *, now: datetime | None = None) -> dict[str, str | int | None]:
+        household_id = self._identifier(household_id, "household id")
+        revoked_by = self._identifier(revoked_by, "account id")
+        try:
+            self.connection.execute("BEGIN IMMEDIATE")
+            if self.role_for(revoked_by, household_id) != "owner":
+                raise ValueError("only household owners can manage invitations")
+            revoked_at = self._timestamp(now).isoformat()
+            updated = self.connection.execute(
+                """UPDATE invitations SET revoked_at = ?
+                   WHERE id = ? AND household_id = ? AND accepted_at IS NULL AND revoked_at IS NULL""",
+                (revoked_at, int(invitation_id), household_id),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("invitation is no longer pending")
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        invitations = self.list_invitations(household_id, now=now)
+        return next(item for item in invitations if item["id"] == int(invitation_id))
+
+    def _member(self, household_id: str, account_id: str) -> dict[str, str | None]:
+        row = self.connection.execute(
+            """SELECT accounts.id, accounts.display_name, accounts.email, memberships.role
+               FROM memberships JOIN accounts ON accounts.id = memberships.account_id
+               WHERE memberships.household_id = ? AND memberships.account_id = ?""",
+            (household_id, account_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("member not found")
+        return dict(row)
+
     def _household_name(self, household_id: str) -> str:
         row = self.connection.execute("SELECT name FROM households WHERE id = ?", (household_id,)).fetchone()
         if row is None:
@@ -240,7 +401,7 @@ class HouseholdDirectory:
         *,
         now: datetime | None = None,
         expires_in: timedelta = timedelta(days=7),
-    ) -> dict[str, str]:
+    ) -> dict[str, str | int]:
         household_id = self._identifier(household_id, "household id")
         email = self._email(email)
         role = str(role or "member").strip().lower()
@@ -255,7 +416,7 @@ class HouseholdDirectory:
         created = self._timestamp(now)
         token = secrets.token_urlsafe(32)
         expires_at = created + expires_in
-        self.connection.execute(
+        cursor = self.connection.execute(
             """INSERT INTO invitations
                (token_hash, household_id, email, role, invited_by, expires_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
@@ -263,6 +424,7 @@ class HouseholdDirectory:
         )
         self.connection.commit()
         return {
+            "id": int(cursor.lastrowid),
             "token": token,
             "household_id": household_id,
             "household_name": self._household_name(household_id),
@@ -282,6 +444,8 @@ class HouseholdDirectory:
             raise ValueError("invitation not found")
         if row["accepted_at"]:
             raise ValueError("invitation already used")
+        if row["revoked_at"]:
+            raise ValueError("invitation revoked")
         if self._timestamp(now) >= datetime.fromisoformat(row["expires_at"]):
             raise ValueError("invitation expired")
         result = dict(row)
@@ -315,6 +479,8 @@ class HouseholdDirectory:
                 raise ValueError("invitation not found")
             if row["accepted_at"]:
                 raise ValueError("invitation already used")
+            if row["revoked_at"]:
+                raise ValueError("invitation revoked")
             if current >= datetime.fromisoformat(row["expires_at"]):
                 raise ValueError("invitation expired")
 
@@ -341,7 +507,7 @@ class HouseholdDirectory:
             claimed = self.connection.execute(
                 """UPDATE invitations
                    SET accepted_at = ?, accepted_account_id = ?
-                   WHERE token_hash = ? AND accepted_at IS NULL AND expires_at > ?""",
+                   WHERE token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?""",
                 (accepted_at, account_id, token_hash, current.isoformat()),
             )
             if claimed.rowcount != 1:

@@ -188,6 +188,8 @@ class InvitationHTTPTests(unittest.TestCase):
         _, login_headers, login_payload = self.post("/api/auth/sign-in", {"token": login_token})
         owner_cookie = login_headers["Set-Cookie"]
         self.assertEqual(login_payload["session"]["household_id"], "home")
+        delivered_invitations = []
+        self.server.invitation_delivery = delivered_invitations.append
 
         status, _, invitation_payload = self.post(
             "/api/auth/invitations",
@@ -196,6 +198,8 @@ class InvitationHTTPTests(unittest.TestCase):
         )
         self.assertEqual(status, 201)
         token = invitation_payload["invitation"]["token"]
+        self.assertEqual(delivered_invitations[0]["email"], "billie@example.test")
+        self.assertIn("/invite?token=", delivered_invitations[0]["url"])
         self.assertIn("/invite?token=", invitation_payload["invitation"]["url"])
 
         status, accept_headers, accepted_payload = self.post(

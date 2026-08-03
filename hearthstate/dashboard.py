@@ -427,7 +427,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/" and not self.server.session_user(self.headers):
             self._send_asset("login.html", "text/html; charset=utf-8")
             return
-        protected_pages = {"/index.html", "/calendar", "/calendar/", "/tasks", "/tasks/", "/meals", "/meals/", "/groceries", "/groceries/", "/recipes", "/recipes/"}
+        protected_pages = {"/index.html", "/admin", "/admin/", "/calendar", "/calendar/", "/tasks", "/tasks/", "/meals", "/meals/", "/groceries", "/groceries/", "/recipes", "/recipes/"}
+        if parsed.path in {"/admin", "/admin/"}:
+            actor = self.server.session_user(self.headers)
+            if actor is None:
+                self._send_redirect("/login")
+                return
+            if self.server.accounts is None or self.server.accounts.role_for(actor, self.server.store.household_id) != "owner":
+                self._send_redirect("/")
+                return
         if parsed.path in protected_pages and not self.server.session_user(self.headers):
             self._send_redirect("/login")
             return
@@ -458,6 +466,23 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             return
         if self.server.accounts is not None and parsed.path.startswith("/api/") and not self.server.session_user(self.headers):
             self._send_json({"error": "authentication required"}, status=401)
+            return
+        if parsed.path == "/api/admin":
+            actor = self.server.session_user(self.headers)
+            if self.server.accounts is None:
+                self._send_json({"error": "account directory unavailable"}, status=404)
+                return
+            if actor is None:
+                self._send_json({"error": "authentication required"}, status=401)
+                return
+            if self.server.accounts.role_for(actor, self.server.store.household_id) != "owner":
+                self._send_json({"error": "owner access required"}, status=403)
+                return
+            self._send_json({
+                "household": self.server.accounts.get_household(self.server.store.household_id),
+                "members": self.server.accounts.list_members(self.server.store.household_id),
+                "invitations": self.server.accounts.list_invitations(self.server.store.household_id, now=self.server.now()),
+            })
             return
         if parsed.path == "/api/inbox":
             viewer = self.server.session_user(self.headers) or parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
@@ -542,6 +567,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             "/login.js": ("login.js", "text/javascript; charset=utf-8"),
             "/invite": ("invite.html", "text/html; charset=utf-8"),
             "/invite.js": ("invite.js", "text/javascript; charset=utf-8"),
+            "/admin": ("admin.html", "text/html; charset=utf-8"),
+            "/admin/": ("admin.html", "text/html; charset=utf-8"),
+            "/admin.js": ("admin.js", "text/javascript; charset=utf-8"),
             "/": ("index.html", "text/html; charset=utf-8"),
             "/index.html": ("index.html", "text/html; charset=utf-8"),
             "/calendar": ("calendar.html", "text/html; charset=utf-8"),
@@ -579,6 +607,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self._send_json({"error": "invalid JSON"}, status=400)
             return
+        if not isinstance(payload, dict):
+            self._send_json({"error": "JSON object required"}, status=400)
+            return
 
         try:
             recipe_parts = parsed.path.strip("/").split("/")
@@ -602,7 +633,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/auth/invitations":
                 if self.server.accounts is None or actor is None:
                     raise ValueError("authenticated account required")
-                household_id = self.server.accounts.household_for(actor)
+                household_id = self.server.session_household(self.headers) or self.server.accounts.household_for(actor)
                 if household_id is None or self.server.store.household_id != household_id:
                     raise ValueError("household context unavailable")
                 invitation = self.server.accounts.create_invitation(
@@ -613,6 +644,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     now=self.server.now(),
                 )
                 invitation["url"] = f"/invite?token={invitation['token']}"
+                if self.server.invitation_delivery is not None:
+                    try:
+                        self.server.invitation_delivery(invitation)
+                    except OSError:
+                        self._send_json({"error": "invitation delivery unavailable"}, status=503)
+                        return
                 self._send_json({"invitation": invitation}, status=201)
                 return
             if parsed.path == "/api/auth/invitations/accept":
@@ -648,6 +685,9 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                                 **issued,
                                 "url": f"/login?token={issued['token']}",
                             })
+                    except OSError:
+                        self._send_json({"error": "sign-in delivery unavailable"}, status=503)
+                        return
                     except ValueError:
                         pass
                 self._send_json({"sent": True}, status=202)
@@ -666,6 +706,45 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     {"session": {"user": signed_in["account_id"], "name": signed_in["display_name"], "household_id": signed_in["household_id"], "role": signed_in["role"]}},
                     headers={"Set-Cookie": f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}"},
                 )
+                return
+            if parsed.path.startswith("/api/admin"):
+                if self.server.accounts is None:
+                    self._send_json({"error": "account directory unavailable"}, status=404)
+                    return
+                if actor is None:
+                    self._send_json({"error": "authentication required"}, status=401)
+                    return
+                household_id = self.server.store.household_id
+                if self.server.accounts.role_for(actor, household_id) != "owner":
+                    self._send_json({"error": "owner access required"}, status=403)
+                    return
+                if parsed.path == "/api/admin/household":
+                    household = self.server.accounts.update_household(household_id, str(payload.get("name", "")), actor)
+                    self._send_json({"household": household})
+                    return
+                member_parts = parsed.path.removeprefix("/api/admin/members/").strip("/").split("/")
+                if parsed.path.startswith("/api/admin/members/"):
+                    if len(member_parts) == 2 and member_parts[1] == "remove":
+                        member = self.server.accounts.remove_member(household_id, member_parts[0], actor)
+                        self._send_json({"member": member})
+                        return
+                    if len(member_parts) == 1:
+                        member = self.server.accounts.update_member_role(
+                            household_id, member_parts[0], str(payload.get("role", "")), actor,
+                        )
+                        self._send_json({"member": member})
+                        return
+                invitation_parts = parsed.path.removeprefix("/api/admin/invitations/").strip("/").split("/")
+                if len(invitation_parts) == 2 and invitation_parts[1] == "revoke" and invitation_parts[0].isdigit():
+                    invitation_id = int(invitation_parts[0])
+                    if not 1 <= invitation_id <= 9223372036854775807:
+                        raise ValueError("invalid invitation id")
+                    invitation = self.server.accounts.revoke_invitation(
+                        household_id, invitation_id, actor, now=self.server.now(),
+                    )
+                    self._send_json({"invitation": invitation})
+                    return
+                self._send_json({"error": "not found"}, status=404)
                 return
             if parsed.path == "/api/inbox":
                 created_by = actor or _inbox_actor(payload)
@@ -1016,10 +1095,12 @@ class DashboardServer(ThreadingHTTPServer):
         now: Callable[[], datetime] | None = None,
         accounts: HouseholdDirectory | None = None,
         sign_in_delivery: Callable[[dict[str, str]], None] | None = None,
+        invitation_delivery: Callable[[dict[str, str]], None] | None = None,
     ) -> None:
         self.store = store
         self.accounts = accounts
         self.sign_in_delivery = sign_in_delivery
+        self.invitation_delivery = invitation_delivery
         self.now = now or local_now
         self.sessions: dict[str, tuple[str, float, str | None]] = {}
         self.session_lock = threading.Lock()
@@ -1052,6 +1133,18 @@ class DashboardServer(ThreadingHTTPServer):
                 return None
         return user
 
+    def session_household(self, headers) -> str | None:
+        if self.session_user(headers) is None:
+            return None
+        cookie = SimpleCookie()
+        cookie.load(headers.get("Cookie", ""))
+        token = cookie.get(_SESSION_COOKIE)
+        if token is None:
+            return None
+        with self.session_lock:
+            session = self.sessions.get(token.value)
+            return session[2] if session is not None else None
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Hearthstate dashboard.")
@@ -1070,6 +1163,12 @@ def main() -> None:
         default=os.environ.get("HEARTHSTATE_HOUSEHOLD_ID"),
         help="Named household context for account-backed auth",
     )
+    parser.add_argument(
+        "--agentmail",
+        action="store_true",
+        default=os.environ.get("HEARTHSTATE_AGENTMAIL_ENABLED", "").lower() in {"1", "true", "yes"},
+        help="Send invitation and sign-in links through AgentMail",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8788, type=int)
     args = parser.parse_args()
@@ -1078,7 +1177,22 @@ def main() -> None:
         parser.error("--accounts-database and --household-id must be supplied together")
     accounts = HouseholdDirectory(args.accounts_database) if args.accounts_database else None
     store = PlannerStore(args.database, household_id=args.household_id or "default")
-    server = DashboardServer((args.host, args.port), store=store, accounts=accounts)
+    sign_in_delivery = None
+    invitation_delivery = None
+    if args.agentmail:
+        if accounts is None:
+            parser.error("--agentmail requires account-backed mode")
+        from .agentmail import send_invitation_email, send_sign_in_email
+
+        sign_in_delivery = send_sign_in_email
+        invitation_delivery = send_invitation_email
+    server = DashboardServer(
+        (args.host, args.port),
+        store=store,
+        accounts=accounts,
+        sign_in_delivery=sign_in_delivery,
+        invitation_delivery=invitation_delivery,
+    )
     print(f"Hearthstate dashboard: http://{args.host}:{args.port}", flush=True)
     try:
         server.serve_forever()

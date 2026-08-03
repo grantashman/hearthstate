@@ -29,4 +29,17 @@
   window.addEventListener('resize', () => {
     if (window.innerWidth > 780) closeMenu();
   });
+
+  fetch('/api/admin', { cache: 'no-store' })
+    .then((response) => {
+      if (!response.ok || document.querySelector('a[href="/admin"]')) return;
+      const adminLink = document.createElement('a');
+      adminLink.className = 'nav-item';
+      adminLink.href = '/admin';
+      adminLink.innerHTML = '<span class="nav-symbol">⚙</span>Administration';
+      nav.appendChild(adminLink);
+    })
+    .catch(() => {
+      // Compatibility-mode households do not have an administration area.
+    });
 })();

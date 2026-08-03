@@ -42,8 +42,12 @@ document.querySelectorAll('[data-user]').forEach((button) => {
 
 magicLinkPanel.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const email = document.querySelector('#magicLinkEmail').value.trim();
+  const emailInput = document.querySelector('#magicLinkEmail');
+  const submitButton = magicLinkPanel.querySelector('button[type="submit"]');
+  const email = emailInput.value.trim();
   feedback.classList.add('is-hidden');
+  submitButton.disabled = true;
+  submitButton.querySelector('span').textContent = 'Sending…';
   try {
     const response = await fetch('/api/auth/sign-in/request', {
       method: 'POST',
@@ -52,8 +56,11 @@ magicLinkPanel.addEventListener('submit', async (event) => {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Could not request a sign-in link');
+    submitButton.querySelector('span').textContent = 'Link sent';
     showFeedback('If that email belongs to this household, a sign-in link is on its way.');
   } catch (error) {
+    submitButton.disabled = false;
+    submitButton.querySelector('span').textContent = 'Send sign-in link';
     showFeedback(error.message);
   }
 });

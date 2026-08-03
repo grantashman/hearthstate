@@ -1,0 +1,19 @@
+[Unit]
+Description=Hearthstate dashboard
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/workspace/hearthstate
+ExecStart=/usr/bin/python3 -m hearthstate.dashboard --database /home/ubuntu/workspace/hearthstate/hearthstate.db --accounts-database /home/ubuntu/workspace/hearthstate/hearthstate-accounts.db --household-id home --agentmail --host 100.89.153.13 --port 8788
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TZ=Australia/Sydney
+Environment=HEARTHSTATE_PUBLIC_URL=http://vnic.tail015325.ts.net:8788
+UMask=0077
+Nice=15
+
+[Install]
+WantedBy=default.target

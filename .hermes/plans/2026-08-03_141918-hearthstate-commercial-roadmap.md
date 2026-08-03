@@ -216,7 +216,7 @@ Use email magic links or an equivalent low-friction authentication method. Keep 
 
 **Done when:** A household owner can invite a second member, the invitee can join, and both can see shared records without seeing private records they do not own.
 
-**Status:** Complete for the local account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the SQLite claim, and bound to the active household; invitation acceptance is transactional, and API sessions revalidate household membership. The dashboard exposes a `sign_in_delivery` callback boundary for email/SMS integration before hosted pilot use.
+**Status:** Complete for the local account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the SQLite claim, and bound to the active household; invitation acceptance is transactional, API sessions revalidate household membership, and the owner-only `/admin` section manages household settings, members, roles, and invitation revocation. The dashboard exposes delivery callback boundaries for email/SMS integration before hosted pilot use.
 
 ### P1.3 Introduce a hosted API boundary
 
