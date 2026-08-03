@@ -63,6 +63,12 @@ python3 -m hearthstate.cli --from-session \
 
 Private reminders are filtered by sender when `What needs attention?` is requested, and user-facing confirmations never echo the raw phone identifier.
 
+## Household boundary
+
+`HouseholdDirectory` stores commercial account, household, membership, and role metadata in a separate SQLite database. The supported roles are `owner`, `member`, `child`, and `guest`; callers can use `can_access`, `role_for`, and `require_access` before selecting a planner context.
+
+`PlannerStore(database, household_id="...")` keeps the existing default database path for local compatibility. A named household context uses a sibling SQLite database derived from the base path, so two households cannot read or mutate each other's planner records. This is the first tenancy boundary; a later hosted API can resolve the authenticated account through `HouseholdDirectory` and open the corresponding planner context.
+
 ## Dashboard pages and actions
 
 The tailnet dashboard is available at [http://vnic.tail015325.ts.net:8788](http://vnic.tail015325.ts.net:8788).
@@ -151,7 +157,7 @@ Open [http://127.0.0.1:8788](http://127.0.0.1:8788). The dashboard is intentiona
 
 ## Remaining roadmap
 
-1. **Household identity and permissions** — **partially complete:** the dashboard now derives the active actor from its passwordless session; explicit permission checks before destructive mutations remain.
+1. **Household identity and permissions** — **foundation complete:** `HouseholdDirectory` now models accounts, households, memberships, and roles; named `PlannerStore` contexts isolate planner data per household. Hosted authentication, invitations, and explicit API permission checks remain.
 2. **Audit history** — **complete:** append-only activity records, before/after snapshots, archive semantics, undo, and activity API.
 3. **Real retailer refresh** — keep the current curated matcher as the safe fallback, then add a policy-compliant Coles search/refresh adapter with rate limits, provenance, stale-price labels, and fail-closed matching.
 4. **Scheduled backups** — **mostly complete:** the tested backup helper runs from a user-level timer with retention; a stale-age alert remains.

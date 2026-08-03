@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
+from pathlib import Path
 from typing import Any
 
 
@@ -60,11 +62,19 @@ def normalize_recurrence(value: str | None) -> str:
 
 
 class PlannerStore:
-    """SQLite persistence layer for the planner's shared primitives."""
+    """SQLite persistence layer for one household's shared primitives.
 
-    def __init__(self, database: str = "hearthstate.db") -> None:
+    The default context keeps the original database path for local compatibility.
+    Named household contexts use a sibling SQLite file, giving the hosted boundary
+    a simple, auditable isolation model before a shared multi-tenant database is
+    introduced.
+    """
+
+    def __init__(self, database: str = "hearthstate.db", *, household_id: str = "default") -> None:
         self._lock = threading.RLock()
-        self.connection = sqlite3.connect(database, check_same_thread=False)
+        self.household_id = self._normalize_household_id(household_id)
+        self.database_path = self._database_for_household(database, self.household_id)
+        self.connection = sqlite3.connect(self.database_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         with self._lock:
             self.connection.execute("PRAGMA foreign_keys = ON")
@@ -229,6 +239,22 @@ class PlannerStore:
             }.items():
                 self._ensure_column("grocery_items", column, definition)
             self.connection.commit()
+
+    @staticmethod
+    def _normalize_household_id(value: str) -> str:
+        normalized = str(value or "").strip().lower()
+        if normalized == "default":
+            return normalized
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", normalized):
+            raise ValueError("invalid household id")
+        return normalized
+
+    @staticmethod
+    def _database_for_household(database: str, household_id: str) -> str:
+        if household_id == "default" or database == ":memory:":
+            return database
+        path = Path(database)
+        return str(path.with_name(f"{path.name}.{household_id}"))
 
     def _ensure_column(self, table: str, column: str, definition: str) -> None:
         columns = {
