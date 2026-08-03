@@ -22,6 +22,18 @@ class AgentMailSenderTests(unittest.TestCase):
         self.assertIn("https://hearthstate.example.test/login?token=secret-token", message["text"])
         self.assertNotIn("secret-token", message["subject"])
 
+    def test_build_message_supports_briefing_without_a_bearer_token_in_metadata(self):
+        message = build_message(
+            {
+                "email": "grant@example.test",
+                "text": "Good morning — Hearthstate briefing: Tasks: school form.",
+            },
+            kind="briefing",
+        )
+        self.assertEqual(message["to"], "grant@example.test")
+        self.assertEqual(message["subject"], "Your Hearthstate morning briefing")
+        self.assertIn("school form", message["text"])
+
     def test_send_message_reads_protected_secrets_and_posts_to_agentmail(self):
         with tempfile.TemporaryDirectory() as directory:
             secret_dir = Path(directory)

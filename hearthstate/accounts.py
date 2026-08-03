@@ -211,6 +211,20 @@ class HouseholdDirectory:
         return role
 
     @_serialized
+    def get_member_contact(self, household_id: str, account_id: str) -> dict[str, str | None]:
+        household_id = self._identifier(household_id, "household id")
+        account_id = self._identifier(account_id, "account id")
+        row = self.connection.execute(
+            """SELECT accounts.id, accounts.display_name, accounts.email, memberships.role
+               FROM memberships JOIN accounts ON accounts.id = memberships.account_id
+               WHERE memberships.household_id = ? AND memberships.account_id = ?""",
+            (household_id, account_id),
+        ).fetchone()
+        if row is None:
+            raise ValueError("household membership required")
+        return dict(row)
+
+    @_serialized
     def list_members(self, household_id: str) -> list[dict[str, str | None]]:
         household_id = self._identifier(household_id, "household id")
         rows = self.connection.execute(

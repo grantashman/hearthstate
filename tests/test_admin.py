@@ -54,7 +54,60 @@ class AdminHTTPTests(unittest.TestCase):
         except HTTPError as error:
             return error.code, error.headers, json.loads(error.read().decode())
 
-    def test_owner_can_read_settings_members_and_pending_invitations_without_token(self):
+    def test_member_can_read_and_update_only_their_own_notification_preferences(self):
+        self.assertEqual(self.request("GET", "/api/notifications/preferences")[0], 401)
+        status, _, payload = self.request("GET", "/api/notifications/preferences", cookie=self.member_cookie)
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["preferences"]["viewer"], "billie")
+        self.assertEqual(payload["preferences"]["enabled"], True)
+
+        status, _, payload = self.request(
+            "POST",
+            "/api/notifications/preferences",
+            {
+                "enabled": False,
+                "preferred_time": "08:15",
+                "quiet_start": "20:30",
+                "quiet_end": "07:15",
+                "updated_by": "grant",
+                "viewer": "grant",
+            },
+            self.member_cookie,
+        )
+        self.assertEqual(status, 400)
+
+        status, _, payload = self.request(
+            "POST",
+            "/api/notifications/preferences",
+            {
+                "enabled": False,
+                "preferred_time": "08:15",
+                "quiet_start": "20:30",
+                "quiet_end": "07:15",
+                "updated_by": "grant",
+            },
+            self.member_cookie,
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("unsupported", payload["error"])
+
+        status, _, payload = self.request(
+            "POST",
+            "/api/notifications/preferences",
+            {
+                "enabled": False,
+                "preferred_time": "08:15",
+                "quiet_start": "20:30",
+                "quiet_end": "07:15",
+            },
+            self.member_cookie,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["preferences"]["viewer"], "billie")
+        self.assertEqual(payload["preferences"]["updated_by"], "billie")
+        self.assertEqual(payload["preferences"]["enabled"], False)
+        self.assertEqual(self.store.get_notification_preferences("grant")["enabled"], True)
+
         invitation = self.accounts.create_invitation("home", "skye@example.test", "guest", "grant")
 
         status, _, payload = self.request("GET", "/api/admin", cookie=self.owner_cookie)

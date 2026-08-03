@@ -28,9 +28,21 @@ def _read_secret(secret_dir: Path, name: str) -> str:
 
 
 def build_message(delivery: dict[str, str], *, kind: str, public_url: str | None = None) -> dict[str, str]:
-    recipient = str(delivery.get("email", "")).strip()
+    recipient = str(delivery.get("email", delivery.get("to", ""))).strip()
+    if not recipient:
+        raise ValueError("invalid AgentMail recipient")
+    if kind == "briefing":
+        text = str(delivery.get("text", "")).strip()
+        if not text:
+            raise ValueError("invalid AgentMail briefing text")
+        briefing_type = str(delivery.get("briefing_type", "morning")).strip().lower() or "morning"
+        return {
+            "to": recipient,
+            "subject": f"Your Hearthstate {briefing_type} briefing",
+            "text": text,
+        }
     relative_url = str(delivery.get("url", "")).strip()
-    if not recipient or not relative_url.startswith("/"):
+    if not relative_url.startswith("/"):
         raise ValueError("invalid AgentMail delivery metadata")
     link = f"{_public_url(public_url)}{relative_url}"
     if kind == "invitation":
@@ -78,6 +90,10 @@ def send_message(
     )
     with urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def send_briefing_email(delivery: dict[str, str]) -> dict:
+    return send_message(build_message(delivery, kind="briefing"))
 
 
 def send_sign_in_email(delivery: dict[str, str]) -> dict:

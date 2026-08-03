@@ -467,6 +467,17 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         if self.server.accounts is not None and parsed.path.startswith("/api/") and not self.server.session_user(self.headers):
             self._send_json({"error": "authentication required"}, status=401)
             return
+        if parsed.path == "/api/notifications/preferences":
+            actor = self.server.session_user(self.headers)
+            if actor is None:
+                self._send_json({"error": "authentication required"}, status=401)
+                return
+            briefing_type = parse_qs(parsed.query).get("briefing_type", ["morning"])[0].strip().lower() or "morning"
+            try:
+                self._send_json({"preferences": self.server.store.get_notification_preferences(actor, briefing_type)})
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+            return
         if parsed.path == "/api/admin":
             actor = self.server.session_user(self.headers)
             if self.server.accounts is None:
@@ -706,6 +717,26 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     {"session": {"user": signed_in["account_id"], "name": signed_in["display_name"], "household_id": signed_in["household_id"], "role": signed_in["role"]}},
                     headers={"Set-Cookie": f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}"},
                 )
+                return
+            if parsed.path == "/api/notifications/preferences":
+                if actor is None:
+                    raise ValueError("authentication required")
+                allowed = {"briefing_type", "enabled", "preferred_time", "quiet_start", "quiet_end", "channel"}
+                if set(payload) - allowed:
+                    raise ValueError("unsupported notification preference field")
+                briefing_type = str(payload.get("briefing_type", "morning")).strip().lower() or "morning"
+                values = {
+                    key: payload[key]
+                    for key in ("enabled", "preferred_time", "quiet_start", "quiet_end", "channel")
+                    if key in payload
+                }
+                preferences = self.server.store.set_notification_preferences(
+                    actor,
+                    briefing_type=briefing_type,
+                    updated_by=actor,
+                    **values,
+                )
+                self._send_json({"preferences": preferences})
                 return
             if parsed.path.startswith("/api/admin"):
                 if self.server.accounts is None:

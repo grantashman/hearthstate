@@ -18,9 +18,15 @@ def _is_quiet(current: datetime) -> bool:
     return current.hour < 7 or current.hour >= 21
 
 
-def compose_briefing(store: PlannerStore, viewer: str, now: datetime | None = None) -> str | None:
+def compose_briefing(
+    store: PlannerStore,
+    viewer: str,
+    now: datetime | None = None,
+    *,
+    enforce_quiet_hours: bool = True,
+) -> str | None:
     current = _current_time(now)
-    if _is_quiet(current):
+    if enforce_quiet_hours and _is_quiet(current):
         return None
     tasks = [task for task in store.list_tasks() if not task["private"] or task["owner"] == viewer]
     due_soon = [task for task in tasks if task.get("due_at") and datetime.fromisoformat(task["due_at"]) <= current + timedelta(days=1)]

@@ -2,7 +2,7 @@
 
 > **Purpose:** Preserve the product decision, market research, pricing hypothesis, and implementation sequence so future sessions can resume without reconstructing the discussion.
 >
-> **Current status:** P1.1 and P1.2 are implemented on the active feature branch: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, and account-backed dashboard sessions are covered by the test suite. Email/SMS delivery and hosted provisioning remain before a commercial pilot.
+> **Current status:** P1.1 and P1.2 are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, account-backed dashboard sessions, owner administration, and AgentMail sign-in/invitation delivery are covered by the test suite. P2.4 now has per-member briefing preferences, atomic delivery claims, bounded retry state, and AgentMail briefing delivery in production. Hosted provisioning, data portability, and pilot instrumentation remain before a commercial pilot.
 
 ## Executive decision
 
@@ -291,14 +291,15 @@ Next additions:
 
 ### P2.4 Deliver briefings through a real scheduler
 
-The current code composes briefings but deliberately does not claim transport delivery. Add a scheduler and delivery adapter with:
+The briefing scheduler now has:
 
-- Quiet hours.
-- Daily deduplication.
-- Per-member preferences.
-- Delivery record.
-- Retry and failure status.
-- No duplicate delivery under concurrent runs.
+- Per-member enabled state, preferred time, quiet hours, and channel preference.
+- Atomic unique delivery records with a short claim lease.
+- Provider success IDs, bounded sanitized failures, and three-attempt retry state.
+- AgentMail email delivery for the production `home` household.
+- Privacy-filtered content and concurrency coverage.
+
+**Status:** Complete for the local account-backed delivery boundary. Photon/iMessage and push adapters, hosted provisioning, user-facing preference controls, and an exactly-once provider contract remain future work.
 
 **Done when:** A briefing can be generated, claimed atomically, delivered once, and audited.
 
@@ -458,8 +459,8 @@ Start here when development resumes:
 2. **Household schema:** Add account/household/membership migrations without breaking the local SQLite test mode.
 3. **Authorization tests:** Prove cross-household isolation and private-record filtering.
 4. **Invitation flow:** Add owner invite and member acceptance.
-5. **Notification preferences:** Store quiet hours, briefing time, and categories.
-6. **Briefing delivery record:** Make claims atomic and add a transport interface.
+5. **Notification preferences:** **complete for the store/runner boundary**; add authenticated dashboard controls.
+6. **Briefing delivery record:** **complete for AgentMail**; add Photon/push adapters and provider idempotency when supported.
 7. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile.
 8. **PWA pass:** Make capture and grocery mode mobile-first.
 9. **Pilot instrumentation:** Emit the events listed in Phase 0.

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import sqlite3
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -209,6 +211,37 @@ class PlannerStore:
                     UNIQUE(viewer, briefing_type, run_date)
                 );
 
+                CREATE TABLE IF NOT EXISTS notification_preferences (
+                    viewer TEXT NOT NULL,
+                    briefing_type TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    preferred_time TEXT NOT NULL DEFAULT '07:30',
+                    quiet_start TEXT NOT NULL DEFAULT '21:00',
+                    quiet_end TEXT NOT NULL DEFAULT '07:00',
+                    channel TEXT NOT NULL DEFAULT 'email',
+                    updated_by TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (viewer, briefing_type)
+                );
+
+                CREATE TABLE IF NOT EXISTS briefing_deliveries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    viewer TEXT NOT NULL,
+                    briefing_type TEXT NOT NULL,
+                    run_date TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('pending', 'sent', 'failed')),
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    claim_id TEXT,
+                    claimed_at TEXT,
+                    lease_until TEXT,
+                    sent_at TEXT,
+                    next_attempt_at TEXT,
+                    provider_message_id TEXT,
+                    last_error TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(viewer, briefing_type, run_date)
+                );
+
                 CREATE TABLE IF NOT EXISTS chore_templates (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
@@ -381,6 +414,225 @@ class PlannerStore:
             self.connection.execute("UPDATE chore_templates SET next_index = ? WHERE id = ?", ((index + 1) % len(participants), chore_id))
             self.connection.commit()
             return next(task for task in self.list_tasks() if task["id"] == task_id)
+
+    @staticmethod
+    def _delivery_timestamp(value: datetime | None = None) -> datetime:
+        current = value or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            return current.replace(tzinfo=timezone.utc)
+        return current.astimezone(timezone.utc)
+
+    @staticmethod
+    def _clock(value: str, field: str) -> str:
+        text = str(value or "").strip()
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", text):
+            raise ValueError(f"invalid {field}")
+        return text
+
+    @staticmethod
+    def _preference_item(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        item = dict(row)
+        item["enabled"] = bool(item["enabled"])
+        return item
+
+    def get_notification_preferences(self, viewer: str, briefing_type: str = "morning") -> dict[str, Any]:
+        viewer = str(viewer or "").strip()
+        briefing_type = str(briefing_type or "").strip().lower()
+        if not viewer or len(viewer) > 120 or not briefing_type or len(briefing_type) > 64:
+            raise ValueError("invalid notification preference identity")
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT * FROM notification_preferences WHERE viewer = ? AND briefing_type = ?",
+                (viewer, briefing_type),
+            ).fetchone()
+            if row is None:
+                self.connection.execute(
+                    """INSERT OR IGNORE INTO notification_preferences
+                       (viewer, briefing_type, updated_by)
+                       VALUES (?, ?, ?)""",
+                    (viewer, briefing_type, viewer),
+                )
+                self.connection.commit()
+                row = self.connection.execute(
+                    "SELECT * FROM notification_preferences WHERE viewer = ? AND briefing_type = ?",
+                    (viewer, briefing_type),
+                ).fetchone()
+            return self._preference_item(row)
+
+    def set_notification_preferences(
+        self,
+        viewer: str,
+        *,
+        briefing_type: str = "morning",
+        enabled: bool | None = None,
+        preferred_time: str | None = None,
+        quiet_start: str | None = None,
+        quiet_end: str | None = None,
+        channel: str | None = None,
+        updated_by: str | None = None,
+    ) -> dict[str, Any]:
+        current = self.get_notification_preferences(viewer, briefing_type)
+        viewer = str(viewer or "").strip()
+        updated_by = str(updated_by or viewer).strip()
+        if not updated_by or len(updated_by) > 120:
+            raise ValueError("invalid updated_by")
+        preferred_time = self._clock(preferred_time or current["preferred_time"], "preferred time")
+        quiet_start = self._clock(quiet_start or current["quiet_start"], "quiet start")
+        quiet_end = self._clock(quiet_end or current["quiet_end"], "quiet end")
+        channel = str(channel or current["channel"]).strip().lower()
+        if channel != "email":
+            raise ValueError("unsupported notification channel")
+        with self._lock:
+            self.connection.execute(
+                """UPDATE notification_preferences
+                   SET enabled = ?, preferred_time = ?, quiet_start = ?, quiet_end = ?,
+                       channel = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE viewer = ? AND briefing_type = ?""",
+                (
+                    int(current["enabled"] if enabled is None else bool(enabled)),
+                    preferred_time,
+                    quiet_start,
+                    quiet_end,
+                    channel,
+                    updated_by,
+                    viewer,
+                    briefing_type,
+                ),
+            )
+            self.connection.commit()
+            row = self.connection.execute(
+                "SELECT * FROM notification_preferences WHERE viewer = ? AND briefing_type = ?",
+                (viewer, briefing_type),
+            ).fetchone()
+            return self._preference_item(row)
+
+    def get_briefing_delivery(self, viewer: str, briefing_type: str, run_date: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.connection.execute(
+                """SELECT * FROM briefing_deliveries
+                   WHERE viewer = ? AND briefing_type = ? AND run_date = ?""",
+                (viewer, briefing_type, run_date),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def claim_briefing_delivery(
+        self,
+        viewer: str,
+        briefing_type: str,
+        run_date: str,
+        *,
+        now: datetime | None = None,
+        lease: timedelta = timedelta(minutes=10),
+        max_attempts: int = 3,
+    ) -> dict[str, Any] | None:
+        if lease <= timedelta(0) or max_attempts < 1:
+            raise ValueError("invalid delivery claim settings")
+        current = self._delivery_timestamp(now)
+        current_text = current.isoformat()
+        claim_id = secrets.token_urlsafe(18)
+        lease_until = (current + lease).isoformat()
+        with self._lock:
+            try:
+                self.connection.execute("BEGIN IMMEDIATE")
+                self.connection.execute(
+                    """INSERT OR IGNORE INTO briefing_deliveries
+                       (viewer, briefing_type, run_date, status)
+                       VALUES (?, ?, ?, 'pending')""",
+                    (viewer, briefing_type, run_date),
+                )
+                row = self.connection.execute(
+                    """SELECT * FROM briefing_deliveries
+                       WHERE viewer = ? AND briefing_type = ? AND run_date = ?""",
+                    (viewer, briefing_type, run_date),
+                ).fetchone()
+                if row is None or row["status"] == "sent":
+                    self.connection.commit()
+                    return None
+                if int(row["attempt_count"]) >= max_attempts and row["status"] == "failed":
+                    self.connection.commit()
+                    return None
+                if row["status"] == "pending" and row["lease_until"]:
+                    if self._delivery_timestamp(datetime.fromisoformat(row["lease_until"])) > current:
+                        self.connection.commit()
+                        return None
+                if row["status"] == "failed" and row["next_attempt_at"]:
+                    if self._delivery_timestamp(datetime.fromisoformat(row["next_attempt_at"])) > current:
+                        self.connection.commit()
+                        return None
+                self.connection.execute(
+                    """UPDATE briefing_deliveries
+                       SET status = 'pending', attempt_count = attempt_count + 1,
+                           claim_id = ?, claimed_at = ?, lease_until = ?, next_attempt_at = NULL
+                       WHERE id = ?""",
+                    (claim_id, current_text, lease_until, row["id"]),
+                )
+                self.connection.commit()
+            except Exception:
+                self.connection.rollback()
+                raise
+            updated = self.connection.execute(
+                "SELECT * FROM briefing_deliveries WHERE id = ?", (row["id"],)
+            ).fetchone()
+            return dict(updated)
+
+    def mark_briefing_delivery_sent(
+        self,
+        viewer: str,
+        briefing_type: str,
+        run_date: str,
+        claim_id: str,
+        provider_message_id: str | None,
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        sent_at = self._delivery_timestamp(now).isoformat()
+        provider_message_id = str(provider_message_id or "")[:200] or None
+        with self._lock:
+            updated = self.connection.execute(
+                """UPDATE briefing_deliveries
+                   SET status = 'sent', sent_at = ?, provider_message_id = ?,
+                       claim_id = NULL, lease_until = NULL, next_attempt_at = NULL
+                   WHERE viewer = ? AND briefing_type = ? AND run_date = ?
+                     AND claim_id = ? AND status = 'pending'""",
+                (sent_at, provider_message_id, viewer, briefing_type, run_date, claim_id),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("briefing delivery claim is no longer active")
+            self.connection.commit()
+            return dict(self.connection.execute(
+                "SELECT * FROM briefing_deliveries WHERE viewer = ? AND briefing_type = ? AND run_date = ?",
+                (viewer, briefing_type, run_date),
+            ).fetchone())
+
+    def mark_briefing_delivery_failed(
+        self,
+        viewer: str,
+        briefing_type: str,
+        run_date: str,
+        claim_id: str,
+        error: str,
+        *,
+        retry_at: datetime | None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        next_attempt_at = self._delivery_timestamp(retry_at).isoformat() if retry_at is not None else None
+        safe_error = str(error or "delivery provider failed")[:240]
+        with self._lock:
+            updated = self.connection.execute(
+                """UPDATE briefing_deliveries
+                   SET status = 'failed', last_error = ?, next_attempt_at = ?,
+                       claim_id = NULL, lease_until = NULL
+                   WHERE viewer = ? AND briefing_type = ? AND run_date = ?
+                     AND claim_id = ? AND status = 'pending'""",
+                (safe_error, next_attempt_at, viewer, briefing_type, run_date, claim_id),
+            )
+            if updated.rowcount != 1:
+                raise ValueError("briefing delivery claim is no longer active")
+            self.connection.commit()
+            return dict(self.connection.execute(
+                "SELECT * FROM briefing_deliveries WHERE viewer = ? AND briefing_type = ? AND run_date = ?",
+                (viewer, briefing_type, run_date),
+            ).fetchone())
 
     def claim_briefing(self, viewer: str, briefing_type: str, run_date: str) -> bool:
         with self._lock:
