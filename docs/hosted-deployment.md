@@ -27,6 +27,16 @@ Set the first two variables for Preview and Production. Set the service-role key
 
 The remote migrations are recorded under `supabase/migrations/`. The hosted schema enables RLS on every public table and returns no security-advisor lints.
 
+## Supabase Auth URLs
+
+Configure Supabase Dashboard → Authentication → URL Configuration for the hosted project:
+
+- Site URL: `https://hearthstate.vercel.app`
+- Redirect URL: `https://hearthstate.vercel.app/login`
+- Optional local development redirect: `http://localhost:3000/login`
+
+The login page sends its current `/login` origin explicitly when requesting a magic link and consumes Supabase's access-token redirect fragment. The origin must still be present in Supabase's allowed Redirect URLs, otherwise Supabase will reject the request or fall back to the wrong Site URL. Preview deployments should use a separate allowed redirect pattern only if preview authentication is needed.
+
 ## Local checks
 
 ```bash

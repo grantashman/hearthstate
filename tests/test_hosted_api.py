@@ -17,6 +17,10 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn('"hosted-login.html"', (Path(__file__).parents[1] / "api" / "index.py").read_text())
         self.assertIn('/auth/v1/token?grant_type=password', login_js)
         self.assertIn('establishHostedSession(session.access_token)', login_js)
+        self.assertIn('redirect_to: hostedLoginRedirect()', login_js)
+        self.assertIn("new URL('/login', window.location.origin)", login_js)
+        self.assertIn('window.location.hash.replace', login_js)
+        self.assertIn('establishHostedSession(accessToken)', login_js)
 
     def test_rewritten_vercel_route_is_normalized(self):
         request = object.__new__(handler)

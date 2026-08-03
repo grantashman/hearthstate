@@ -33,6 +33,10 @@ async function supabaseAuth(path, payload) {
   return body;
 }
 
+function hostedLoginRedirect() {
+  return new URL('/login', window.location.origin).toString();
+}
+
 async function establishHostedSession(accessToken) {
   const response = await fetch('/api/auth/session', {
     method: 'POST',
@@ -81,7 +85,11 @@ magicLinkPanel.addEventListener('submit', async (event) => {
   let requestSucceeded = false;
   try {
     if (hostedConfig?.hosted) {
-      await supabaseAuth('/auth/v1/otp', { email, create_user: true });
+      await supabaseAuth('/auth/v1/otp', {
+        email,
+        create_user: true,
+        redirect_to: hostedLoginRedirect(),
+      });
       requestSucceeded = true;
       magicLinkPanel.classList.add('is-hidden');
       verificationPanel.classList.remove('is-hidden');
@@ -155,6 +163,9 @@ passwordToggle.addEventListener('click', () => {
 
 (async () => {
   const token = new URLSearchParams(window.location.search).get('token');
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const accessToken = hashParams.get('access_token');
+  const authError = hashParams.get('error_description') || hashParams.get('error');
   try {
     const response = await fetch('/api/auth/config', { cache: 'no-store' });
     hostedConfig = await response.json();
@@ -163,6 +174,17 @@ passwordToggle.addEventListener('click', () => {
       passwordToggle.classList.remove('is-hidden');
       loginTitle.textContent = 'Sign in to your household';
       loginDescription.textContent = 'Use your email and we will send a secure, one-time code to your inbox.';
+      if (authError) {
+        showFeedback(decodeURIComponent(authError.replace(/\+/g, ' ')));
+        return;
+      }
+      if (accessToken) {
+        magicLinkPanel.classList.add('is-hidden');
+        passwordToggle.classList.add('is-hidden');
+        showFeedback('Signing you in…');
+        await establishHostedSession(accessToken);
+        return;
+      }
       if (token) {
         magicLinkPanel.classList.add('is-hidden');
         await consumeMagicLink(token);
