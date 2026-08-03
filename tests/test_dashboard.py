@@ -2,6 +2,7 @@ import json
 import threading
 import unittest
 from datetime import datetime
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 from hearthstate.dashboard import DashboardServer, build_dashboard_snapshot
@@ -166,6 +167,38 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn("renderInbox", script)
         self.assertIn("/api/inbox", script)
         self.assertIn("inboxConvertForm", script)
+
+    def test_authenticated_overview_bootstraps_identity_and_owner_navigation(self):
+        store = PlannerStore(":memory:")
+        server = DashboardServer(("127.0.0.1", 0), store=store)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            owner_cookie = login_cookie(base_url, "grant")
+            member_cookie = login_cookie(base_url, "billie")
+            with urlopen(Request(base_url + "/", headers={"Cookie": owner_cookie}), timeout=2) as response:
+                owner_page = response.read().decode()
+            with urlopen(Request(base_url + "/", headers={"Cookie": member_cookie}), timeout=2) as response:
+                member_page = response.read().decode()
+        finally:
+            server.shutdown()
+            server.server_close()
+            store.close()
+            thread.join(timeout=2)
+
+        self.assertIn('window.__HEARTHSTATE_VIEWER__', owner_page)
+        self.assertIn('"name":"Grant"', owner_page)
+        self.assertIn('"role":"Household admin"', owner_page)
+        self.assertIn('id="administrationNav"', owner_page)
+        self.assertLess(owner_page.index('id="administrationNav"'), owner_page.index('src="/nav.js'))
+        self.assertLess(owner_page.index('window.__HEARTHSTATE_VIEWER__'), owner_page.index('src="/app.js'))
+        self.assertNotIn('HEARTHSTATE_ADMIN_NAV', owner_page)
+        self.assertIn('"name":"Billie"', member_page)
+        self.assertNotIn('id="administrationNav"', member_page)
+
+        script = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "app.js").read_text()
+        self.assertIn("viewerBootstrap.name || 'family'", script)
         self.assertIn("localStorage", script)
 
     def test_hearthstate_brand_is_available_on_every_page(self):

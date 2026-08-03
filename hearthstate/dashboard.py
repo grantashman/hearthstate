@@ -32,6 +32,20 @@ HOUSEHOLD_USERS = {
     "billie": {"name": "Billie", "role": "Household member", "image": "/user-images/billie.png"},
     "skye": {"name": "Skye", "role": "Household member", "image": "/user-images/skye.png"},
 }
+_ADMIN_NAV_MARKER = "<!-- HEARTHSTATE_ADMIN_NAV -->"
+_ADMIN_NAV = '<a class="nav-item" id="administrationNav" href="/admin"><span class="nav-symbol">⚙</span>Administration</a>'
+
+
+def _inject_viewer_bootstrap(content: bytes, viewer: dict | None) -> bytes:
+    """Inject authenticated display context before deferred dashboard scripts run."""
+    rendered = content.decode("utf-8")
+    rendered = rendered.replace(_ADMIN_NAV_MARKER, _ADMIN_NAV if viewer and viewer.get("is_owner") else "")
+    if viewer:
+        serialized = json.dumps(viewer, separators=(",", ":"), ensure_ascii=False)
+        serialized = serialized.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        script = f'<script id="hearthstate-viewer-bootstrap">window.__HEARTHSTATE_VIEWER__={serialized};</script>'
+        rendered = rendered.replace("</head>", f"{script}</head>", 1)
+    return rendered.encode("utf-8")
 
 
 def _inbox_actor(payload: dict, field: str = "created_by", *, default: str | None = None) -> str:
@@ -608,8 +622,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         asset = assets.get(parsed.path)
         if asset:
             filename, content_type = asset
-            content = (_DASHBOARD_DIR / filename).read_bytes()
-            self._send_bytes(content, content_type, cache_control="no-cache")
+            self._send_asset(filename, content_type)
             return
 
         self.send_error(404, "Not found")
@@ -1074,7 +1087,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(error)}, status=400)
 
     def _send_asset(self, filename: str, content_type: str) -> None:
-        self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type, cache_control="no-cache")
+        content = (_DASHBOARD_DIR / filename).read_bytes()
+        if content_type.startswith("text/html"):
+            content = _inject_viewer_bootstrap(content, self.server.viewer_bootstrap(self.headers))
+        self._send_bytes(content, content_type, cache_control="no-cache")
 
     def _send_redirect(self, location: str) -> None:
         self.send_response(302)
@@ -1166,6 +1182,33 @@ class DashboardServer(ThreadingHTTPServer):
                     self.sessions.pop(token.value, None)
                 return None
         return user
+
+    def viewer_bootstrap(self, headers) -> dict | None:
+        actor = self.session_user(headers)
+        if actor is None:
+            return None
+        if self.accounts is None:
+            profile = HOUSEHOLD_USERS.get(actor, {"name": actor.title(), "role": "Household member"})
+            return {
+                "user": actor,
+                "name": profile["name"],
+                "role": profile["role"],
+                "is_owner": actor == "grant",
+            }
+        contact = self.accounts.get_member_contact(self.store.household_id, actor)
+        role = str(contact.get("role") or "member")
+        role_labels = {
+            "owner": "Household admin",
+            "member": "Household member",
+            "child": "Household child",
+            "guest": "Household guest",
+        }
+        return {
+            "user": actor,
+            "name": str(contact.get("display_name") or actor.title()),
+            "role": role_labels.get(role, "Household member"),
+            "is_owner": role == "owner",
+        }
 
     def session_household(self, headers) -> str | None:
         if self.session_user(headers) is None:

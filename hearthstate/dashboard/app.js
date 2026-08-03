@@ -64,7 +64,8 @@ const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character
 }[character]));
 
 const formatDate = (value, options) => new Intl.DateTimeFormat(undefined, options).format(new Date(value));
-let currentViewerName = 'family';
+const viewerBootstrap = window.__HEARTHSTATE_VIEWER__ || {};
+let currentViewerName = viewerBootstrap.name || 'family';
 
 function getTimeOfDayGreeting(hour = new Date().getHours(), name = 'family') {
   const subject = name || 'family';
@@ -84,6 +85,14 @@ function updateGreeting(now = new Date(), name = currentViewerName) {
   const greeting = getTimeOfDayGreeting(now.getHours(), name);
   els.greetingTitle.textContent = greeting.title;
   els.greetingEyebrow.textContent = greeting.eyebrow;
+}
+
+function applyViewerBootstrap() {
+  if (!viewerBootstrap.name) return;
+  currentViewerName = viewerBootstrap.name;
+  if (els.viewerName) els.viewerName.textContent = viewerBootstrap.name;
+  if (els.viewerRole) els.viewerRole.textContent = viewerBootstrap.role || 'Household member';
+  if (els.viewerAvatar) els.viewerAvatar.textContent = viewerBootstrap.name.charAt(0).toUpperCase();
 }
 
 function syncThemeButton() {
@@ -456,6 +465,7 @@ els.inboxConvertForm.addEventListener('submit', submitInboxConversion);
 els.inboxConvertType.addEventListener('change', setInboxConversionFields);
 els.inboxConvertCancel.addEventListener('click', closeInboxConversion);
 syncThemeButton();
+applyViewerBootstrap();
 updateGreeting();
 window.setInterval(updateGreeting, 60_000);
 loadDashboard();

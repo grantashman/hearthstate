@@ -21,6 +21,20 @@ _DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8TG9k3vZPrIW2NLGeHuH1w_KGzTO
 _SESSION_COOKIE = "HearthstateHostedSession"
 _SESSION_MAX_AGE = 60 * 60 * 24 * 7
 _DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "hearthstate" / "dashboard"
+_ADMIN_NAV_MARKER = "<!-- HEARTHSTATE_ADMIN_NAV -->"
+_ADMIN_NAV = '<a class="nav-item" id="administrationNav" href="/admin"><span class="nav-symbol">⚙</span>Administration</a>'
+
+
+def _inject_viewer_bootstrap(content: bytes, viewer: dict | None) -> bytes:
+    """Inject authenticated display context before deferred dashboard scripts run."""
+    rendered = content.decode("utf-8")
+    rendered = rendered.replace(_ADMIN_NAV_MARKER, _ADMIN_NAV if viewer and viewer.get("is_owner") else "")
+    if viewer:
+        serialized = json.dumps(viewer, separators=(",", ":"), ensure_ascii=False)
+        serialized = serialized.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+        script = f'<script id="hearthstate-viewer-bootstrap">window.__HEARTHSTATE_VIEWER__={serialized};</script>'
+        rendered = rendered.replace("</head>", f"{script}</head>", 1)
+    return rendered.encode("utf-8")
 
 
 class SupabaseHTTPError(Exception):
@@ -441,6 +455,33 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         household = _first(_supabase_request("GET", "/rest/v1/households", token=token, query=[("select", "id,name,created_at"), ("id", f"eq.{household_id}")])) or {}
         return {"household": household, "members": rendered_members, "invitations": invitations}
 
+    def _viewer_bootstrap(self) -> dict | None:
+        try:
+            user_id, token, user = self._authenticate()
+            context = self._context(user_id, token, required=False)
+            if context is None:
+                return None
+            household_id, memberships = context
+            membership = next((item for item in memberships if str(item.get("id")) == household_id), None)
+            if membership is None:
+                return None
+            profile = _first(_supabase_request("GET", "/rest/v1/profiles", token=token, query=[("select", "display_name"), ("user_id", f"eq.{user_id}")])) or {}
+            role = str(membership.get("role") or "member")
+            role_labels = {
+                "owner": "Household admin",
+                "member": "Household member",
+                "child": "Household child",
+                "guest": "Household guest",
+            }
+            return {
+                "user": user_id,
+                "name": str(profile.get("display_name") or user.get("email", "Household member").split("@", 1)[0].title()),
+                "role": role_labels.get(role, "Household member"),
+                "is_owner": role == "owner",
+            }
+        except (SupabaseHTTPError, ValueError):
+            return None
+
     def _handle_asset(self, route: str) -> bool:
         pages = {
             "/login": ("hosted-login.html", "text/html; charset=utf-8", False),
@@ -466,7 +507,10 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     filename, content_type, protected = ("index.html", "text/html; charset=utf-8", True) if self._memberships(user_id, token) else ("hosted.html", "text/html; charset=utf-8", False)
                 except SupabaseHTTPError:
                     filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
-            self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type)
+            content = (_DASHBOARD_DIR / filename).read_bytes()
+            if protected:
+                content = _inject_viewer_bootstrap(content, self._viewer_bootstrap())
+            self._send_bytes(content, content_type)
             return True
         if route == "/setup":
             if not self._token():
@@ -506,7 +550,10 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             except SupabaseHTTPError:
                 self._redirect("/login")
                 return True
-        self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type)
+        content = (_DASHBOARD_DIR / filename).read_bytes()
+        if protected:
+            content = _inject_viewer_bootstrap(content, self._viewer_bootstrap())
+        self._send_bytes(content, content_type)
         return True
 
     def _handle_get(self, route: str) -> None:

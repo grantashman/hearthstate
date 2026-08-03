@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from api.index import _rows, _uuid, handler
+from api.index import _inject_viewer_bootstrap, _rows, _uuid, handler
 
 
 class HostedApiContractTests(unittest.TestCase):
@@ -95,6 +95,15 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertNotIn("Authorization", setup)
         self.assertIn("/api/me", setup)
         self.assertIn("/api/households", setup)
+
+    def test_hosted_viewer_bootstrap_injects_owner_navigation_without_leaking_script_markup(self):
+        html = '<head></head><body><!-- HEARTHSTATE_ADMIN_NAV --></body>'
+        rendered = _inject_viewer_bootstrap(html.encode(), {"name": "Grant", "role": "Household admin", "is_owner": True})
+        text = rendered.decode()
+        self.assertIn('window.__HEARTHSTATE_VIEWER__', text)
+        self.assertIn('"name":"Grant"', text)
+        self.assertIn('id="administrationNav"', text)
+        self.assertNotIn('HEARTHSTATE_ADMIN_NAV', text)
 
     def test_hosted_session_cookie_is_used_when_authorization_header_is_absent(self):
         request = object.__new__(handler)
