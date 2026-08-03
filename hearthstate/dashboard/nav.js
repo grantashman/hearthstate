@@ -30,7 +30,10 @@
     if (window.innerWidth > 780) closeMenu();
   });
 
-  fetch('/api/admin', { cache: 'no-store' })
+  const activeHouseholdHeaders = {};
+  const activeHouseholdId = window.__HEARTHSTATE_VIEWER__?.household_id;
+  if (activeHouseholdId) activeHouseholdHeaders['X-Hearthstate-Household'] = activeHouseholdId;
+  fetch('/api/admin', { cache: 'no-store', headers: activeHouseholdHeaders })
     .then((response) => {
       if (!response.ok || document.querySelector('a[href="/admin"]')) return;
       const adminLink = document.createElement('a');

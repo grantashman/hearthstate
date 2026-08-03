@@ -250,12 +250,14 @@ class HostedApiContractTests(unittest.TestCase):
         dashboard = Path(__file__).parents[1] / "hearthstate" / "dashboard"
         admin_html = (dashboard / "admin.html").read_text()
         admin_js = (dashboard / "admin.js").read_text()
+        nav_js = (dashboard / "nav.js").read_text()
         self.assertIn('id="exportDataButton"', admin_html)
         self.assertIn('id="deleteHouseholdButton"', admin_html)
         self.assertIn("/api/admin/export", admin_js)
         self.assertIn("/api/admin/delete", admin_js)
         self.assertIn("confirmation_name", admin_js)
         self.assertIn("X-Hearthstate-Household", admin_js)
+        self.assertIn("X-Hearthstate-Household", nav_js)
 
     def test_data_portability_migration_is_owner_bound_and_secret_safe(self):
         migrations = Path(__file__).parents[1] / "supabase" / "migrations"
