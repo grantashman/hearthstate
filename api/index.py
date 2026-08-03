@@ -437,7 +437,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
 
     def _handle_asset(self, route: str) -> bool:
         pages = {
-            "/login": ("login.html", "text/html; charset=utf-8", False),
+            "/login": ("hosted-login.html", "text/html; charset=utf-8", False),
             "/setup": ("hosted.html", "text/html; charset=utf-8", False),
             "/invite": ("invite.html", "text/html; charset=utf-8", False),
             "/index.html": ("index.html", "text/html; charset=utf-8", True),
@@ -453,13 +453,13 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml"}.items()}
         if route == "/":
             if not self._token():
-                filename, content_type, protected = "login.html", "text/html; charset=utf-8", False
+                filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
             else:
                 try:
                     user_id, token, _ = self._authenticate()
                     filename, content_type, protected = ("index.html", "text/html; charset=utf-8", True) if self._memberships(user_id, token) else ("hosted.html", "text/html; charset=utf-8", False)
                 except SupabaseHTTPError:
-                    filename, content_type, protected = "login.html", "text/html; charset=utf-8", False
+                    filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
             self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type)
             return True
         asset = pages.get(route) or assets.get(route.removeprefix("/"))
@@ -470,15 +470,6 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             image = _DASHBOARD_DIR / "recipe-images" / filename
             if image.is_file():
                 self._send_bytes(image.read_bytes(), {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}[image.suffix.lower()], cache_control="public, max-age=86400")
-                return True
-            return False
-        if asset is None and route.startswith("/user-images/"):
-            filename = Path(route.removeprefix("/user-images/")).name
-            if filename not in {"grant.png", "billie.png", "skye.png"}:
-                return False
-            image = _DASHBOARD_DIR / "user-images" / filename
-            if image.is_file():
-                self._send_bytes(image.read_bytes(), "image/png", cache_control="public, max-age=86400")
                 return True
             return False
         if asset is None:

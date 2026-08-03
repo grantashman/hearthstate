@@ -1,5 +1,4 @@
 const feedback = document.querySelector('#loginFeedback');
-const legacyChooser = document.querySelector('#legacyChooser');
 const magicLinkPanel = document.querySelector('#magicLinkPanel');
 const verificationPanel = document.querySelector('#verificationPanel');
 const passwordPanel = document.querySelector('#passwordPanel');
@@ -160,7 +159,6 @@ passwordToggle.addEventListener('click', () => {
     const response = await fetch('/api/auth/config', { cache: 'no-store' });
     hostedConfig = await response.json();
     if (hostedConfig.hosted) {
-      legacyChooser.classList.add('is-hidden');
       magicLinkPanel.classList.remove('is-hidden');
       passwordToggle.classList.remove('is-hidden');
       loginTitle.textContent = 'Sign in to your household';
@@ -170,7 +168,6 @@ passwordToggle.addEventListener('click', () => {
         await consumeMagicLink(token);
       }
     } else if (hostedConfig.account_backed) {
-      legacyChooser.classList.add('is-hidden');
       magicLinkPanel.classList.remove('is-hidden');
       loginTitle.textContent = 'Sign in to your household';
       loginDescription.textContent = 'Use your email and we will send a secure, one-time link to your inbox.';

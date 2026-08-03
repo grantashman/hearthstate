@@ -25,7 +25,6 @@
     { "source": "/notifications.js", "destination": "/api/index.py?route=/notifications.js" },
     { "source": "/styles.css", "destination": "/api/index.py?route=/styles.css" },
     { "source": "/favicon.svg", "destination": "/api/index.py?route=/favicon.svg" },
-    { "source": "/recipe-images/:path*", "destination": "/api/index.py?route=/recipe-images/:path*" },
-    { "source": "/user-images/:path*", "destination": "/api/index.py?route=/user-images/:path*" }
+    { "source": "/recipe-images/:path*", "destination": "/api/index.py?route=/recipe-images/:path*" }
   ]
 }

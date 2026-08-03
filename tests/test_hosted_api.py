@@ -9,9 +9,12 @@ from api.index import _rows, _uuid, handler
 class HostedApiContractTests(unittest.TestCase):
     def test_branded_login_exposes_temporary_password_fallback(self):
         dashboard = Path(__file__).parents[1] / "hearthstate" / "dashboard"
-        login_html = (dashboard / "login.html").read_text()
+        login_html = (dashboard / "hosted-login.html").read_text()
         login_js = (dashboard / "login.js").read_text()
         self.assertIn('id="passwordPanel"', login_html)
+        self.assertNotIn('id="legacyChooser"', login_html)
+        self.assertNotIn('/user-images/', login_html)
+        self.assertIn('"hosted-login.html"', (Path(__file__).parents[1] / "api" / "index.py").read_text())
         self.assertIn('/auth/v1/token?grant_type=password', login_js)
         self.assertIn('establishHostedSession(session.access_token)', login_js)
 

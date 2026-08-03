@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-3" />
+    <title>Hearthstate · Sign in</title>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-5" />
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-card" aria-labelledby="loginTitle">
+        <div class="login-brand">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div><strong>hearthstate</strong><span>household state</span></div>
+          <span class="login-brand-badge">private space</span>
+        </div>
+        <div class="login-copy">
+          <p class="eyebrow">A SHARED MOMENT AT HOME</p>
+          <h1 id="loginTitle">Sign in to your household</h1>
+          <p id="loginDescription">Use your email and we will send a secure, one-time code to your inbox.</p>
+        </div>
+        <form class="login-form" id="magicLinkPanel">
+          <div class="login-form-heading">
+            <span class="login-form-kicker">Secure sign-in</span>
+            <span id="loginFormHint">We’ll send a one-time code to your inbox.</span>
+          </div>
+          <div class="login-form-row">
+            <label class="login-field">
+              <span class="login-field-icon" aria-hidden="true">@</span>
+              <span class="sr-only">Email address</span>
+              <input id="magicLinkEmail" name="email" type="email" autocomplete="email" required placeholder="you@example.com" />
+            </label>
+            <button class="primary-button" type="submit"><span>Send code</span><span aria-hidden="true">↗</span></button>
+          </div>
+          <p class="login-note"><span class="login-note-dot" aria-hidden="true"></span>Single-use code · expires in 15 minutes</p>
+        </form>
+        <form class="login-form is-hidden" id="verificationPanel">
+          <div class="login-form-heading">
+            <span class="login-form-kicker">Check your inbox</span>
+            <span>Enter the six-digit code we just sent.</span>
+          </div>
+          <div class="login-form-row">
+            <label class="login-field">
+              <span class="login-field-icon" aria-hidden="true">✦</span>
+              <span class="sr-only">Verification code</span>
+              <input id="magicLinkCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="123456" />
+            </label>
+            <button class="primary-button" type="submit"><span>Continue</span><span aria-hidden="true">↗</span></button>
+          </div>
+          <p class="login-note"><span class="login-note-dot" aria-hidden="true"></span>Single-use code · expires in 15 minutes</p>
+        </form>
+        <form class="login-form is-hidden" id="passwordPanel" autocomplete="on">
+          <div class="login-form-heading">
+            <span class="login-form-kicker">Temporary password</span>
+            <span>Use the password on your existing Supabase account.</span>
+          </div>
+          <div class="login-form-row">
+            <label class="login-field">
+              <span class="login-field-icon" aria-hidden="true">@</span>
+              <span class="sr-only">Email address</span>
+              <input id="passwordEmail" name="username" type="email" autocomplete="username" required placeholder="you@example.com" />
+            </label>
+          </div>
+          <div class="login-form-row">
+            <label class="login-field">
+              <span class="login-field-icon" aria-hidden="true">•</span>
+              <span class="sr-only">Password</span>
+              <input id="passwordInput" name="password" type="password" autocomplete="current-password" required placeholder="Password" />
+            </label>
+            <button class="primary-button" type="submit"><span>Sign in</span><span aria-hidden="true">↗</span></button>
+          </div>
+          <p class="login-note"><span class="login-note-dot" aria-hidden="true"></span>Temporary fallback · remove when email delivery is restored</p>
+        </form>
+        <button class="login-method-toggle" id="passwordToggle" type="button">Use temporary password sign-in</button>
+        <div class="login-feedback is-hidden" id="loginFeedback" role="status" aria-live="polite"></div>
+      </section>
+      <p class="login-footer">hearthstate · know what needs attention at home</p>
+    </main>
+    <script src="/login.js?v=hearthstate-4" defer></script>
+  </body>
+</html>
