@@ -162,6 +162,12 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             route = route.removeprefix("/api")
         return route or "/"
 
+    def _is_api_request(self) -> bool:
+        parsed = urlparse(self.path)
+        rewritten = parse_qs(parsed.query).get("route", [""])[0]
+        route = rewritten or parsed.path
+        return route == "/api" or route.startswith("/api/")
+
     def _query(self) -> dict[str, list[str]]:
         return parse_qs(urlparse(self.path).query)
 
@@ -462,7 +468,10 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
             self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type)
             return True
-        if route == "/setup" and self._token():
+        if route == "/setup":
+            if not self._token():
+                self._redirect("/login")
+                return True
             try:
                 user_id, token, _ = self._authenticate()
                 if self._memberships(user_id, token):
@@ -501,7 +510,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         return True
 
     def _handle_get(self, route: str) -> None:
-        if self._handle_asset(route):
+        if not self._is_api_request() and self._handle_asset(route):
             return
         if route == "/health":
             _supabase_request("GET", "/rest/v1/households", query=[("select", "id"), ("limit", "1")])

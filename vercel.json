@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index.py?route=/:path*" },
+    { "source": "/api/:path*", "destination": "/api/index.py?route=/api/:path*" },
     { "source": "/", "destination": "/api/index.py?route=/" },
     { "source": "/login", "destination": "/api/index.py?route=/login" },
     { "source": "/setup", "destination": "/api/index.py?route=/setup" },

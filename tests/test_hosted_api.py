@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,6 +32,69 @@ class HostedApiContractTests(unittest.TestCase):
         request = object.__new__(handler)
         request.path = "/api/index.py?route=/api/dashboard"
         self.assertEqual(request._route(), "/dashboard")
+
+    def test_rewritten_api_route_is_marked_as_api_request(self):
+        request = object.__new__(handler)
+        request.path = "/api/index.py?route=/api/tasks"
+        self.assertTrue(request._is_api_request())
+        self.assertEqual(request._route(), "/tasks")
+
+    def test_all_page_api_routes_preserve_the_api_marker(self):
+        request = object.__new__(handler)
+        for page in ("calendar", "tasks", "meals", "groceries", "recipes", "admin", "notifications"):
+            request.path = f"/api/index.py?route=/api/{page}"
+            with self.subTest(page=page):
+                self.assertTrue(request._is_api_request())
+                self.assertEqual(request._route(), f"/{page}")
+
+    def test_rewritten_api_tasks_route_bypasses_html_asset_dispatch(self):
+        request = object.__new__(handler)
+        request.path = "/api/index.py?route=/api/tasks"
+        request._handle_asset = Mock(return_value=True)
+        request._authenticate = Mock(return_value=("user-id", "session-token", {"email": "person@example.com"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._table = Mock(return_value=[])
+        request._enrich_rows = Mock(return_value=[])
+        request._respond = Mock()
+
+        request._handle_get(request._route())
+
+        request._handle_asset.assert_not_called()
+        request._respond.assert_called_once()
+        self.assertEqual(request._respond.call_args.args[0]["tasks"], [])
+
+    def test_browser_tasks_route_still_uses_html_asset_dispatch(self):
+        request = object.__new__(handler)
+        request.path = "/api/index.py?route=/tasks"
+        request._handle_asset = Mock(return_value=True)
+
+        request._handle_get(request._route())
+
+        request._handle_asset.assert_called_once_with("/tasks")
+
+    def test_anonymous_setup_redirects_to_canonical_login(self):
+        request = object.__new__(handler)
+        request.headers = SimpleNamespace(get=lambda key, default="": default)
+        request.send_response = Mock()
+        request.send_header = Mock()
+        request.end_headers = Mock()
+
+        self.assertTrue(request._handle_asset("/setup"))
+
+        request.send_response.assert_called_once_with(302)
+        request.send_header.assert_any_call("Location", "/login")
+
+    def test_vercel_api_rewrite_preserves_api_namespace(self):
+        config = json.loads((Path(__file__).parents[1] / "vercel.json").read_text())
+        rewrite = next(item for item in config["rewrites"] if item["source"] == "/api/:path*")
+        self.assertIn("route=/api/:path*", rewrite["destination"])
+
+    def test_setup_page_uses_cookie_backed_session_only(self):
+        setup = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "hosted.html").read_text()
+        self.assertNotIn("localStorage", setup)
+        self.assertNotIn("Authorization", setup)
+        self.assertIn("/api/me", setup)
+        self.assertIn("/api/households", setup)
 
     def test_hosted_session_cookie_is_used_when_authorization_header_is_absent(self):
         request = object.__new__(handler)
