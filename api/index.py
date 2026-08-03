@@ -462,6 +462,15 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
             self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type)
             return True
+        if route == "/setup" and self._token():
+            try:
+                user_id, token, _ = self._authenticate()
+                if self._memberships(user_id, token):
+                    self._redirect("/")
+                    return True
+            except SupabaseHTTPError:
+                self._redirect("/login")
+                return True
         asset = pages.get(route) or assets.get(route.removeprefix("/"))
         if asset is None and route.startswith("/recipe-images/"):
             filename = Path(route.removeprefix("/recipe-images/")).name

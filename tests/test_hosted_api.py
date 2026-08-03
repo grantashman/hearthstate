@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from api.index import _rows, _uuid, handler
 
@@ -36,6 +36,18 @@ class HostedApiContractTests(unittest.TestCase):
         request = object.__new__(handler)
         request.headers = SimpleNamespace(get=lambda key, default="": "HearthstateHostedSession=session-token" if key == "Cookie" else default)
         self.assertEqual(request._token(), "session-token")
+
+    def test_setup_redirects_authenticated_member_to_dashboard(self):
+        request = object.__new__(handler)
+        request.headers = SimpleNamespace(get=lambda key, default="": "HearthstateHostedSession=session-token" if key == "Cookie" else default)
+        request._authenticate = Mock(return_value=("user-id", "session-token", {}))
+        request._memberships = Mock(return_value=[{"id": "household-id", "name": "Ashman Household"}])
+        request.send_response = Mock()
+        request.send_header = Mock()
+        request.end_headers = Mock()
+        self.assertTrue(request._handle_asset("/setup"))
+        request.send_response.assert_called_once_with(302)
+        request.send_header.assert_any_call("Location", "/")
 
     def test_invalid_household_context_is_rejected(self):
         with self.assertRaises(ValueError):
