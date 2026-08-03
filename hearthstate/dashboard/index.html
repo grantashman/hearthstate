@@ -196,6 +196,33 @@
           <div class="planning-strip" id="planningStrip" aria-live="polite"></div>
         </section>
 
+        <section class="intelligence-panel panel" id="householdSignals" aria-labelledby="householdSignalsTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">NEW · HOUSEHOLD INTELLIGENCE</p>
+              <h2 id="householdSignalsTitle">Household signals</h2>
+            </div>
+            <span class="panel-badge" id="intelligenceBadge">Clear</span>
+          </div>
+          <div class="intelligence-grid">
+            <div>
+              <h3>Conflicts</h3>
+              <ul class="signal-list" id="conflictList" aria-live="polite"></ul>
+              <p class="signal-empty" id="conflictEmpty">No calendar conflicts found.</p>
+            </div>
+            <div>
+              <h3>Recent activity</h3>
+              <ul class="signal-list" id="activityList" aria-live="polite"></ul>
+              <p class="signal-empty" id="activityEmpty">No recent changes recorded.</p>
+            </div>
+            <div>
+              <h3>Chore rotation</h3>
+              <ul class="signal-list" id="choreList" aria-live="polite"></ul>
+              <p class="signal-empty" id="choreEmpty">No rotating chores yet.</p>
+            </div>
+          </div>
+        </section>
+
         <section class="dashboard-grid">
           <article class="panel attention-panel" id="tasks">
             <div class="panel-heading">
@@ -261,7 +288,7 @@
         <footer class="page-footer"><span>hearthstate</span><span>Last refreshed <time id="footerTime">—</time></span></footer>
       </main>
     </div>
-    <script src="/nav.js?v=hearthstate-3" defer></script>
-    <script src="/app.js?v=hearthstate-3" defer></script>
+    <script src="/nav.js?v=hearthstate-4" defer></script>
+    <script src="/app.js?v=hearthstate-4" defer></script>
   </body>
 </html>
