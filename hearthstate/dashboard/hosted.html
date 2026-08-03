@@ -79,5 +79,9 @@
   (async () => { try { state.config = await hostedConfig(); if (!state.token) return; await loadMe(); await enterApp(); } catch (error) { setToken(null); setMessage('auth-message', error.message); } })();
 })();
 </script>
+<script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
