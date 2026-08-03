@@ -9,11 +9,16 @@ from pathlib import Path
 
 def backup_database(source: str | Path, destination: str | Path) -> Path:
     """Create an atomic, consistent SQLite backup using SQLite's backup API."""
-    source_path = Path(source).expanduser().resolve()
-    destination_path = Path(destination).expanduser().resolve()
-    if not source_path.is_file():
-        raise FileNotFoundError(f"database not found: {source_path}")
-    if source_path == destination_path:
+    # Keep the caller's absolute path spelling for the return value. On macOS,
+    # Path.resolve() changes /var/... to /private/var/..., which is equivalent
+    # on disk but surprising to callers and platform-sensitive tests.
+    source_path = Path(source).expanduser().absolute()
+    destination_path = Path(destination).expanduser().absolute()
+    source_real_path = source_path.resolve()
+    destination_real_path = destination_path.resolve()
+    if not source_real_path.is_file():
+        raise FileNotFoundError(f"database not found: {source_real_path}")
+    if source_real_path == destination_real_path:
         raise ValueError("backup destination must differ from the source database")
 
     destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -22,7 +27,7 @@ def backup_database(source: str | Path, destination: str | Path) -> Path:
         temporary_path.unlink()
 
     try:
-        with sqlite3.connect(source_path) as source_connection:
+        with sqlite3.connect(source_real_path) as source_connection:
             with sqlite3.connect(temporary_path) as destination_connection:
                 source_connection.backup(destination_connection)
                 destination_connection.execute("PRAGMA synchronous = FULL")
