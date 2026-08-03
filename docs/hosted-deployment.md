@@ -1,21 +1,18 @@
 # Hosted deployment
 
-Hearthstate has a hosted P1.3 boundary. The maintainer-level architecture and resume checklist live in [`docs/maintainer-handoff.md`](maintainer-handoff.md).
+Hearthstate runs as a hosted Vercel/Supabase application.
 
 - Supabase project: `hearthstate` in `ap-southeast-2`.
 - Vercel entrypoint: `api/index.py`.
-- Root hosted page: the existing full branded dashboard under `hearthstate/dashboard/`.
-- API routes are rewritten through `vercel.json`.
+- Root page and static assets: `hearthstate/dashboard/`.
+- API routes: rewritten through `vercel.json`.
+- Canonical production URL: `https://hearthstate.vercel.app`.
 
-Supabase is the canonical hosted data store. SQLite remains only as a local compatibility and test path; the Vercel runtime does not read the server's SQLite database. The hosted app uses the existing branded login and dashboard pages, Supabase email OTP authentication plus a temporary password fallback, an HTTP-only session cookie, household membership RLS, and the full dashboard routes for tasks, calendar, meals, groceries, recipes, Inbox, chores, preferences, administration, and invitations.
-
-## Temporary password fallback
-
-The hosted login includes a temporary password option while email delivery is unavailable. It calls Supabase Auth's standard password token endpoint and then uses the same `/api/auth/session` boundary as email OTP, so it does not bypass Auth, memberships, or RLS. Use the email address of the existing Supabase Auth user and its password. This UI is intentionally marked for removal once email delivery is restored; do not use a shared or hard-coded application password.
+Supabase is the only application data store. The hosted app uses Supabase email OTP authentication plus a temporary password fallback, an HttpOnly session cookie, household membership RLS, and dashboard routes for tasks, calendar, meals, groceries, recipes, Inbox, chores, preferences, administration, and invitations.
 
 ## Environment
 
-For a Vercel project, set these variables for Preview and Production:
+For Vercel Production and Preview, set:
 
 ```text
 SUPABASE_URL=https://<project-ref>.supabase.co
@@ -23,27 +20,30 @@ SUPABASE_PUBLISHABLE_KEY=<publishable-key>
 SUPABASE_SERVICE_ROLE_KEY=<server-only-service-role-key>
 ```
 
-Set the first two variables for Preview and Production. Set the service-role key only as a server-side Vercel variable; it is used by the Vercel function for invitation inspection/acceptance and is never returned to the browser. Never put a service-role key in client code, `vercel.json`, or the repository.
+The service-role key is used only by the Vercel function for server-side operations and is never returned to the browser. Never put it in client code, `vercel.json`, or the repository.
 
-The remote migrations are recorded under `supabase/migrations/`. The hosted schema enables RLS on every public table and returns no security-advisor lints.
-
-The first hosted household is provisioned in Supabase as an operator step. An authenticated account without a membership may use `/setup` to create its first household; an existing member visiting `/setup` is redirected to `/`. The hosted runtime never reads the local SQLite databases.
+The committed migrations under `supabase/migrations/` enable RLS on public tables and define the hosted RPC/API surface.
 
 ## Supabase Auth URLs
 
-Configure Supabase Dashboard → Authentication → URL Configuration for the hosted project:
+Configure Supabase Dashboard → Authentication → URL Configuration:
 
 - Site URL: `https://hearthstate.vercel.app`
 - Redirect URL: `https://hearthstate.vercel.app/login`
-- Optional local development redirect: `http://localhost:3000/login`
 
-The login page sends its current `/login` origin explicitly when requesting a magic link and consumes Supabase's access-token redirect fragment. The origin must still be present in Supabase's allowed Redirect URLs, otherwise Supabase will reject the request or fall back to the wrong Site URL. Preview deployments should use a separate allowed redirect pattern only if preview authentication is needed.
+The login page sends its current `/login` origin explicitly when requesting a magic link and consumes Supabase's access-token redirect fragment. Preview deployments need a separately allowed redirect only if preview authentication is required.
 
-## Local checks
+## Provisioning
+
+The first hosted household is provisioned in Supabase as an operator step. An authenticated account without a membership may use `/setup` to create its first household; an existing member visiting `/setup` is redirected to `/`.
+
+## Verification
 
 ```bash
 PYTHONPYCACHEPREFIX=/tmp/hearthstate-pyc python3 -m unittest tests.test_hosted_api -v
-PYTHONPYCACHEPREFIX=/tmp/hearthstate-pyc python3 -m compileall -q api hearthstate tests
+PYTHONPYCACHEPREFIX=/tmp/hearthstate-pyc python3 -m compileall -q api tests
+for file in hearthstate/dashboard/*.js; do node --check "$file"; done
+git diff --check
 ```
 
 Hosted smoke checks:
@@ -53,11 +53,11 @@ curl --fail --silent --show-error https://hearthstate.vercel.app/api/health
 curl --fail --silent --show-error https://hearthstate.vercel.app/api/auth/config
 ```
 
-The hosted health response should include `{"status":"ok","service":"hearthstate","backend":"supabase"}`. The local dashboard health response is a separate SQLite integrity check.
+The hosted health response should include:
 
-## Cutover
-
-The hosted migration is now the application path for Vercel. Add the three variables above in the Vercel project for Preview and Production, then deploy the branch or promote it to the project's production branch. Existing local SQLite data is not uploaded automatically; a deliberate export/import adapter is required before moving household records into Supabase. Do not inspect or upload the live SQLite database during normal agent work.
+```json
+{"status":"ok","service":"hearthstate","backend":"supabase"}
+```
 
 ## GitHub-driven production
 
@@ -70,6 +70,6 @@ SUPABASE_ACCESS_TOKEN
 SUPABASE_DB_PASSWORD
 ```
 
-`SUPABASE_PROJECT_ID` is already pinned to `zcfzdqtjglelrbyhcvcu` in the workflow. The Vercel project must have `grantashman/hearthstate` connected with `main` as its Production Branch. It must also contain `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` environment variables for Production.
+`SUPABASE_PROJECT_ID` is pinned in the workflow. The Vercel project must have `grantashman/hearthstate` connected with `main` as its Production Branch and must contain the three Supabase variables for Production.
 
-If using the native Supabase GitHub Integration as well, configure it for working directory `.` and production deployment from `main`. Keep Vercel deployment in the Vercel Git integration and Supabase migrations in one GitHub/Supabase path to avoid duplicate deployments. The workflow intentionally does not call the Vercel CLI: Vercel owns the deployment from its connected Git integration.
+The workflow intentionally does not call the Vercel CLI: Vercel owns deployment from its connected Git integration.

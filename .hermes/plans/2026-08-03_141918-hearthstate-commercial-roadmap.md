@@ -23,13 +23,11 @@ The product wedge is the combination of:
 
 ## What exists today
 
-The repository contains a working local vertical slice:
+The repository contains a working hosted vertical slice:
 
-- SQLite-backed planner and dashboard.
-- Tailnet-served web app.
-- Household chooser for Grant, Billie, and Skye.
+- Supabase-backed planner and dashboard.
+- Hosted household membership, owner administration, and invitation management.
 - Tasks, assignments, recurrence, calendar, meals, recipes, groceries, budget, and Inbox capture.
-- Photon/iMessage planner boundary.
 - Activity history with before/after state, archive semantics, and undo.
 - Natural-language completion, assignment, renaming, event movement, grocery removal, recent-change queries, and conflict queries.
 - Round-robin chores.
@@ -37,9 +35,9 @@ The repository contains a working local vertical slice:
 - Calendar/task conflict detection.
 - Dashboard signals for conflicts, recent activity, and chore rotation.
 - CI on Python 3.11 and 3.12.
-- 123 automated tests passing at the current release.
+- Hosted API contract tests and browser asset checks passing at the current release.
 
-The current deployment is not yet a commercial SaaS product. Hosted production now runs on Vercel and Supabase, while the local SQLite application remains bound to the Tailscale interface for compatibility and Photon/iMessage operation. It still lacks external calendar sync, commercial billing, native push infrastructure, pilot instrumentation, and a public onboarding path.
+The current deployment is not yet a commercial SaaS product. Hosted production runs on Vercel and Supabase, while external calendar sync, commercial billing, native push infrastructure, pilot instrumentation, and a public onboarding path remain future work.
 
 ## Market and competitor notes
 
@@ -140,7 +138,7 @@ The implementation sequence is:
 5. Paid pilot and retention iteration.
 6. Broader automation and Android.
 
-The next coding session should start with hosted provisioning/onboarding, data portability, and pilot instrumentation while keeping the local SQLite mode working for Photon and regression tests. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
+The next coding session should start with hosted provisioning/onboarding, data portability, and pilot instrumentation. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
 
 ---
 
@@ -216,15 +214,15 @@ Use email magic links or an equivalent low-friction authentication method. Keep 
 
 **Done when:** A household owner can invite a second member, the invitee can join, and both can see shared records without seeing private records they do not own.
 
-**Status:** Complete for the local account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the SQLite claim, and bound to the active household; invitation acceptance is transactional, API sessions revalidate household membership, and the owner-only `/admin` section manages household settings, members, roles, and invitation revocation. AgentMail invitation/sign-in delivery is wired for the local deployment.
+**Status:** Complete for the hosted account-backed dashboard seam. Invitation and sign-in tokens are hashed, single-use, expiry-enforced at the claim boundary, and bound to the active household; invitation acceptance is transactional, API sessions revalidate household membership, and the owner-only `/admin` section manages household settings, members, roles, and invitation revocation.
 
 ### P1.3 Introduce a hosted API boundary
 
-Keep the planner logic separate from transport. The current `Hearthstate` application boundary should remain usable in tests and from Photon while the hosted API becomes the commercial transport.
+Keep the hosted planner logic separate from HTTP transport so the API boundary remains testable and the product can add future clients without duplicating authorization rules.
 
-**Done when:** Web clients do not access SQLite directly, API requests carry authenticated household context, and the local test suite still exercises the application boundary.
+**Done when:** Web clients do not access a private database directly, API requests carry authenticated household context, and the hosted contract suite exercises the application boundary.
 
-**Status:** Complete on `main`. Vercel serves `api/index.py`; Supabase is the hosted Auth/data boundary; membership-scoped RLS protects hosted records; local SQLite remains a compatibility/test path.
+**Status:** Complete on `main`. Vercel serves `api/index.py`; Supabase is the hosted Auth/data boundary; membership-scoped RLS protects hosted records.
 
 ### P1.4 Add data export and deletion
 
@@ -252,7 +250,7 @@ Store:
 
 ### P2.1 Build a capture inbox as the universal entry point
 
-Consolidate dashboard, Photon, web, email, and later mobile input into the same Inbox model. Preserve original text, source, actor, timestamp, and suggested interpretation.
+Consolidate dashboard, web, email, and later mobile input into the same Inbox model. Preserve original text, source, actor, timestamp, and suggested interpretation.
 
 **Done when:** Every capture has a traceable source and can be reviewed before conversion.
 
@@ -301,7 +299,7 @@ The briefing scheduler now has:
 - AgentMail email delivery for the production `home` household.
 - Privacy-filtered content and concurrency coverage.
 
-**Status:** Complete for the local account-backed delivery boundary, including the authenticated Notifications settings page. Photon/iMessage and push adapters, hosted scheduling, and an exactly-once provider contract remain future work.
+**Status:** Complete for the hosted account-backed delivery boundary, including the authenticated Notifications settings page. Hosted scheduling, push adapters, and an exactly-once provider contract remain future work.
 
 **Done when:** A briefing can be generated, claimed atomically, delivered once, and audited.
 
@@ -460,10 +458,10 @@ Start here when development resumes:
 1. **Hosted API boundary:** Choose hosted deployment target and expose authenticated household-scoped API transport.
 2. **Data portability:** Add owner-confirmed household export and deletion with documented retention behavior.
 3. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals.
-4. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile.
+4. **Capture contract:** Define one Inbox payload shared by web, email, and mobile.
 5. **PWA pass:** Make capture and grocery mode mobile-first.
 6. **Pilot recruitment:** Start interviews before beginning native iOS work.
-7. **Delivery adapters:** Add Photon/iMessage or push only after the email path has pilot evidence.
+7. **Delivery adapters:** Add push only after the email path has pilot evidence.
 
 # Decisions deliberately postponed
 
@@ -491,16 +489,9 @@ Every development task should include:
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 -m compileall -q hearthstate tests
+python3 -m compileall -q api tests
 for file in hearthstate/dashboard/*.js; do node --check "$file"; done
 git diff --check
-```
-
-For deployment changes, also verify:
-
-```bash
-systemctl --user is-active hearthstate-dashboard.service
-curl --fail --silent --show-error http://vnic.tail015325.ts.net:8788/health
 ```
 
 # Research sources

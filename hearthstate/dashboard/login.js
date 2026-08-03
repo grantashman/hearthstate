@@ -57,24 +57,6 @@ async function consumeMagicLink(token) {
   window.location.assign('/');
 }
 
-document.querySelectorAll('[data-user]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    document.querySelectorAll('[data-user]').forEach((choice) => { choice.disabled = true; });
-    feedback.classList.add('is-hidden');
-    try {
-      const response = await fetch('/api/session', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: button.dataset.user }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Could not start Hearthstate session');
-      window.location.assign('/');
-    } catch (error) {
-      showFeedback(error.message);
-      document.querySelectorAll('[data-user]').forEach((choice) => { choice.disabled = false; });
-    }
-  });
-});
-
 magicLinkPanel.addEventListener('submit', async (event) => {
   event.preventDefault();
   const submitButton = magicLinkPanel.querySelector('button[type="submit"]');
@@ -84,31 +66,22 @@ magicLinkPanel.addEventListener('submit', async (event) => {
   setButtonLabel(magicLinkPanel, 'Sending…');
   let requestSucceeded = false;
   try {
-    if (hostedConfig?.hosted) {
-      await supabaseAuth('/auth/v1/otp', {
-        email,
-        create_user: true,
-        redirect_to: hostedLoginRedirect(),
-      });
-      requestSucceeded = true;
-      magicLinkPanel.classList.add('is-hidden');
-      verificationPanel.classList.remove('is-hidden');
-      codeInput.focus();
-      showFeedback('Code sent. Check your inbox.');
-    } else {
-      const response = await fetch('/api/auth/sign-in/request', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Could not request a sign-in link');
-      setButtonLabel(magicLinkPanel, 'Link sent');
-      showFeedback('If that email belongs to this household, a sign-in link is on its way.');
-    }
+    if (!hostedConfig?.hosted) throw new Error('Hosted authentication is unavailable.');
+    await supabaseAuth('/auth/v1/otp', {
+      email,
+      create_user: true,
+      redirect_to: hostedLoginRedirect(),
+    });
+    requestSucceeded = true;
+    magicLinkPanel.classList.add('is-hidden');
+    verificationPanel.classList.remove('is-hidden');
+    codeInput.focus();
+    showFeedback('Code sent. Check your inbox.');
   } catch (error) {
     showFeedback(error.message);
   } finally {
-    if (!requestSucceeded || !hostedConfig?.hosted) submitButton.disabled = false;
-    setButtonLabel(magicLinkPanel, hostedConfig?.hosted ? 'Send code' : 'Send sign-in link');
+    if (!requestSucceeded) submitButton.disabled = false;
+    setButtonLabel(magicLinkPanel, 'Send code');
   }
 });
 
@@ -189,10 +162,6 @@ passwordToggle.addEventListener('click', () => {
         magicLinkPanel.classList.add('is-hidden');
         await consumeMagicLink(token);
       }
-    } else if (hostedConfig.account_backed) {
-      magicLinkPanel.classList.remove('is-hidden');
-      loginTitle.textContent = 'Sign in to your household';
-      loginDescription.textContent = 'Use your email and we will send a secure, one-time link to your inbox.';
     }
   } catch (error) {
     if (token) showFeedback(error.message);

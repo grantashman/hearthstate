@@ -22,6 +22,8 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("new URL('/login', window.location.origin)", login_js)
         self.assertIn('window.location.hash.replace', login_js)
         self.assertIn('establishHostedSession(accessToken)', login_js)
+        self.assertNotIn("/api/session", login_js)
+        self.assertNotIn("data-user", login_js)
 
     def test_rewritten_vercel_route_is_normalized(self):
         request = object.__new__(handler)

@@ -446,7 +446,7 @@ async function loadDashboard() {
     };
     render(await dashboardResponse.json(), intelligence);
   } catch (error) {
-    els.error.textContent = 'Could not load the household state. Is the local Hearthstate service still running?';
+    els.error.textContent = 'Could not load the household state. Check your hosted session and try again.';
     els.error.classList.remove('is-hidden');
     els.syncStatus.textContent = 'Offline';
     console.error(error);
