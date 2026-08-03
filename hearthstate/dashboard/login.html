@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-3" />
+    <title>Hearthstate · Who is home?</title>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-3" />
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <section class="login-card" aria-labelledby="loginTitle">
+        <div class="login-brand">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div><strong>hearthstate</strong><span>household state</span></div>
+        </div>
+        <div class="login-copy">
+          <p class="eyebrow">A SHARED MOMENT AT HOME</p>
+          <h1 id="loginTitle">Who is home?</h1>
+          <p>Choose your place at the hearth. No password today — just a clear way to see what belongs to you.</p>
+        </div>
+        <div class="user-choice-grid" aria-label="Choose a household user">
+          <button class="user-choice" type="button" data-user="grant">
+            <img src="/user-images/grant.png" alt="" />
+            <span><strong>Grant</strong><small>Household admin</small></span>
+            <span class="user-choice-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button class="user-choice" type="button" data-user="billie">
+            <img src="/user-images/billie.png" alt="" />
+            <span><strong>Billie</strong><small>Household member</small></span>
+            <span class="user-choice-arrow" aria-hidden="true">↗</span>
+          </button>
+          <button class="user-choice" type="button" data-user="skye">
+            <img src="/user-images/skye.png" alt="" />
+            <span><strong>Skye</strong><small>Household member</small></span>
+            <span class="user-choice-arrow" aria-hidden="true">↗</span>
+          </button>
+        </div>
+        <p class="login-note">Your choice stays on this device for this Hearthstate session.</p>
+        <div class="login-feedback is-hidden" id="loginFeedback" role="alert"></div>
+      </section>
+      <p class="login-footer">hearthstate · know what needs attention at home</p>
+    </main>
+    <script src="/login.js?v=hearthstate-3" defer></script>
+  </body>
+</html>

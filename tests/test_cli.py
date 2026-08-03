@@ -15,13 +15,12 @@ class SessionIdentityCliTests(unittest.TestCase):
             database = Path(temp_dir) / "hearthstate.db"
             environment = os.environ.copy()
             environment["HEARTHSTATE_DB"] = str(database)
-            environment.pop("FAMILY_PLANNER_DB", None)
             environment["HERMES_SESSION_USER_ID"] = "+614****0001"
             result = subprocess.run(
                 [
                     sys.executable,
                     "-m",
-                    "family_planner.cli",
+                    "hearthstate.cli",
                     "--from-session",
                     "Add oat milk to the grocery list",
                 ],
@@ -47,7 +46,7 @@ class SessionIdentityCliTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "family_planner.cli",
+                    "hearthstate.cli",
                     "--from-session",
                     "--database",
                     str(database),

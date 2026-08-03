@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from family_planner.store import PlannerStore
+from hearthstate.store import PlannerStore
 
 
 class RecipeStoreTests(unittest.TestCase):

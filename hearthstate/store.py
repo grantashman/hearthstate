@@ -62,7 +62,7 @@ def normalize_recurrence(value: str | None) -> str:
 class PlannerStore:
     """SQLite persistence layer for the planner's shared primitives."""
 
-    def __init__(self, database: str = "family_planner.db") -> None:
+    def __init__(self, database: str = "hearthstate.db") -> None:
         self._lock = threading.RLock()
         self.connection = sqlite3.connect(database, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row

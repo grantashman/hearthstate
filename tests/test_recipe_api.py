@@ -4,8 +4,8 @@ import unittest
 from datetime import datetime
 from urllib.request import Request, urlopen
 
-from family_planner.dashboard import DashboardServer
-from family_planner.store import PlannerStore
+from hearthstate.dashboard import DashboardServer
+from hearthstate.store import PlannerStore
 
 
 class RecipeAPIHTTPTests(unittest.TestCase):

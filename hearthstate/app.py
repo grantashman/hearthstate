@@ -19,7 +19,7 @@ _WEEKDAYS = {
 }
 
 
-class FamilyPlanner:
+class Hearthstate:
     """Translate a small set of natural-language messages into planner actions."""
 
     def __init__(self, store: PlannerStore, now: Callable[[], datetime] | None = None) -> None:

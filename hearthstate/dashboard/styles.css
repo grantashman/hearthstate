@@ -160,7 +160,7 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 .metric-card strong { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.04em; }
 .metric-note { margin-left: auto; color: var(--ink-faint); font-size: 10px; white-space: nowrap; }
 
-.planning-panel { margin-bottom: 16px; padding: 20px 24px 24px; }
+.planning-panel { margin-top: 24px; margin-bottom: 16px; padding: 20px 24px 24px; }
 .panel-link { color: var(--ember-deep); font-size: 10px; font-weight: 750; text-decoration: none; white-space: nowrap; }
 .panel-link:hover { text-decoration: underline; }
 .planning-strip { display: grid; grid-template-columns: repeat(7, minmax(135px, 1fr)); gap: 8px; overflow-x: auto; padding-bottom: 2px; }
@@ -608,4 +608,147 @@ html[data-theme="dark"] .note-panel { background: #2e3832; color: #d8e1d5; }
 }
 @media (max-width: 480px) {
   .recipe-toolbar { grid-template-columns: 1fr; }
+}
+
+/* Hearthstate polish pass: a tighter rhythm, clearer action tiers, and quieter structure. */
+:root {
+  --focus-ring: 0 0 0 3px var(--evergreen-wash), 0 0 0 4px var(--evergreen);
+  --surface-hover: rgba(255, 250, 243, .9);
+}
+
+body { min-height: 100vh; }
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 0;
+  box-shadow: var(--focus-ring);
+}
+
+.more-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  min-height: 30px;
+  color: var(--ink-faint);
+  border-radius: 7px;
+  text-decoration: none;
+  transition: color 160ms ease-out, background-color 160ms ease-out;
+}
+.more-button:hover { color: var(--ink); background: var(--paper-soft); }
+
+.nav-item:hover { background: var(--surface-hover); }
+.nav-item.is-active { box-shadow: inset 3px 0 0 var(--evergreen); }
+
+.section-hero { padding: 43px 0 30px; }
+.section-hero h1 { text-wrap: balance; }
+.section-hero-note { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
+
+.filter-bar,
+.grocery-controls,
+.recipe-toolbar {
+  box-shadow: 0 1px 0 rgba(40, 32, 29, .02);
+}
+
+.secondary-action {
+  color: var(--evergreen-deep);
+  border-color: var(--evergreen);
+  background: var(--evergreen-wash);
+}
+.secondary-action:hover { color: var(--paper); background: var(--evergreen-deep); }
+
+.records-panel { min-height: 0; }
+.records-heading { padding-bottom: 14px; }
+.record-row { min-height: 70px; }
+.record-row .quiet-action {
+  border-color: transparent;
+  background: var(--paper-soft);
+}
+.record-row .edit-record { color: var(--ink-soft); background: transparent; }
+.record-row .edit-record:hover { color: var(--ink); background: var(--paper-soft); }
+.task-actions .complete-record {
+  color: var(--evergreen-deep);
+  border-color: var(--evergreen);
+  background: var(--evergreen-wash);
+}
+.task-actions .complete-record:hover { color: var(--paper); background: var(--evergreen-deep); }
+.task-actions .delete-record { background: transparent; }
+
+.day-panel .empty-state {
+  min-height: 132px;
+  align-content: center;
+  padding: 22px 0;
+}
+.empty-link {
+  margin-top: 5px;
+  color: var(--evergreen-deep);
+  font-size: 10px;
+  font-weight: 750;
+  text-decoration: none;
+}
+.empty-link:hover { text-decoration: underline; }
+
+.recipe-card {
+  transition: transform 180ms ease-out, box-shadow 180ms ease-out, border-color 180ms ease-out;
+}
+.recipe-card:hover {
+  border-color: var(--line-dark);
+  box-shadow: 0 0 0 1px var(--line), 0 12px 28px rgba(113, 80, 48, .1);
+  transform: translateY(-2px);
+}
+.recipe-card h3 { text-wrap: balance; }
+.recipe-card-actions .plan-recipe {
+  color: var(--ink);
+  border-color: var(--gold);
+  background: var(--gold-wash);
+}
+.recipe-card-actions .plan-recipe:hover { border-color: var(--gold); background: var(--gold); }
+.recipe-card-actions .grocery-recipe { color: var(--evergreen-deep); }
+.recipe-card-actions .source-action { margin-top: 2px; }
+
+.grocery-record { min-height: 82px; }
+.grocery-name-line strong { text-wrap: balance; }
+.price-provenance small { max-width: 38ch; }
+
+@media (max-width: 780px) {
+  .section-hero { padding: 36px 0 25px; }
+  .section-hero-note { width: 100%; }
+  .records-heading { padding-bottom: 12px; }
+  .record-row { min-height: 66px; }
+  .day-panel .empty-state { min-height: 100px; }
+}
+
+.login-page { min-height: 100vh; background: radial-gradient(circle at 15% 15%, rgba(220, 232, 223, .75), transparent 28%), var(--canvas); }
+.login-shell { display: grid; place-items: center; min-height: 100vh; padding: 32px 20px 24px; }
+.login-card { width: min(760px, 100%); padding: clamp(26px, 5vw, 58px); border: 1px solid var(--line); border-radius: 28px; background: rgba(255, 250, 243, .88); box-shadow: var(--shadow-soft); }
+.login-brand { display: flex; align-items: center; gap: 12px; }
+.login-brand > div:last-child { display: grid; gap: 4px; }
+.login-brand strong { font-size: 18px; letter-spacing: -.045em; }
+.login-brand span { color: var(--ink-faint); font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+.login-copy { max-width: 560px; margin: clamp(52px, 8vw, 88px) auto 34px; text-align: center; }
+.login-copy .eyebrow { margin-bottom: 13px; }
+.login-copy h1 { margin: 0; color: var(--ink); font-size: clamp(38px, 7vw, 68px); font-weight: 750; letter-spacing: -.07em; line-height: .95; }
+.login-copy p:last-child { max-width: 430px; margin: 18px auto 0; color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+.user-choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.user-choice { position: relative; display: grid; gap: 12px; min-width: 0; padding: 10px 10px 14px; color: var(--ink); border: 1px solid var(--line); border-radius: 17px; background: var(--paper); text-align: left; transition: border-color 160ms ease-out, box-shadow 160ms ease-out, transform 160ms ease-out; }
+.user-choice:hover, .user-choice:focus-visible { border-color: var(--evergreen); box-shadow: 0 0 0 3px var(--evergreen-wash); outline: 0; transform: translateY(-2px); }
+.user-choice:active { transform: scale(.98); }
+.user-choice:disabled { cursor: wait; opacity: .55; }
+.user-choice img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 11px; background: var(--paper-deep); }
+.user-choice > span:nth-child(2) { display: grid; gap: 3px; padding: 0 3px; }
+.user-choice strong { font-size: 16px; }
+.user-choice small { color: var(--ink-faint); font-size: 10px; }
+.user-choice-arrow { position: absolute; right: 16px; bottom: 17px; color: var(--evergreen-deep); font-size: 16px; font-weight: 800; }
+.login-note { margin: 28px 0 0; color: var(--ink-faint); font-size: 10px; text-align: center; }
+.login-feedback { margin-top: 14px; padding: 10px 12px; color: var(--ember-deep); border: 1px solid #e5b2a6; border-radius: 8px; background: var(--ember-wash); font-size: 11px; text-align: center; }
+.login-footer { margin: 18px 0 0; color: var(--ink-faint); font-size: 10px; letter-spacing: .08em; text-align: center; text-transform: lowercase; }
+html[data-theme="dark"] .login-card { background: rgba(40, 35, 33, .92); }
+@media (max-width: 560px) {
+  .login-card { padding: 24px 18px 28px; }
+  .user-choice-grid { grid-template-columns: 1fr; }
+  .user-choice { grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; padding: 8px 12px 8px 8px; }
+  .user-choice img { width: 74px; }
+  .user-choice-arrow { position: static; }
 }

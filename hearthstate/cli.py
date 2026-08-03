@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 
-from .app import FamilyPlanner
+from .app import Hearthstate
 from .store import PlannerStore
 
 
@@ -16,8 +16,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--database",
-        default=os.environ.get("HEARTHSTATE_DB", os.environ.get("FAMILY_PLANNER_DB", "family_planner.db")),
-        help="SQLite database path (default: HEARTHSTATE_DB or family_planner.db)",
+        default=os.environ.get("HEARTHSTATE_DB", "hearthstate.db"),
+        help="SQLite database path (default: HEARTHSTATE_DB or hearthstate.db)",
     )
     parser.add_argument("parts", nargs="+", help="[sender] message text")
     args = parser.parse_args()
@@ -34,7 +34,7 @@ def main() -> None:
 
     store = PlannerStore(args.database)
     try:
-        response = FamilyPlanner(store).handle_message(sender, " ".join(message_parts))
+        response = Hearthstate(store).handle_message(sender, " ".join(message_parts))
         print(response)
     finally:
         store.close()

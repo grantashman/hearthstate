@@ -59,6 +59,20 @@ COLES_PRICE_CATALOG = {
         "aliases": ("chicken breast", "chicken breast fillets", "breast fillets"),
         "note": "Closest Coles plain chicken-breast pack selected: approximate 600g small pack; final price is weight-based and location-sensitive.",
     },
+    "coke zero 2l": {
+        "price": 4.00,
+        "source": "Coca-Cola Zero Sugar Soft Drink Bottle 2L",
+        "url": "https://www.coles.com.au/product/coca-cola-zero-sugar-soft-drink-bottle-2l-3029790",
+        "aliases": ("2l coke zero", "coke zero 2l", "coca cola zero sugar 2l"),
+        "note": "Exact 2L Coca-Cola Zero Sugar bottle selected; do not substitute a different size or diet variant. Price is location-sensitive.",
+    },
+    "franks hot sauce": {
+        "price": 3.50,
+        "source": "Frank's Redhot Original Sauce 148mL",
+        "url": "https://www.coles.com.au/product/frank's-redhot-original-sauce-148ml-1957139",
+        "aliases": ("franks hot sauce", "frank's hot sauce", "franks redhot", "frank's redhot", "franks redhot original", "frank's redhot original"),
+        "note": "Standard Frank's RedHot Original Cayenne Pepper Sauce selected: 148mL; Buffalo and Xtra Hot variants are not substituted. Price is location-sensitive.",
+    },
     "tortillas": {
         "price": 3.75,
         "source": "Coles Street Tortilla Wraps 10 Pack 280g",

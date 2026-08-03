@@ -4,9 +4,20 @@ import unittest
 from datetime import datetime
 from urllib.request import Request, urlopen
 
-from family_planner.dashboard import DashboardServer
-from family_planner.pricing import apply_known_coles_prices
-from family_planner.store import PlannerStore
+from hearthstate.dashboard import DashboardServer
+from hearthstate.pricing import apply_known_coles_prices
+from hearthstate.store import PlannerStore
+
+
+def login_cookie(base_url):
+    request = Request(
+        base_url + "/api/session",
+        data=json.dumps({"user": "grant"}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=2) as response:
+        return response.headers["Set-Cookie"]
 
 
 class GroceryBudgetStoreTests(unittest.TestCase):
@@ -108,6 +119,20 @@ class GroceryBudgetStoreTests(unittest.TestCase):
         self.assertEqual(items["100 g kale"]["price_source"], "Coles Chopped Kale 140g")
         self.assertEqual(items["1/2 lemon"]["price_source"], "Coles Lemons 1 Each")
 
+    def test_exact_two_litre_coke_zero_match(self):
+        self.assertTrue(self.store.add_grocery_item("2L Coke Zero", "grant"))
+        item = next(item for item in self.store.list_grocery_items() if item["name"] == "2L Coke Zero")
+        self.assertEqual(item["price"], 4.00)
+        self.assertEqual(item["price_source"], "Coca-Cola Zero Sugar Soft Drink Bottle 2L")
+        self.assertEqual(item["price_url"], "https://www.coles.com.au/product/coca-cola-zero-sugar-soft-drink-bottle-2l-3029790")
+
+    def test_franks_hot_sauce_matches_standard_original_bottle(self):
+        self.assertTrue(self.store.add_grocery_item("franks hot sauce", "grant"))
+        item = next(item for item in self.store.list_grocery_items() if item["name"] == "franks hot sauce")
+        self.assertEqual(item["price"], 3.50)
+        self.assertEqual(item["price_source"], "Frank's Redhot Original Sauce 148mL")
+        self.assertEqual(item["price_url"], "https://www.coles.com.au/product/frank's-redhot-original-sauce-148ml-1957139")
+
     def test_manual_price_is_not_overwritten_by_continuous_matching(self):
         item = next(item for item in self.store.list_grocery_items() if item["name"] == "milk")
         manual_item_id = item["id"]
@@ -128,7 +153,8 @@ class GroceryBudgetHTTPTests(unittest.TestCase):
         thread.start()
         try:
             base = f"http://127.0.0.1:{server.server_address[1]}"
-            with urlopen(base + "/groceries", timeout=2) as response:
+            cookie = login_cookie(base)
+            with urlopen(Request(base + "/groceries", headers={"Cookie": cookie}), timeout=2) as response:
                 self.assertEqual(response.status, 200)
                 page = response.read().decode()
                 self.assertIn("Weekly grocery budget", page)

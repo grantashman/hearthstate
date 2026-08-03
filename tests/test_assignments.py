@@ -2,17 +2,28 @@ import json
 import threading
 import unittest
 from datetime import datetime
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
-from family_planner.app import FamilyPlanner
-from family_planner.dashboard import DashboardServer, build_dashboard_snapshot
-from family_planner.store import PlannerStore
+from hearthstate.app import Hearthstate
+from hearthstate.dashboard import DashboardServer, build_dashboard_snapshot
+from hearthstate.store import PlannerStore
+
+
+def login_cookie(base_url):
+    request = Request(
+        base_url + "/api/session",
+        data=json.dumps({"user": "grant"}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=2) as response:
+        return response.headers["Set-Cookie"]
 
 
 class AssignmentMessageTests(unittest.TestCase):
     def setUp(self):
         self.store = PlannerStore(":memory:")
-        self.planner = FamilyPlanner(self.store, now=lambda: datetime(2026, 8, 2, 8, 0))
+        self.planner = Hearthstate(self.store, now=lambda: datetime(2026, 8, 2, 8, 0))
 
     def tearDown(self):
         self.store.close()
@@ -67,8 +78,9 @@ class AssignmentDashboardTests(unittest.TestCase):
         thread.start()
         try:
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            cookie = login_cookie(base_url)
             for path, marker in (("/calendar", "Calendar"), ("/tasks", "Tasks")):
-                with urlopen(base_url + path, timeout=2) as response:
+                with urlopen(Request(base_url + path, headers={"Cookie": cookie}), timeout=2) as response:
                     self.assertEqual(response.status, 200)
                     self.assertIn(marker, response.read().decode())
             with urlopen(base_url + "/api/calendar", timeout=2) as response:

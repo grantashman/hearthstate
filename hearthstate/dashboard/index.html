@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f3ede3" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-2" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-3" />
     <title>Hearthstate · Household dashboard</title>
     <script>
       (() => {
@@ -16,7 +16,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=hearthstate-2" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-5" />
   </head>
   <body>
     <div class="app-shell">
@@ -69,9 +69,9 @@
           </div>
         </div>
         <div class="sidebar-footer">
-          <div class="avatar avatar-you">Y</div>
-          <div class="person-copy"><strong>You</strong><span>Household admin</span></div>
-          <button class="more-button" type="button" aria-label="More household settings">···</button>
+          <div class="avatar avatar-you" id="viewerAvatar">G</div>
+          <div class="person-copy"><strong id="viewerName">Grant</strong><span id="viewerRole">Household admin</span></div>
+          <a class="more-button" href="/login" aria-label="Switch household user" title="Switch household user">↺</a>
         </div>
       </aside>
 
@@ -130,77 +130,6 @@
           </article>
         </section>
 
-        <section class="planning-panel panel" id="weeklyPlan" aria-labelledby="weeklyPlanTitle">
-          <div class="panel-heading">
-            <div>
-              <p class="section-kicker">THE WEEK AHEAD</p>
-              <h2 id="weeklyPlanTitle">Plan the week</h2>
-            </div>
-            <a class="panel-link" href="/meals">Open meal planner <span aria-hidden="true">↗</span></a>
-          </div>
-          <p class="panel-intro">Dinners, calendar moments, and recurring work in one calm strip.</p>
-          <div class="planning-strip" id="planningStrip" aria-live="polite"></div>
-        </section>
-
-        <section class="dashboard-grid">
-          <article class="panel attention-panel" id="tasks">
-            <div class="panel-heading">
-              <div>
-                <p class="section-kicker">THE NEXT FEW THINGS</p>
-                <h2>Needs attention</h2>
-              </div>
-              <span class="panel-badge" id="attentionBadge">0 open</span>
-            </div>
-            <p class="panel-intro">Tasks, meal gaps, and shopping loose threads worth pulling first.</p>
-            <ol class="attention-list" id="attentionList" aria-live="polite"></ol>
-            <div class="empty-state is-hidden" id="attentionEmpty">
-              <div class="empty-mark">✓</div>
-              <strong>Nothing tugging at you.</strong>
-              <span>The household is caught up.</span>
-            </div>
-          </article>
-
-          <article class="panel day-panel" id="calendar">
-            <div class="panel-heading">
-              <div>
-                <p class="section-kicker">THE RHYTHM OF TODAY</p>
-                <h2 id="todayHeading">Today</h2>
-              </div>
-              <span class="date-stamp" id="todayStamp">—</span>
-            </div>
-            <div class="timeline" id="todayTimeline" aria-live="polite"></div>
-            <div class="empty-state is-hidden" id="todayEmpty">
-              <div class="empty-mark quiet">○</div>
-              <strong>Nothing scheduled for today.</strong>
-              <span>A rare and beautiful thing.</span>
-            </div>
-            <div class="upcoming-wrap" id="upcomingWrap">
-              <div class="upcoming-label">UP NEXT</div>
-              <div class="upcoming-list" id="upcomingList"></div>
-            </div>
-          </article>
-
-          <aside class="side-stack">
-            <article class="panel grocery-panel" id="groceries">
-              <div class="panel-heading compact-heading">
-                <div>
-                  <p class="section-kicker">DON'T FORGET</p>
-                  <h2>Groceries</h2>
-                </div>
-                <a class="grocery-count" id="groceryCount" href="/groceries">0</a>
-              </div>
-              <div class="grocery-list" id="groceryList" aria-live="polite"></div>
-              <div class="empty-state is-hidden" id="groceryEmpty">
-                <strong>List is clear.</strong>
-                <span>Add items by iMessage.</span>
-              </div>
-              <div class="grocery-budget-note" id="groceryBudgetNote"></div>
-              <div class="list-footnote">Capture it from your phone. It lands here.</div>
-            </article>
-
-          </aside>
-        </section>
-
         <section class="panel inbox-panel" id="inboxPanel" aria-labelledby="inboxTitle">
           <div class="panel-heading">
             <div>
@@ -254,11 +183,85 @@
             <div class="form-feedback is-hidden" id="inboxConvertFeedback" role="alert"></div>
           </form>
         </section>
+
+        <section class="planning-panel panel" id="weeklyPlan" aria-labelledby="weeklyPlanTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">THE WEEK AHEAD</p>
+              <h2 id="weeklyPlanTitle">Plan the week</h2>
+            </div>
+            <a class="panel-link" href="/meals">Open meal planner <span aria-hidden="true">↗</span></a>
+          </div>
+          <p class="panel-intro">Dinners, calendar moments, and recurring work in one calm strip.</p>
+          <div class="planning-strip" id="planningStrip" aria-live="polite"></div>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel attention-panel" id="tasks">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">THE NEXT FEW THINGS</p>
+                <h2>Needs attention</h2>
+              </div>
+              <span class="panel-badge" id="attentionBadge">0 open</span>
+            </div>
+            <p class="panel-intro">Tasks, meal gaps, and shopping loose threads worth pulling first.</p>
+            <ol class="attention-list" id="attentionList" aria-live="polite"></ol>
+            <div class="empty-state is-hidden" id="attentionEmpty">
+              <div class="empty-mark">✓</div>
+              <strong>Nothing tugging at you.</strong>
+              <span>The household is caught up.</span>
+            </div>
+          </article>
+
+          <article class="panel day-panel" id="calendar">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">THE RHYTHM OF TODAY</p>
+                <h2 id="todayHeading">Today</h2>
+              </div>
+              <span class="date-stamp" id="todayStamp">—</span>
+            </div>
+            <div class="timeline" id="todayTimeline" aria-live="polite"></div>
+            <div class="empty-state is-hidden" id="todayEmpty">
+              <div class="empty-mark quiet">○</div>
+              <strong>Nothing scheduled for today.</strong>
+              <span>A rare and beautiful thing.</span>
+              <a class="empty-link" href="/calendar">Open calendar</a>
+            </div>
+            <div class="upcoming-wrap" id="upcomingWrap">
+              <div class="upcoming-label">UP NEXT</div>
+              <div class="upcoming-list" id="upcomingList"></div>
+            </div>
+          </article>
+
+          <aside class="side-stack">
+            <article class="panel grocery-panel" id="groceries">
+              <div class="panel-heading compact-heading">
+                <div>
+                  <p class="section-kicker">DON'T FORGET</p>
+                  <h2>Groceries</h2>
+                </div>
+                <a class="grocery-count" id="groceryCount" href="/groceries">0</a>
+              </div>
+              <div class="grocery-list" id="groceryList" aria-live="polite"></div>
+              <div class="empty-state is-hidden" id="groceryEmpty">
+                <strong>List is clear.</strong>
+                <span>Add items by iMessage.</span>
+                <a class="empty-link" href="/groceries">Open groceries</a>
+              </div>
+              <div class="grocery-budget-note" id="groceryBudgetNote"></div>
+              <div class="list-footnote">Capture it from your phone. It lands here.</div>
+            </article>
+
+          </aside>
+        </section>
+
         <div class="error-banner is-hidden" id="errorBanner" role="alert">Could not load the household state.</div>
         <footer class="page-footer"><span>hearthstate</span><span>Last refreshed <time id="footerTime">—</time></span></footer>
       </main>
     </div>
-    <script src="/nav.js?v=hearthstate-2" defer></script>
-    <script src="/app.js?v=hearthstate-2" defer></script>
+    <script src="/nav.js?v=hearthstate-3" defer></script>
+    <script src="/app.js?v=hearthstate-3" defer></script>
   </body>
 </html>

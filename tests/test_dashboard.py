@@ -2,11 +2,22 @@ import json
 import threading
 import unittest
 from datetime import datetime
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
-from family_planner.dashboard import DashboardServer, build_dashboard_snapshot
-from family_planner.app import FamilyPlanner
-from family_planner.store import PlannerStore
+from hearthstate.dashboard import DashboardServer, build_dashboard_snapshot
+from hearthstate.app import Hearthstate
+from hearthstate.store import PlannerStore
+
+
+def login_cookie(base_url, user="grant"):
+    request = Request(
+        base_url + "/api/session",
+        data=json.dumps({"user": user}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=2) as response:
+        return response.headers["Set-Cookie"]
 
 
 class DashboardSnapshotTests(unittest.TestCase):
@@ -45,7 +56,7 @@ class DashboardSnapshotTests(unittest.TestCase):
         self.store.close()
 
     def test_imessage_grocery_capture_is_visible_in_dashboard_snapshot(self):
-        response = FamilyPlanner(self.store).handle_message(
+        response = Hearthstate(self.store).handle_message(
             "you",
             "Add bananas to the shopping list",
         )
@@ -117,7 +128,8 @@ class DashboardHTTPTests(unittest.TestCase):
         thread.start()
         try:
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
-            with urlopen(base_url + "/", timeout=2) as response:
+            cookie = login_cookie(base_url)
+            with urlopen(Request(base_url + "/", headers={"Cookie": cookie}), timeout=2) as response:
                 page = response.read().decode()
             with urlopen(base_url + "/styles.css", timeout=2) as response:
                 stylesheet = response.read().decode()
@@ -139,10 +151,11 @@ class DashboardHTTPTests(unittest.TestCase):
         self.assertIn('id="inboxList"', page)
         self.assertIn('id="inboxCaptureForm"', page)
         self.assertIn('id="inboxConvertForm"', page)
-        self.assertIn('href="/favicon.svg?v=hearthstate-2"', page)
+        self.assertIn('href="/favicon.svg?v=hearthstate-3"', page)
         self.assertIn('class="welcome-utility"', page)
         self.assertIn('class="welcome-note-panel note-panel"', page)
         self.assertLess(page.index('class="welcome-note-panel note-panel"'), page.index('id="weeklyPlan"'))
+        self.assertLess(page.index('id="inboxPanel"'), page.index('id="weeklyPlan"'))
         self.assertNotIn('viewer-control', page)
         self.assertNotIn('viewerSelect', page)
         self.assertNotIn('Viewing', page)
@@ -162,9 +175,10 @@ class DashboardHTTPTests(unittest.TestCase):
         thread.start()
         try:
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            cookie = login_cookie(base_url)
             pages = "/", "/calendar", "/tasks", "/meals", "/recipes", "/groceries"
             for page_path in pages:
-                with urlopen(base_url + page_path, timeout=2) as response:
+                with urlopen(Request(base_url + page_path, headers={"Cookie": cookie}), timeout=2) as response:
                     self.assertEqual(response.status, 200)
                     html = response.read().decode()
                 self.assertIn("Hearthstate", html)
@@ -183,14 +197,15 @@ class DashboardHTTPTests(unittest.TestCase):
         thread.start()
         try:
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
+            cookie = login_cookie(base_url)
             pages = "/", "/calendar", "/tasks", "/meals", "/recipes", "/groceries"
             for page_path in pages:
-                with urlopen(base_url + page_path, timeout=2) as response:
+                with urlopen(Request(base_url + page_path, headers={"Cookie": cookie}), timeout=2) as response:
                     self.assertEqual(response.status, 200)
                     html = response.read().decode()
                 self.assertIn('class="mobile-nav-toggle"', html)
                 self.assertIn('aria-controls="primaryNav"', html)
-                self.assertIn('/nav.js?v=hearthstate-2', html)
+                self.assertIn('/nav.js?v=hearthstate-', html)
             with urlopen(base_url + "/nav.js", timeout=2) as response:
                 self.assertEqual(response.status, 200)
                 self.assertIn("mobile-nav-toggle", response.read().decode())
@@ -208,7 +223,8 @@ class DashboardHTTPTests(unittest.TestCase):
         thread.start()
         try:
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
-            with urlopen(base_url + "/recipes", timeout=2) as response:
+            cookie = login_cookie(base_url)
+            with urlopen(Request(base_url + "/recipes", headers={"Cookie": cookie}), timeout=2) as response:
                 page = response.read().decode()
             with urlopen(base_url + "/recipes.js", timeout=2) as response:
                 script = response.read().decode()
@@ -273,7 +289,8 @@ class DashboardHTTPTests(unittest.TestCase):
         thread.start()
         try:
             base_url = f"http://127.0.0.1:{server.server_address[1]}"
-            with urlopen(base_url + "/", timeout=2) as response:
+            cookie = login_cookie(base_url)
+            with urlopen(Request(base_url + "/", headers={"Cookie": cookie}), timeout=2) as response:
                 page = response.read().decode()
                 self.assertEqual(response.status, 200)
                 self.assertIn("Hearthstate", page)

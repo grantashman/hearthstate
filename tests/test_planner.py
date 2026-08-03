@@ -1,14 +1,14 @@
 import unittest
 from datetime import datetime
 
-from family_planner.app import FamilyPlanner
-from family_planner.store import PlannerStore
+from hearthstate.app import Hearthstate
+from hearthstate.store import PlannerStore
 
 
-class FamilyPlannerMessageTests(unittest.TestCase):
+class HearthstateMessageTests(unittest.TestCase):
     def setUp(self):
         self.store = PlannerStore(":memory:")
-        self.planner = FamilyPlanner(
+        self.planner = Hearthstate(
             self.store,
             now=lambda: datetime(2026, 8, 2, 9, 0),
         )

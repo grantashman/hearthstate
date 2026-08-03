@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from family_planner.store import PlannerStore
+from hearthstate.store import PlannerStore
 from seed_recipes import seed
 
 

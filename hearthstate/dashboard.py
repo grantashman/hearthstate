@@ -4,9 +4,13 @@ import argparse
 import calendar
 import json
 import os
+import secrets
 import sqlite3
+import threading
+import time
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
@@ -19,6 +23,13 @@ from .timezone import local_now
 _DASHBOARD_DIR = Path(__file__).with_name("dashboard")
 _MAX_INBOX_ACTOR_LENGTH = 120
 _MAX_INBOX_SOURCE_LENGTH = 80
+_SESSION_COOKIE = "HearthstateSession"
+_SESSION_MAX_AGE = 12 * 60 * 60
+HOUSEHOLD_USERS = {
+    "grant": {"name": "Grant", "role": "Household admin", "image": "/user-images/grant.png"},
+    "billie": {"name": "Billie", "role": "Household member", "image": "/user-images/billie.png"},
+    "skye": {"name": "Skye", "role": "Household member", "image": "/user-images/skye.png"},
+}
 
 
 def _inbox_actor(payload: dict, field: str = "created_by", *, default: str | None = None) -> str:
@@ -364,6 +375,8 @@ def build_dashboard_snapshot(
 
     return {
         "viewer": viewer,
+        "viewer_name": HOUSEHOLD_USERS.get(viewer, {"name": viewer.title()})["name"],
+        "viewer_role": HOUSEHOLD_USERS.get(viewer, {"role": "Household member"})["role"],
         "generated_at": current.isoformat(),
         "counts": {
             "attention": len(attention),
@@ -406,6 +419,13 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
         parsed = urlparse(self.path)
+        if parsed.path == "/" and not self.server.session_user(self.headers):
+            self._send_asset("login.html", "text/html; charset=utf-8")
+            return
+        protected_pages = {"/index.html", "/calendar", "/calendar/", "/tasks", "/tasks/", "/meals", "/meals/", "/groceries", "/groceries/", "/recipes", "/recipes/"}
+        if parsed.path in protected_pages and not self.server.session_user(self.headers):
+            self._send_redirect("/login")
+            return
         if parsed.path == "/health":
             try:
                 health = self.server.store.health_check()
@@ -415,7 +435,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"status": "degraded", "service": "hearthstate", "database": "unavailable"}, status=503)
             return
         if parsed.path == "/api/inbox":
-            viewer = parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
+            viewer = self.server.session_user(self.headers) or parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
             items = self.server.store.list_inbox_items(viewer=viewer)
             self._send_json({"viewer": viewer, "items": items, "generated_at": self.server.now().replace(second=0, microsecond=0).isoformat()})
             return
@@ -435,7 +455,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"recipes": recipes, "generated_at": self.server.now().replace(second=0, microsecond=0).isoformat()})
             return
         if parsed.path in {"/api/dashboard", "/api/tasks", "/api/calendar", "/api/meals"}:
-            viewer = parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
+            viewer = self.server.session_user(self.headers) or parse_qs(parsed.query).get("viewer", ["you"])[0].strip() or "you"
             assignee = normalize_assignee(parse_qs(parsed.query).get("assignee", [""])[0])
             payload = build_dashboard_snapshot(self.server.store, viewer, self.server.now())
             if assignee:
@@ -472,7 +492,19 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self._send_bytes(image_path.read_bytes(), allowed_types[image_path.suffix.lower()], cache_control="public, max-age=86400")
             return
 
+        if parsed.path.startswith("/user-images/"):
+            requested = parsed.path.removeprefix("/user-images/")
+            filename = Path(requested).name
+            image_path = _DASHBOARD_DIR / "user-images" / filename
+            if requested != filename or filename not in {"grant.png", "billie.png", "skye.png"} or not image_path.is_file():
+                self.send_error(404, "Image not found")
+                return
+            self._send_bytes(image_path.read_bytes(), "image/png", cache_control="public, max-age=86400")
+            return
+
         assets = {
+            "/login": ("login.html", "text/html; charset=utf-8"),
+            "/login.js": ("login.js", "text/javascript; charset=utf-8"),
             "/": ("index.html", "text/html; charset=utf-8"),
             "/index.html": ("index.html", "text/html; charset=utf-8"),
             "/calendar": ("calendar.html", "text/html; charset=utf-8"),
@@ -513,8 +545,21 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
         try:
             recipe_parts = parsed.path.strip("/").split("/")
+            actor = self.server.session_user(self.headers)
+            if parsed.path == "/api/session":
+                user = str(payload.get("user", "")).strip().lower()
+                if user not in HOUSEHOLD_USERS:
+                    raise ValueError("unknown household user")
+                token = secrets.token_urlsafe(32)
+                with self.server.session_lock:
+                    self.server.sessions[token] = (user, time.time())
+                self._send_json(
+                    {"user": user, "name": HOUSEHOLD_USERS[user]["name"]},
+                    headers={"Set-Cookie": f"{_SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}"},
+                )
+                return
             if parsed.path == "/api/inbox":
-                created_by = _inbox_actor(payload)
+                created_by = actor or _inbox_actor(payload)
                 source = str(payload.get("source", "dashboard") or "dashboard").strip()
                 if len(source) > _MAX_INBOX_SOURCE_LENGTH:
                     raise ValueError("source is too long")
@@ -537,14 +582,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     self._send_json({"error": "not found"}, status=404)
                     return
                 item_id = int(route_parts[0])
-                viewer = str(payload.get("viewer", payload.get("created_by", "you"))).strip() or "you"
+                viewer = actor or str(payload.get("viewer", payload.get("created_by", "you"))).strip() or "you"
                 self.server.store.get_inbox_item(item_id, viewer=viewer)
                 if route_parts[1] == "archive":
                     item = self.server.store.archive_inbox_item(item_id)
                     self._send_json({"item": item})
                     return
                 converted_type = str(payload.get("type", "")).strip().lower()
-                created_by = str(payload.get("created_by", viewer)).strip() or viewer
+                created_by = actor or str(payload.get("created_by", viewer)).strip() or viewer
                 result = self.server.store.convert_inbox_item(
                     item_id,
                     converted_type,
@@ -556,7 +601,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 return
 
             if parsed.path == "/api/groceries/budget":
-                budget = self.server.store.set_weekly_budget(float(payload["budget"]), str(payload.get("updated_by", "grant")))
+                budget = self.server.store.set_weekly_budget(float(payload["budget"]), actor or str(payload.get("updated_by", "grant")))
                 snapshot = self.server.store.grocery_budget_snapshot()
                 snapshot["budget"] = budget
                 self._send_json(snapshot)
@@ -625,7 +670,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 added = []
                 if grocery_indexes is not None:
                     added = self.server.store.add_recipe_ingredients_to_groceries(
-                        recipe_id, str(payload.get("created_by", "grant")), grocery_indexes,
+                        recipe_id, actor or str(payload.get("created_by", "grant")), grocery_indexes,
                     )
                 recipe = next(item for item in self.server.store.list_recipes() if item["id"] == recipe_id)
                 self._send_json({"recipe": recipe, "added": added}, status=201)
@@ -658,12 +703,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                             raise ValueError("ingredient index is out of range")
                     meal_id = self.server.store.plan_recipe(
                         recipe_id, meal_date, str(payload.get("meal_type", "dinner")),
-                        payload.get("cook") or None, str(payload.get("created_by", "grant")),
+                        payload.get("cook") or None, actor or str(payload.get("created_by", "grant")),
                     )
                     added = []
                     if grocery_indexes is not None:
                         added = self.server.store.add_recipe_ingredients_to_groceries(
-                            recipe_id, str(payload.get("created_by", "grant")), grocery_indexes,
+                            recipe_id, actor or str(payload.get("created_by", "grant")), grocery_indexes,
                         )
                     meal = next(item for item in self.server.store.list_meals() if item["id"] == meal_id)
                     meal["cook_label"] = assignee_label(meal.get("cook"))
@@ -672,11 +717,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 if action == "shopping-list":
                     if payload.get("meal_id"):
                         added = self.server.store.add_meal_ingredients_to_groceries(
-                            int(payload["meal_id"]), str(payload.get("created_by", "grant")),
+                            int(payload["meal_id"]), actor or str(payload.get("created_by", "grant")),
                         )
                     else:
                         added = self.server.store.add_recipe_ingredients_to_groceries(
-                            recipe_id, str(payload.get("created_by", "grant")),
+                            recipe_id, actor or str(payload.get("created_by", "grant")),
                         )
                     self._send_json({"added": added})
                     return
@@ -712,7 +757,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                         due_at,
                         None,
                         False,
-                        str(payload.get("created_by", "grant")),
+                        actor or str(payload.get("created_by", "grant")),
                         assignee=payload.get("assignee"),
                         recurrence=recurrence,
                     )
@@ -733,7 +778,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 else:
                     event_id = self.server.store.add_event(
                         title, starts_at, payload.get("person") or None,
-                        str(payload.get("created_by", "grant")), assignee=payload.get("assignee"),
+                        actor or str(payload.get("created_by", "grant")), assignee=payload.get("assignee"),
                     )
                     event = next(item for item in self.server.store.list_events() if item["id"] == event_id)
                     self._send_json({"event": event}, status=201)
@@ -755,7 +800,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 else:
                     meal_id = self.server.store.add_meal(
                         meal_date, meal_type, title, payload.get("cook") or None,
-                        ingredients, str(payload.get("created_by", "grant")),
+                        ingredients, actor or str(payload.get("created_by", "grant")),
                     )
                     meal = next(item for item in self.server.store.list_meals() if item["id"] == meal_id)
                     meal["cook_label"] = assignee_label(meal.get("cook"))
@@ -764,7 +809,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
 
             if parsed.path == "/api/meals/sync-groceries":
                 added = self.server.store.add_meal_ingredients_to_groceries(
-                    int(payload["meal_id"]), str(payload.get("created_by", "grant")),
+                    int(payload["meal_id"]), actor or str(payload.get("created_by", "grant")),
                 )
                 self._send_json({"added": added})
                 return
@@ -783,15 +828,33 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         except (KeyError, TypeError, ValueError, StopIteration) as error:
             self._send_json({"error": str(error)}, status=400)
 
-    def _send_json(self, payload: dict, status: int = 200) -> None:
+    def _send_asset(self, filename: str, content_type: str) -> None:
+        self._send_bytes((_DASHBOARD_DIR / filename).read_bytes(), content_type, cache_control="no-cache")
+
+    def _send_redirect(self, location: str) -> None:
+        self.send_response(302)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _send_json(self, payload: dict, status: int = 200, headers: dict[str, str] | None = None) -> None:
         self._send_bytes(
             json.dumps(payload).encode("utf-8"),
             "application/json; charset=utf-8",
             cache_control="no-store",
             status=status,
+            headers=headers,
         )
 
-    def _send_bytes(self, content: bytes, content_type: str, cache_control: str, status: int = 200) -> None:
+    def _send_bytes(
+        self,
+        content: bytes,
+        content_type: str,
+        cache_control: str,
+        status: int = 200,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
@@ -800,6 +863,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(content)
 
@@ -820,15 +885,33 @@ class DashboardServer(ThreadingHTTPServer):
     ) -> None:
         self.store = store
         self.now = now or local_now
+        self.sessions: dict[str, tuple[str, float]] = {}
+        self.session_lock = threading.Lock()
         super().__init__(server_address, DashboardRequestHandler)
+
+    def session_user(self, headers) -> str | None:
+        cookie = SimpleCookie()
+        cookie.load(headers.get("Cookie", ""))
+        token = cookie.get(_SESSION_COOKIE)
+        if token is None:
+            return None
+        with self.session_lock:
+            session = self.sessions.get(token.value)
+            if session is None:
+                return None
+            user, created_at = session
+            if time.time() - created_at > _SESSION_MAX_AGE:
+                self.sessions.pop(token.value, None)
+                return None
+            return user
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Hearthstate dashboard.")
     parser.add_argument(
         "--database",
-        default=os.environ.get("HEARTHSTATE_DB", os.environ.get("FAMILY_PLANNER_DB", "family_planner.db")),
-        help="SQLite database path (default: HEARTHSTATE_DB or family_planner.db)",
+        default=os.environ.get("HEARTHSTATE_DB", "hearthstate.db"),
+        help="SQLite database path (default: HEARTHSTATE_DB or hearthstate.db)",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8788, type=int)

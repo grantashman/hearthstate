@@ -5,9 +5,9 @@ from datetime import datetime
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from family_planner.app import FamilyPlanner
-from family_planner.dashboard import DashboardServer
-from family_planner.store import PlannerStore
+from hearthstate.app import Hearthstate
+from hearthstate.dashboard import DashboardServer
+from hearthstate.store import PlannerStore
 
 
 class InboxStoreTests(unittest.TestCase):
@@ -80,7 +80,7 @@ class InboxStoreTests(unittest.TestCase):
 class InboxPlannerTests(unittest.TestCase):
     def test_unknown_message_is_captured_for_later_triage(self):
         store = PlannerStore(":memory:")
-        planner = FamilyPlanner(store, now=lambda: datetime(2026, 8, 2, 9, 0))
+        planner = Hearthstate(store, now=lambda: datetime(2026, 8, 2, 9, 0))
 
         response = planner.handle_message("you", "Need to sort dentist and buy dishwasher tablets")
 

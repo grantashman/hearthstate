@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from family_planner.store import PlannerStore
+from hearthstate.store import PlannerStore
 
 
 ILLUSTRATIVE_IMAGES = {
@@ -50,7 +50,7 @@ def seed(database: str, source_file: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed the planner's link-first recipe catalog")
-    parser.add_argument("--database", default="family_planner.db")
+    parser.add_argument("--database", default="hearthstate.db")
     parser.add_argument("--source-file", default="recipe_seeds.json")
     args = parser.parse_args()
     print(json.dumps({"seeded": seed(args.database, args.source_file), "database": args.database}))

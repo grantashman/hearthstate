@@ -1,0 +1,11 @@
+[Unit]
+Description=Hearthstate SQLite backup
+After=hearthstate-dashboard.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/workspace/hearthstate
+ExecStart=/usr/bin/python3 /home/ubuntu/workspace/hearthstate/scripts/backup_db.py --database /home/ubuntu/workspace/hearthstate/hearthstate.db --output-dir /home/ubuntu/workspace/hearthstate/backups --keep 14
+Nice=15
+UMask=0077
+Environment=TZ=Australia/Sydney

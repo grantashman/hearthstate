@@ -36,15 +36,29 @@ def backup_database(source: str | Path, destination: str | Path) -> Path:
     return destination_path
 
 
+def prune_backups(directory: str | Path, *, keep: int = 14) -> list[Path]:
+    """Delete old Hearthstate backups, retaining the newest ``keep`` files."""
+    if keep < 1:
+        raise ValueError("keep must be at least 1")
+    directory_path = Path(directory).expanduser().resolve()
+    backups = sorted(directory_path.glob("hearthstate-*.db"), key=lambda path: path.name)
+    removed = backups[:-keep]
+    for path in removed:
+        path.unlink()
+    return removed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create an atomic Hearthstate SQLite backup.")
-    parser.add_argument("--database", default="family_planner.db", help="Source SQLite database path")
+    parser.add_argument("--database", default="hearthstate.db", help="Source SQLite database path")
     parser.add_argument("--output-dir", default="backups", help="Directory for timestamped backups")
+    parser.add_argument("--keep", type=int, default=14, help="Number of newest Hearthstate backups to retain")
     args = parser.parse_args()
 
     timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
     destination = Path(args.output_dir) / f"hearthstate-{timestamp}.db"
     result = backup_database(args.database, destination)
+    prune_backups(args.output_dir, keep=args.keep)
     print(result)
 
 

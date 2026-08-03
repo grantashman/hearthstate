@@ -26,6 +26,9 @@ const els = {
   groceryEmpty: document.querySelector('#groceryEmpty'),
   planningStrip: document.querySelector('#planningStrip'),
   footerTime: document.querySelector('#footerTime'),
+  viewerAvatar: document.querySelector('#viewerAvatar'),
+  viewerName: document.querySelector('#viewerName'),
+  viewerRole: document.querySelector('#viewerRole'),
   error: document.querySelector('#errorBanner'),
   inboxBadge: document.querySelector('#inboxBadge'),
   inboxList: document.querySelector('#inboxList'),
@@ -54,22 +57,24 @@ const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character
 }[character]));
 
 const formatDate = (value, options) => new Intl.DateTimeFormat(undefined, options).format(new Date(value));
+let currentViewerName = 'family';
 
-function getTimeOfDayGreeting(hour = new Date().getHours()) {
+function getTimeOfDayGreeting(hour = new Date().getHours(), name = 'family') {
+  const subject = name || 'family';
   if (hour >= 5 && hour < 12) {
-    return { title: 'Good morning, family.', eyebrow: 'A CALM START TO THE DAY' };
+    return { title: `Good morning, ${subject}.`, eyebrow: 'A CALM START TO THE DAY' };
   }
   if (hour >= 12 && hour < 17) {
-    return { title: 'Good afternoon, family.', eyebrow: 'A CALM PAUSE IN THE DAY' };
+    return { title: `Good afternoon, ${subject}.`, eyebrow: 'A CALM PAUSE IN THE DAY' };
   }
   if (hour >= 17 && hour < 21) {
-    return { title: 'Good evening, family.', eyebrow: 'A CALM EVENING AT HOME' };
+    return { title: `Good evening, ${subject}.`, eyebrow: 'A CALM EVENING AT HOME' };
   }
-  return { title: 'Good evening, family.', eyebrow: 'A QUIET END TO THE DAY' };
+  return { title: `Good evening, ${subject}.`, eyebrow: 'A QUIET END TO THE DAY' };
 }
 
-function updateGreeting(now = new Date()) {
-  const greeting = getTimeOfDayGreeting(now.getHours());
+function updateGreeting(now = new Date(), name = currentViewerName) {
+  const greeting = getTimeOfDayGreeting(now.getHours(), name);
   els.greetingTitle.textContent = greeting.title;
   els.greetingEyebrow.textContent = greeting.eyebrow;
 }
@@ -350,6 +355,11 @@ async function captureInboxItem(event) {
 
 function render(snapshot) {
   const current = snapshot.generated_at;
+  currentViewerName = snapshot.viewer_name || 'family';
+  updateGreeting(new Date(), currentViewerName);
+  if (els.viewerName) els.viewerName.textContent = currentViewerName;
+  if (els.viewerRole) els.viewerRole.textContent = snapshot.viewer_role || 'Household member';
+  if (els.viewerAvatar) els.viewerAvatar.textContent = currentViewerName.charAt(0).toUpperCase();
   const todayLabel = formatDate(current, { weekday: 'long', month: 'long', day: 'numeric' });
   const shortDate = formatDate(current, { weekday: 'short', month: 'short', day: 'numeric' });
   const counts = snapshot.counts;
@@ -382,7 +392,7 @@ async function loadDashboard() {
   setLoading(true);
   try {
     const viewer = encodeURIComponent('you');
-    const response = await fetch(`/api/dashboard?viewer=${viewer}`, { cache: 'no-store' });
+    const response = await fetch('/api/dashboard', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Dashboard request failed: ${response.status}`);
     render(await response.json());
   } catch (error) {

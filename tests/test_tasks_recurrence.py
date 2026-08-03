@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from family_planner.dashboard import DashboardServer, build_dashboard_snapshot
-from family_planner.store import PlannerStore
+from hearthstate.dashboard import DashboardServer, build_dashboard_snapshot
+from hearthstate.store import PlannerStore
 
 
 class TaskRecurrenceStoreTests(unittest.TestCase):

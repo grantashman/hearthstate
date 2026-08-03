@@ -31,7 +31,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Compile Python sources
-        run: python -m compileall -q family_planner scripts tests
+        run: python -m compileall -q hearthstate scripts tests
 
       - name: Check JavaScript syntax
-        run: for file in family_planner/dashboard/*.js; do node --check "$file"; done
+        run: for file in hearthstate/dashboard/*.js; do node --check "$file"; done
