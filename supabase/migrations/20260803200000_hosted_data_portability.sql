@@ -67,20 +67,6 @@ begin
             ) order by ci.created_at)
             from public.channel_identities ci
             where ci.household_id = target_household_id
-        ), '[]'::jsonb),
-        'channel_integrations', coalesce((
-            select jsonb_agg(jsonb_build_object(
-                'id', integration.id,
-                'channel', integration.channel,
-                'name', integration.name,
-                'allowed_email', integration.allowed_email,
-                'enabled', integration.enabled,
-                'created_at', integration.created_at
-            ) order by integration.created_at)
-            from public.channel_integrations integration
-            where integration.id in (
-                select ci.integration_id from public.channel_identities ci where ci.household_id = target_household_id
-            )
         ), '[]'::jsonb)
     ) into exported;
 

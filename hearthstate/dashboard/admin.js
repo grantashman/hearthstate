@@ -25,7 +25,10 @@ function hideFeedback() {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { cache: 'no-store', ...options });
+  const headers = new Headers(options.headers || {});
+  const householdId = window.__HEARTHSTATE_VIEWER__?.household_id;
+  if (householdId) headers.set('X-Hearthstate-Household', householdId);
+  const response = await fetch(path, { cache: 'no-store', ...options, headers });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
   return payload;

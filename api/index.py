@@ -497,6 +497,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             }
             return {
                 "user": user_id,
+                "household_id": household_id,
                 "name": str(profile.get("display_name") or user.get("email", "Household member").split("@", 1)[0].title()),
                 "role": role_labels.get(role, "Household member"),
                 "is_owner": role == "owner",
@@ -845,6 +846,10 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             self._respond({"household": household or {}}, status=201)
             return
         user_id, token, user = self._authenticate()
+        if route in {"/admin/export", "/admin/delete"}:
+            selected_household = self.headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0]
+            if not selected_household:
+                raise SupabaseHTTPError(400, "explicit household selection required")
         context = self._context(user_id, token)
         assert context is not None
         household_id, _ = context

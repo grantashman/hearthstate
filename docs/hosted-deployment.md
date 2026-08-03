@@ -45,7 +45,7 @@ The initial Photon mapping is the configured Australian sender to `grant@ashman.
 
 The owner-only Administration page provides two hosted actions:
 
-- `POST /api/admin/export` calls the authenticated `export_household(uuid)` RPC and downloads a versioned JSON document containing the household's records, memberships, profiles, activity history, preferences, recipes, invitations, and relevant Photon identity metadata.
+- `POST /api/admin/export` calls the authenticated `export_household(uuid)` RPC and downloads a versioned JSON document containing the household's records, memberships, profiles, activity history, preferences, recipes, invitations, and relevant Photon identity metadata. The caller must send the active household in `X-Hearthstate-Household` (or `household_id` in the query string); these actions never silently select the first membership.
 - `POST /api/admin/delete` calls the authenticated `delete_household(uuid, text)` RPC. The caller must be an owner and supply the exact current household name. The RPC re-checks ownership and the name inside the database transaction before deleting the household; cascading foreign keys remove household records and the account itself remains available for setup or another household.
 
 Exports intentionally omit invitation `token_hash` values and Photon `token_hash` values. They are portability documents, not credential backups. Do not test deletion against the production household; use an isolated Supabase project or a disposable test household.
