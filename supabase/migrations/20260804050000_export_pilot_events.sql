@@ -7,13 +7,15 @@ set search_path = public, private, extensions
 as $$
 declare
     exported jsonb;
+    owner_membership public.memberships;
 begin
-    if not exists (
-        select 1 from public.memberships
-        where household_id = target_household_id
-          and user_id = (select auth.uid())
-          and role = 'owner'
-    ) then
+    select * into owner_membership
+    from public.memberships
+    where household_id = target_household_id
+      and user_id = (select auth.uid())
+      and role = 'owner'
+    for update;
+    if not found then
         raise exception 'owner access required' using errcode = '42501';
     end if;
 

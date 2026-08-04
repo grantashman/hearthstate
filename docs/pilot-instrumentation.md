@@ -6,7 +6,7 @@ This is a first-party measurement ledger for the hosted household pilot. It exis
 
 - `pilot_events` stores household/member/record UUIDs, event names, server timestamps, a dedupe key, and a small allowlisted metadata object.
 - It never stores inbox text, task titles, event titles, email addresses, URLs, message bodies, invitation bearer tokens, or channel payloads.
-- Writes go through the `service_role`-only `record_pilot_event` RPC. The RPC locks and checks the actor's household membership before inserting.
+- Writes go through the `service_role`-only `record_pilot_event` RPC. The RPC locks and checks the actor's household membership before inserting and applies the same event-specific metadata allowlist as the API.
 - Authenticated users have no direct read or write policy for the ledger. Owners can receive the metadata-only facts as part of their normal household export.
 - Instrumentation failures are deliberately non-blocking: a household mutation must not become a 5xx because measurement is unavailable.
 
@@ -28,7 +28,7 @@ This is a first-party measurement ledger for the hosted household pilot. It exis
 | `subscription_cancelled` | Future billing integration | `plan` | What retention/packaging problem needs attention? |
 | `subscription_renewed` | Future billing integration | `plan` | Is recurring value durable? |
 
-The current API exposes `POST /api/pilot/events` only for `briefing_opened`, `briefing_acted_on`, and `conflict_resolved`. It requires an authenticated household member and a UUID `entity_id`; arbitrary event names and metadata are rejected or discarded. This endpoint is ready for the briefing/resolution UI and does not fabricate events before those surfaces exist.
+The current API exposes `POST /api/pilot/events` only for `briefing_opened`, `briefing_acted_on`, and `conflict_resolved`. It requires an authenticated household member and does not accept client-supplied record identifiers; arbitrary event names, entity IDs, and metadata are rejected or discarded. This endpoint is ready for the briefing/resolution UI and does not fabricate events before those surfaces exist.
 
 ## Retention queries
 

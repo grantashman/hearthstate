@@ -39,12 +39,34 @@ class PilotInstrumentationTests(unittest.TestCase):
         self.assertEqual(payload["p_metadata"], {"source": "dashboard"})
         self.assertNotIn("title", payload["p_metadata"])
 
+    def test_record_event_never_breaks_a_mutation_on_transient_network_failure(self):
+        request = object.__new__(handler)
+        with patch("api.index._supabase_admin_request", side_effect=TimeoutError("timed out")):
+            request._record_pilot_event("household-id", "user-id", "task_completed", metadata={"source": "dashboard"})
+
+    def test_client_signal_endpoint_rejects_client_entity_ids(self):
+        request = object.__new__(handler)
+        request._authenticate = lambda: ("user-id", "access-token", {})
+        request._context = lambda user_id, token: ("household-id", [])
+        request._record_pilot_event = Mock()
+        with patch("api.index._json_body", return_value={
+            "event_name": "briefing_opened",
+            "entity_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "metadata": {"source": "client"},
+        }):
+            with self.assertRaises(ValueError):
+                request._handle_post("/pilot/events")
+        request._record_pilot_event.assert_not_called()
+
     def test_pilot_migration_is_first_party_and_service_role_write_only(self):
         migration = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804040000_pilot_instrumentation.sql").read_text()
         self.assertIn("create table if not exists public.pilot_events", migration)
         self.assertIn("alter table public.pilot_events enable row level security", migration)
         self.assertIn("revoke select, insert, update, delete on public.pilot_events from public, anon, authenticated, service_role", migration)
         self.assertIn("create or replace function public.record_pilot_event", migration)
+        self.assertIn("event_metadata jsonb", migration)
+        self.assertIn("p_event_name in", migration)
+        self.assertIn("jsonb_build_object('source'", migration)
         self.assertIn("for update", migration)
         self.assertIn("on conflict (household_id, event_name, dedupe_key)", migration)
         for event_name in ("household_created", "member_invited", "member_active", "capture_created", "capture_converted", "task_completed", "briefing_opened", "briefing_acted_on", "conflict_resolved"):
@@ -57,14 +79,13 @@ class PilotInstrumentationTests(unittest.TestCase):
         request._record_pilot_event = patch("api.index.handler._record_pilot_event").start()
         request._respond = patch("api.index.handler._respond").start()
         try:
-            with patch("api.index._json_body", return_value={"event_name": "briefing_acted_on", "entity_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "metadata": {"action": "task_completed", "original_text": "never store"}}):
+            with patch("api.index._json_body", return_value={"event_name": "briefing_acted_on", "metadata": {"action": "task_completed", "original_text": "never store"}}):
                 request._handle_post("/pilot/events")
             request._record_pilot_event.assert_called_once_with(
                 "household-id",
                 "user-id",
                 "briefing_acted_on",
                 entity_type="briefing",
-                entity_id="2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
                 metadata={"action": "task_completed", "original_text": "never store"},
             )
             request._respond.assert_called_once_with({"recorded": True})
@@ -193,6 +214,12 @@ class PilotInstrumentationTests(unittest.TestCase):
         portability = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804050000_export_pilot_events.sql").read_text()
         self.assertIn("'pilot_events'", portability)
         self.assertIn("from public.pilot_events", portability)
+
+    def test_data_export_serializes_owner_authorization_with_membership_lock(self):
+        portability = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804050000_export_pilot_events.sql").read_text()
+        self.assertIn("owner_membership public.memberships", portability)
+        self.assertIn("select * into owner_membership", portability)
+        self.assertIn("for update", portability)
 
 
 if __name__ == "__main__":

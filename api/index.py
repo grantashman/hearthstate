@@ -505,8 +505,8 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             return
 
     def _record_pilot_event(self, household_id: str, user_id: str, event_name: str, *, entity_type: str | None = None, entity_id: str | None = None, metadata: object = None, dedupe_key: str | None = None) -> None:
-        sanitized = _sanitize_pilot_metadata(event_name, metadata)
         try:
+            sanitized = _sanitize_pilot_metadata(event_name, metadata)
             _supabase_admin_request(
                 "POST",
                 "/rest/v1/rpc/record_pilot_event",
@@ -520,7 +520,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     "p_dedupe_key": dedupe_key,
                 },
             )
-        except SupabaseHTTPError:
+        except Exception:
             # Observability must never turn a successful household mutation into a 5xx.
             return
 
@@ -1172,14 +1172,14 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             event_name = str(payload.get("event_name", "")).strip().lower()
             if event_name not in _PILOT_CLIENT_EVENTS:
                 raise ValueError("unsupported pilot event")
-            entity_id = _uuid(payload.get("entity_id"), "pilot event entity id")
+            if "entity_id" in payload:
+                raise ValueError("client pilot events cannot include entity ids")
             entity_type = "briefing" if event_name.startswith("briefing_") else "conflict"
             self._record_pilot_event(
                 household_id,
                 user_id,
                 event_name,
                 entity_type=entity_type,
-                entity_id=entity_id,
                 metadata=payload.get("metadata"),
             )
             self._respond({"recorded": True})

@@ -53,6 +53,7 @@ set search_path = public
 as $$
 declare
     event_row public.pilot_events;
+    event_metadata jsonb := '{}'::jsonb;
 begin
     if p_actor_user_id is null then
         raise exception 'actor is required' using errcode = '42501';
@@ -87,13 +88,46 @@ begin
         raise exception 'pilot metadata must be an object' using errcode = '22023';
     end if;
 
+    if p_event_name in ('household_created', 'member_active', 'dashboard_opened', 'task_completed', 'briefing_opened', 'briefing_acted_on', 'conflict_resolved')
+       and p_metadata->>'source' in ('setup', 'dashboard', 'email', 'photon', 'notification', 'client', 'unknown') then
+        event_metadata := event_metadata || jsonb_build_object('source', p_metadata->>'source');
+    end if;
+    if p_event_name = 'member_invited'
+       and p_metadata->>'role' in ('member', 'child', 'guest') then
+        event_metadata := event_metadata || jsonb_build_object('role', p_metadata->>'role');
+    end if;
+    if p_event_name = 'capture_created' then
+        if p_metadata->>'source' in ('setup', 'dashboard', 'email', 'photon', 'notification', 'client', 'unknown') then
+            event_metadata := event_metadata || jsonb_build_object('source', p_metadata->>'source');
+        end if;
+        if jsonb_typeof(p_metadata->'private') = 'boolean' then
+            event_metadata := event_metadata || jsonb_build_object('private', p_metadata->'private');
+        end if;
+    end if;
+    if p_event_name = 'capture_converted'
+       and p_metadata->>'conversion_type' in ('task', 'event', 'meal', 'grocery') then
+        event_metadata := event_metadata || jsonb_build_object('conversion_type', p_metadata->>'conversion_type');
+    end if;
+    if p_event_name = 'briefing_acted_on'
+       and p_metadata->>'action' in ('task_completed', 'grocery_opened', 'calendar_opened', 'dismissed', 'unknown') then
+        event_metadata := event_metadata || jsonb_build_object('action', p_metadata->>'action');
+    end if;
+    if p_event_name = 'conflict_resolved'
+       and p_metadata->>'resolution' in ('accepted', 'dismissed', 'snoozed', 'unknown') then
+        event_metadata := event_metadata || jsonb_build_object('resolution', p_metadata->>'resolution');
+    end if;
+    if p_event_name in ('subscription_started', 'subscription_cancelled', 'subscription_renewed')
+       and p_metadata->>'plan' in ('pilot', 'monthly', 'annual', 'unknown') then
+        event_metadata := event_metadata || jsonb_build_object('plan', p_metadata->>'plan');
+    end if;
+
     if p_dedupe_key is null then
         insert into public.pilot_events (household_id, actor, event_name, entity_type, entity_id, metadata)
-        values (p_household_id, p_actor_user_id, p_event_name, p_entity_type, p_entity_id, p_metadata)
+        values (p_household_id, p_actor_user_id, p_event_name, p_entity_type, p_entity_id, event_metadata)
         returning * into event_row;
     else
         insert into public.pilot_events (household_id, actor, event_name, entity_type, entity_id, metadata, dedupe_key)
-        values (p_household_id, p_actor_user_id, p_event_name, p_entity_type, p_entity_id, p_metadata, p_dedupe_key)
+        values (p_household_id, p_actor_user_id, p_event_name, p_entity_type, p_entity_id, event_metadata, p_dedupe_key)
         on conflict (household_id, event_name, dedupe_key) where dedupe_key is not null do nothing
         returning * into event_row;
         if not found then
