@@ -36,15 +36,43 @@ function renderQuantityEditor(item) {
   return `<form class="quantity-form" data-item-id="${item.id}"><label for="quantity-${item.id}">Qty</label><div><input id="quantity-${item.id}" name="quantity" type="number" min="0.01" step="0.01" value="${quantityValue(item)}" inputmode="decimal" required /><span>${escapeHTML(item.unit || 'each')}</span><button type="submit">Save</button></div></form>`;
 }
 
+function trustedPriceURL(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return '';
+    const host = url.hostname.toLowerCase();
+    const belongsTo = (domain) => host === domain || host.endsWith(`.${domain}`);
+    if (belongsTo('coles.com.au') || belongsTo('aldi.com.au') || belongsTo('woolworths.com.au')) return url.href;
+  } catch (error) {}
+  return '';
+}
+
+function retailerFromPrice(item) {
+  const confidence = String(item.price_confidence || '').trim().toLowerCase();
+  const source = String(item.price_source || '').trim();
+  if (confidence === 'manual' || source.toLowerCase().startsWith('manual')) return null;
+  const safeURL = trustedPriceURL(item.price_url);
+  if (!safeURL) return null;
+  try {
+    const host = new URL(safeURL).hostname.toLowerCase();
+    const belongsTo = (domain) => host === domain || host.endsWith(`.${domain}`);
+    if (belongsTo('coles.com.au')) return 'Coles';
+    if (belongsTo('aldi.com.au')) return 'ALDI';
+    if (belongsTo('woolworths.com.au')) return 'Woolworths';
+  } catch (error) {}
+  return null;
+}
+
 function renderItem(item) {
   const priced = item.price != null;
   const source = item.price_source || '';
-  const observedRetailer = ['Coles', 'ALDI', 'Woolworths'].find((retailer) => source.startsWith(retailer));
+  const observedRetailer = retailerFromPrice(item);
+  const safePriceURL = trustedPriceURL(item.price_url);
   const priceDetail = priced
     ? `<div class="grocery-price"><strong>${money(item.line_total)}</strong><span>${item.quantity === 1 ? money(item.price) : `${money(item.price)} each`}</span></div>`
     : `<div class="grocery-price unknown-price"><strong>Unknown</strong><span>Not counted</span></div>`;
   const provenance = priced
-    ? `<div class="price-provenance"><span class="price-badge ${observedRetailer ? 'is-coles' : 'is-manual'}">${observedRetailer || 'Manual'}</span>${item.price_url ? `<a href="${escapeHTML(item.price_url)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
+    ? `<div class="price-provenance"><span class="price-badge ${observedRetailer ? 'is-coles' : 'is-manual'}">${observedRetailer || 'Manual'}</span>${safePriceURL ? `<a href="${escapeHTML(safePriceURL)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
     : `<form class="quick-price-form" data-item-id="${item.id}"><label>Set a price</label><div><span>$</span><input name="price" type="number" min="0" step="0.01" placeholder="0.00" required /><button type="submit">Save</button></div></form>`;
   return `<article class="grocery-record"><div class="grocery-check" aria-hidden="true"></div><div class="grocery-record-main"><div class="grocery-name-line"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(unitLabel(item))}</span></div>${provenance}</div>${renderQuantityEditor(item)}${priceDetail}</article>`;
 }
@@ -70,7 +98,7 @@ function renderComparison(payload) {
         : 'Complete prices · products are not equivalent'
       : `Partial · ${retailer.unknown_count} item${retailer.unknown_count === 1 ? '' : 's'} not matched`;
     const unknown = retailer.unknown_items?.length ? `<small class="retailer-unknown">Missing: ${retailer.unknown_items.map(escapeHTML).join(', ')}</small>` : '';
-    const products = lines.length ? `<details class="retailer-products"><summary>Products compared</summary><ul>${lines.map((line) => `<li><span>${escapeHTML(line.name || '')}</span><small>${line.match ? `${escapeHTML(line.match.title)} · ${money(line.match.price)} each` : 'No safe match'}</small></li>`).join('')}</ul></details>` : '';
+    const products = lines.length ? `<details class="retailer-products"><summary>Products compared</summary><ul>${lines.map((line) => `<li><span>${escapeHTML(line.name || '')}</span><small>${line.match ? `${escapeHTML(line.match.title)} · ${money(line.match.price)} each${line.match.size_match === 'closest' ? ` · closest pack${line.match.requested_size ? ` for ${escapeHTML(line.match.requested_size)}` : ''}` : ''}` : 'No safe match'}</small></li>`).join('')}</ul></details>` : '';
     const recommended = retailer.retailer === payload.recommended_retailer && retailer.comparable;
     return `<div class="retailer-total${recommended ? ' is-recommended' : ''}"><div><strong>${escapeHTML(retailer.retailer_label)}</strong><span>${escapeHTML(status)}</span>${unknown}${products}</div><strong>${money(retailer.total)}</strong></div>`;
   }).join('');

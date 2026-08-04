@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 
 
@@ -60,7 +61,9 @@ COLES_PRICE_CATALOG = {
         "price": 4.00,
         "source": "Coca-Cola Zero Sugar Soft Drink Bottle 2L",
         "url": "https://www.coles.com.au/product/coca-cola-zero-sugar-soft-drink-bottle-2l-3029790",
-        "aliases": ("2l coke zero", "coke zero 2l", "coca cola zero sugar 2l"),
+        "aliases": ("2l coke zero", "coke zero 2l", "coca cola zero sugar 2l", "coke zero", "coke zero sugar"),
+        "comparison_family": "coke zero",
+        "size_quantity_safe": True,
         "note": "Exact 2L Coca-Cola Zero Sugar bottle selected; do not substitute a different size or diet variant. Price is location-sensitive.",
     },
     "franks hot sauce": {
@@ -264,6 +267,12 @@ def _catalog_key(name: str) -> str | None:
     return max(candidates)[1] if candidates else None
 
 
+def _is_manual_price(item: dict) -> bool:
+    confidence = str(item.get("price_confidence") or "").strip().casefold()
+    source = str(item.get("price_source") or "").strip().casefold()
+    return confidence == "manual" or source.startswith("manual")
+
+
 def apply_known_coles_prices(store: PlannerStore, checked_at: str | None = None) -> list[str]:
     """Apply explainable Coles-preferred matches and refresh stale auto-matches.
 
@@ -275,7 +284,7 @@ def apply_known_coles_prices(store: PlannerStore, checked_at: str | None = None)
     updated: list[str] = []
     for item in store.list_grocery_items():
         key = _catalog_key(item["name"])
-        if not key or item.get("price_confidence") == "manual":
+        if not key or _is_manual_price(item):
             continue
         match = COLES_PRICE_CATALOG[key]
         if (
@@ -342,6 +351,28 @@ ALDI_PRICE_CATALOG = {
         "note": "ALDI loose washed potato estimate; final price is based on weight at the register.",
         "observed_at": "2026-08-04",
     },
+    "coke zero 600ml": {
+        "price": 3.99,
+        "source": "Coke Coca Cola Zero Sugar 600ml",
+        "url": "https://www.aldi.com.au/product/coca-cola-coke-coca-cola-zero-sugar-600ml-000000000000366926",
+        "aliases": ("coke zero 600ml", "coke zero sugar 600ml", "coca cola zero sugar 600ml", "coke coca cola zero sugar 600ml"),
+        "comparison_family": "coke zero",
+        "size_quantity_safe": True,
+        "note": "ALDI Coca-Cola Zero Sugar 600mL bottle; product information and price are location-sensitive and may vary by store.",
+        "size_flexible": True,
+        "observed_at": "2026-08-04",
+    },
+    "coke zero 30x375ml": {
+        "price": 31.99,
+        "source": "Coke Zero Sugar 30x375ml",
+        "url": "https://www.aldi.com.au/product/coca-cola-coke-zero-sugar-30x375ml-000000000000526489",
+        "aliases": ("coke zero 30x375ml", "coke zero sugar 30x375ml", "coca cola zero sugar 30x375ml"),
+        "comparison_family": "coke zero",
+        "size_quantity_safe": True,
+        "note": "ALDI Coca-Cola Zero Sugar 30 x 375mL multipack; product information and price are location-sensitive and may vary by store.",
+        "size_flexible": True,
+        "observed_at": "2026-08-04",
+    },
 }
 
 
@@ -378,6 +409,17 @@ WOOLWORTHS_PRICE_CATALOG = {
         "note": "Woolworths Australian salted butter 250g; price is location-sensitive and availability may vary.",
         "observed_at": "2026-08-04",
     },
+    "coke zero": {
+        "price": 4.00,
+        "source": "Coca-Cola Zero Sugar Soft Drink Bottle 2L",
+        "url": "https://www.woolworths.com.au/shop/productdetails/672966/coca-cola-zero-sugar-soft-drink-bottle",
+        "aliases": ("coke zero", "coke zero sugar", "coca cola zero sugar", "coca cola zero", "coca-cola zero sugar"),
+        "comparison_family": "coke zero",
+        "size_quantity_safe": True,
+        "note": "Woolworths Coca-Cola Zero Sugar 2L bottle; price is location-sensitive and availability may vary.",
+        "size_flexible": True,
+        "observed_at": "2026-08-04",
+    },
     "chickpeas": {
         "price": 0.95,
         "source": "Woolworths Chickpeas 420g",
@@ -400,7 +442,8 @@ RETAILER_CATALOGS = {
 }
 RETAILERS = tuple(RETAILER_CATALOGS)
 
-_SIZE_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*(kg|g|mg|l|ml|litre|litres|liter|liters|pack|packs|each)\b")
+_SIZE_RE = re.compile(r"\b(?:(\d+(?:\.\d+)?)\s*x\s*)?(\d+(?:\.\d+)?)\s*(kg|g|mg|l|ml|litre|litres|liter|liters|pack|packs|each)\b")
+_INVALID_SIZE_RE = re.compile(r"(?<![a-z0-9])[-+]\s*\d+(?:\.\d+)?\s*(?:kg|g|mg|l|ml|litre|litres|liter|liters|pack|packs|each)\b", re.IGNORECASE)
 _VARIANT_PHRASES = (
     "long life", "full cream", "lactose free", "unsweetened", "zero sugar", "zero",
     "free range", "cage free", "barn laid", "organic", "wholemeal", "original",
@@ -440,13 +483,42 @@ def _matching_name(name: object) -> str:
     return " ".join(normalized.split())
 
 
+def _canonical_size_unit(unit: str) -> str:
+    return {"litre": "l", "litres": "l", "liter": "l", "liters": "l", "packs": "pack"}.get(unit, unit)
+
+
+def _has_invalid_size_notation(value: object) -> bool:
+    return bool(_INVALID_SIZE_RE.search(str(value or "")))
+
+
 def _size_tokens(value: object) -> tuple[str, ...]:
-    return tuple(f"{number}{unit.rstrip('s')}" for number, unit in _SIZE_RE.findall(normalize_name(value)))
+    tokens = []
+    for multiplier, number, unit in _SIZE_RE.findall(normalize_name(value)):
+        token = f"{number}{_canonical_size_unit(unit)}"
+        tokens.append(f"{multiplier}x{token}" if multiplier else token)
+    return tuple(tokens)
 
 
 def _variant_tokens(value: object) -> set[str]:
     normalized = normalize_name(value)
     return {phrase for phrase in _VARIANT_PHRASES if phrase in normalized}
+
+
+_SIZE_INPUT_UNITS = {"g", "kg", "mg", "ml", "l", "litre", "litres", "liter", "liters"}
+
+
+def _format_size_quantity(value: object, unit: object) -> str | None:
+    normalized_unit = normalize_name(unit)
+    if normalized_unit not in _SIZE_INPUT_UNITS:
+        return None
+    try:
+        quantity = float(value)
+    except (TypeError, ValueError):
+        return None
+    if quantity <= 0:
+        return None
+    number = str(int(quantity)) if quantity.is_integer() else str(quantity).rstrip("0").rstrip(".")
+    return f"{number}{_canonical_size_unit(normalized_unit)}"
 
 
 def _count_unit(unit: object) -> bool:
@@ -460,6 +532,8 @@ def _safe_alias_match(query: object, alias: object) -> int:
     query_matching = _matching_name(query)
     alias_matching = _matching_name(alias)
     if not query_normalized or not alias_normalized:
+        return 0
+    if not _size_tokens(query) and _size_tokens(alias):
         return 0
     if query_normalized == alias_normalized:
         return 1000 + len(alias_normalized)
@@ -482,12 +556,51 @@ def _compatible_constraints(query: object, product: dict) -> bool:
 
 
 def _comparison_key(key: str, product: dict) -> str:
+    family = normalize_name(product.get("comparison_family") or key)
     sizes = ",".join(_size_tokens(product.get("source", ""))) or "unspecified"
     variants = ",".join(sorted(_variant_tokens(product.get("source", "")))) or "default"
-    return f"{key}|sizes={sizes}|variants={variants}"
+    return f"{family}|sizes={sizes}|variants={variants}"
 
 
-def _materialize(retailer: str, key: str, product: dict, basis: str) -> dict:
+_SIZE_MAGNITUDE_RE = re.compile(r"^(?:(\d+(?:\.\d+)?)x)?(\d+(?:\.\d+)?)(kg|g|mg|l|ml|pack|each)$")
+_SIZE_MAGNITUDE_UNITS = {
+    "mg": ("mass", 0.001),
+    "g": ("mass", 1.0),
+    "kg": ("mass", 1000.0),
+    "ml": ("volume", 1.0),
+    "l": ("volume", 1000.0),
+}
+
+
+def _size_magnitude(token: str) -> tuple[str, float] | None:
+    match = _SIZE_MAGNITUDE_RE.fullmatch(token)
+    if not match:
+        return None
+    multiplier, number, unit = match.groups()
+    dimensions = _SIZE_MAGNITUDE_UNITS.get(unit)
+    if dimensions is None:
+        return None
+    magnitude = float(number) * float(multiplier or 1)
+    if magnitude <= 0:
+        return None
+    return dimensions[0], magnitude
+
+
+def _closest_size_score(query: object, product: dict) -> tuple[int, str, str] | None:
+    query_sizes = _size_tokens(query)
+    product_sizes = _size_tokens(product.get("source", ""))
+    if len(query_sizes) != 1 or len(product_sizes) != 1:
+        return None
+    query_magnitude = _size_magnitude(query_sizes[0])
+    product_magnitude = _size_magnitude(product_sizes[0])
+    if not query_magnitude or not product_magnitude or query_magnitude[0] != product_magnitude[0]:
+        return None
+    ratio = max(query_magnitude[1], product_magnitude[1]) / min(query_magnitude[1], product_magnitude[1])
+    distance = abs(math.log(ratio))
+    return max(1, int(300 - distance * 100)), query_sizes[0], product_sizes[0]
+
+
+def _materialize(retailer: str, key: str, product: dict, basis: str, *, requested_size: str | None = None, size_match: str = "exact") -> dict:
     return {
         "retailer": retailer,
         "retailer_label": RETAILER_LABELS[retailer],
@@ -500,17 +613,22 @@ def _materialize(retailer: str, key: str, product: dict, basis: str) -> dict:
         "observed_at": product.get("observed_at", "2026-08-04"),
         "note": product["note"],
         "match_basis": basis,
+        "requested_size": requested_size,
+        "product_size": (_size_tokens(product.get("source", "")) or [None])[0],
+        "size_match": size_match,
+        "size_quantity_safe": bool(product.get("size_quantity_safe")),
     }
 
 
 def match_item(name: object, retailer: str, unit: object = "each") -> dict | None:
     retailer_key = str(retailer or "").strip().lower()
-    if not _count_unit(unit):
+    if _has_invalid_size_notation(name) or not _count_unit(unit):
         return None
     catalog = RETAILER_CATALOGS.get(retailer_key)
     if catalog is None:
         raise ValueError(f"unsupported retailer: {retailer}")
-    candidates: list[tuple[int, str, dict, str]] = []
+    requested_size = (_size_tokens(name) or [None])[0]
+    candidates: list[tuple[int, str, dict, str, str]] = []
     for key, product in catalog.items():
         if not _compatible_constraints(name, product):
             continue
@@ -518,11 +636,62 @@ def match_item(name: object, retailer: str, unit: object = "each") -> dict | Non
         score = max((_safe_alias_match(name, alias) for alias in aliases), default=0)
         if score:
             basis = "exact alias" if score >= 1000 else "normalized alias"
-            candidates.append((score, key, product, basis))
-    if not candidates:
-        return None
-    score, key, product, basis = max(candidates, key=lambda item: (item[0], len(item[1])))
-    return _materialize(retailer_key, key, product, basis)
+            candidates.append((score, key, product, basis, "exact"))
+    if candidates:
+        score, key, product, basis, size_match = max(candidates, key=lambda item: (item[0], len(item[1])))
+        return _materialize(retailer_key, key, product, basis, requested_size=requested_size, size_match=size_match)
+
+    # A closest-pack fallback is opt-in per catalog entry. It is useful for
+    # showing a same-family product across retailers, but its size mismatch
+    # prevents it from making a cart comparable/recommendable.
+    if requested_size:
+        closest_candidates: list[tuple[int, str, dict, str, str]] = []
+        query_family = _matching_name(name)
+        for key, product in catalog.items():
+            if not product.get("size_flexible") or not _variant_tokens(name).issubset(_variant_tokens(product.get("source", ""))):
+                continue
+            family_match = any(_matching_name(alias) == query_family for alias in (*product.get("aliases", ()), key))
+            if not family_match:
+                continue
+            size_score = _closest_size_score(name, product)
+            if size_score is None:
+                continue
+            score, _, _ = size_score
+            closest_candidates.append((score, key, product, "closest size alias", "closest"))
+        if closest_candidates:
+            score, key, product, basis, size_match = max(closest_candidates, key=lambda item: (item[0], len(item[1])))
+            return _materialize(retailer_key, key, product, basis, requested_size=requested_size, size_match=size_match)
+    return None
+
+
+def normalize_grocery_item(item: dict) -> dict:
+    """Treat a size-qualified packaged product as one purchase, not N units.
+
+    Recipe imports use ``quantity | unit | name``. For a known product, a line
+    such as ``600 | ml | Coke Zero`` is canonicalized to ``Coke Zero 600ml``
+    with quantity one. Unknown measured ingredients remain untouched.
+    """
+    normalized = dict(item)
+    size = _format_size_quantity(item.get("quantity"), item.get("unit"))
+    if size is None:
+        return normalized
+    name = str(item.get("name") or "").strip()
+    if not name:
+        return normalized
+    sized_name = f"{name} {size}"
+    exact_match = any(
+        (match := match_item(sized_name, retailer)) is not None
+        and match.get("size_match") == "exact"
+        and match.get("size_quantity_safe") is True
+        for retailer in RETAILERS
+    )
+    if not exact_match:
+        return normalized
+    if size not in _size_tokens(name):
+        normalized["name"] = sized_name
+    normalized["quantity"] = 1
+    normalized["unit"] = "each"
+    return normalized
 
 
 def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> dict[str, dict]:
@@ -531,7 +700,8 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
         lines = []
         unknown = []
         total = 0.0
-        for item in items:
+        for raw_item in items:
+            item = normalize_grocery_item(raw_item)
             try:
                 quantity = float(item.get("quantity") or 1)
             except (TypeError, ValueError):
@@ -559,8 +729,9 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
     not_comparable_indexes: set[int] = set()
     for index in range(len(items)):
         keys = {
-            result["lines"][index]["match"].get("comparison_key")
-            if result["lines"][index]["match"] else None
+            None
+            if not result["lines"][index]["match"] or result["lines"][index]["match"].get("size_match") != "exact"
+            else result["lines"][index]["match"].get("comparison_key")
             for result in comparison.values()
         }
         if len(keys) != 1 or None in keys:
@@ -576,12 +747,12 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
 
 def catalog_updates(items: list[dict], retailer: str = "coles") -> list[dict]:
     updates = []
-    for item in items:
-        source = str(item.get("price_source") or "").strip().lower()
-        if item.get("price_confidence") == "manual" or source.startswith("manual"):
+    for raw_item in items:
+        item = normalize_grocery_item(raw_item)
+        if _is_manual_price(item):
             continue
         match = match_item(item.get("name", ""), retailer, item.get("unit", "each"))
-        if match is None:
+        if match is None or match.get("size_match") != "exact":
             continue
         expected = {
             "price": match["price"],

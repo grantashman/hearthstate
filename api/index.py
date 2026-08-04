@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -14,9 +15,9 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 try:
-    from .pricing import catalog_updates, compare_cart
+    from .pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
 except ImportError:  # Vercel may load api/index.py as a standalone function module.
-    from pricing import catalog_updates, compare_cart
+    from pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
 
 
 # The publishable key is safe to expose to the browser. Production should still
@@ -66,6 +67,18 @@ def _json_body(request: BaseHTTPRequestHandler) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("JSON object required")
     return payload
+
+
+def _safe_price(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("price must be a non-negative finite number")
+    try:
+        price = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("price must be a non-negative finite number") from exc
+    if not math.isfinite(price) or price < 0 or price > 99_999_999.99:
+        raise ValueError("price must be a non-negative finite number")
+    return price
 
 
 def _safe_error(raw: bytes) -> str:
@@ -355,11 +368,13 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "tasks": {"title", "due_at", "owner", "assignee", "private", "recurrence", "status"},
             "events": {"title", "starts_at", "ends_at", "person", "assignee", "status"},
             "meals": {"meal_date", "meal_type", "title", "cook", "status", "ingredients"},
-            "grocery_items": {"name", "quantity", "unit", "category", "price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note", "status"},
+            "grocery_items": {"name", "quantity", "unit", "category", "status"},
             "recipes": {"source", "source_policy", "title", "source_url", "image_url", "summary", "tags", "prep_minutes", "cook_minutes", "ingredients"},
             "chore_templates": {"title", "cadence", "participants", "next_index", "active"},
         }.get(table, set())
         record = {key: value for key, value in payload.items() if key in fields}
+        if table == "grocery_items":
+            record = normalize_grocery_item(record)
         record["household_id"] = household_id
         record["created_by"] = user_id
         return record
@@ -371,17 +386,60 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             raise SupabaseHTTPError(502, "Supabase did not return the created record")
         return rows[0]
 
-    def _patch_record(self, table: str, record_id: object, household_id: str, token: str, payload: dict) -> dict:
+    def _patch_record(self, table: str, record_id: object, household_id: str, token: str, payload: dict, *, allow_price_metadata: bool = False, actor_user_id: str | None = None) -> dict:
         identifier = _uuid(record_id, f"{table} id")
+        grocery_fields = {"name", "quantity", "unit", "category", "status"}
+        if allow_price_metadata:
+            grocery_fields.update({"price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note"})
         allowed = {
             "tasks": {"title", "due_at", "owner", "assignee", "private", "recurrence", "status"},
             "events": {"title", "starts_at", "ends_at", "person", "assignee", "status"},
             "meals": {"meal_date", "meal_type", "title", "cook", "status", "ingredients"},
-            "grocery_items": {"name", "quantity", "unit", "category", "price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note", "status"},
+            "grocery_items": grocery_fields,
         }.get(table, set())
         record = {key: value for key, value in payload.items() if key in allowed}
-        rows = _rows(_supabase_request("PATCH", f"/rest/v1/{table}", token=token, query=[("id", f"eq.{identifier}"), ("household_id", f"eq.{household_id}")], payload=record))
+        compare_and_swap_row = None
+        if table == "grocery_items" and any(key in record for key in ("name", "quantity", "unit", "category")):
+            compare_and_swap_row = _first(_supabase_request(
+                "GET",
+                "/rest/v1/grocery_items",
+                token=token,
+                query=[
+                    ("select", "name,quantity,unit,category"),
+                    ("id", f"eq.{identifier}"),
+                    ("household_id", f"eq.{household_id}"),
+                ],
+            ))
+            if compare_and_swap_row:
+                canonical = normalize_grocery_item(compare_and_swap_row)
+                record = {key: canonical[key] for key in ("name", "quantity", "unit", "category") if key in canonical}
+                record.update({key: value for key, value in payload.items() if key in allowed})
+            record = normalize_grocery_item(record)
+        query = [("id", f"eq.{identifier}"), ("household_id", f"eq.{household_id}")]
+        if compare_and_swap_row:
+            for field in ("name", "quantity", "unit", "category"):
+                if field in compare_and_swap_row:
+                    value = compare_and_swap_row[field]
+                    query.append((field, "is.null" if value is None else f"eq.{value}"))
+        if table == "grocery_items" and allow_price_metadata:
+            if not actor_user_id:
+                raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
+            rows = _rows(_supabase_admin_request(
+                "POST",
+                "/rest/v1/rpc/set_grocery_manual_price",
+                payload={
+                    "p_actor_user_id": actor_user_id,
+                    "p_household_id": household_id,
+                    "p_item_id": identifier,
+                    "p_price": record.get("price"),
+                    "p_checked_at": record.get("price_checked_at"),
+                },
+            ))
+        else:
+            rows = _rows(_supabase_request("PATCH", f"/rest/v1/{table}", token=token, query=query, payload=record))
         if not rows:
+            if compare_and_swap_row:
+                raise SupabaseHTTPError(409, "grocery item changed; retry the quantity update")
             raise SupabaseHTTPError(404, f"{table} record not found")
         return rows[0]
 
@@ -396,29 +454,54 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         except SupabaseHTTPError:
             return
 
-    def _patch_automatic_price(self, item_id: object, household_id: str, token: str, payload: dict) -> dict | None:
-        """Apply a catalog price only if the row is still not marked manual.
-
-        The filters make the read/patch boundary optimistic: if a household
-        member saves a manual price between the snapshot read and this patch,
-        PostgREST updates zero rows and the manual value wins.
-        """
+    def _patch_automatic_price(self, item_id: object, household_id: str, token: str, payload: dict, *, expected_item: dict, actor_user_id: str | None = None) -> dict | None:
+        """Apply a catalog price only if the item identity is unchanged and non-manual."""
         identifier = _uuid(item_id, "grocery_items id")
-        rows = _rows(_supabase_request(
-            "PATCH",
+        current = _first(_supabase_request(
+            "GET",
             "/rest/v1/grocery_items",
             token=token,
             query=[
+                ("select", "name,quantity,unit,category,price_confidence,price_source"),
                 ("id", f"eq.{identifier}"),
                 ("household_id", f"eq.{household_id}"),
-                ("or", "(price_confidence.is.null,price_confidence.neq.manual)"),
-                ("or", "(price_source.is.null,price_source.not.ilike.Manual*)"),
             ],
-            payload=payload,
+        ))
+        if not current:
+            return None
+        current_identity = normalize_grocery_item(current)
+        expected_identity = normalize_grocery_item(expected_item)
+        if any(current_identity.get(field) != expected_identity.get(field) for field in ("name", "quantity", "unit", "category")):
+            return None
+        if _is_manual_price(current):
+            return None
+        if not actor_user_id:
+            raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
+        rpc_payload = {
+            "p_actor_user_id": actor_user_id,
+            "p_household_id": household_id,
+            "p_item_id": identifier,
+            "p_expected_name": current.get("name"),
+            "p_expected_quantity": current.get("quantity"),
+            "p_expected_unit": current.get("unit"),
+            "p_expected_category": current.get("category"),
+            "p_expected_price_confidence": current.get("price_confidence"),
+            "p_expected_price_source": current.get("price_source"),
+            "p_price": payload.get("price"),
+            "p_price_source": payload.get("price_source"),
+            "p_price_url": payload.get("price_url"),
+            "p_price_confidence": payload.get("price_confidence"),
+            "p_price_checked_at": payload.get("price_checked_at"),
+            "p_price_note": payload.get("price_note"),
+        }
+        rows = _rows(_supabase_admin_request(
+            "POST",
+            "/rest/v1/rpc/apply_grocery_automatic_price",
+            payload=rpc_payload,
         ))
         return rows[0] if rows else None
 
-    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles") -> tuple[list[dict], list[str]]:
+    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles", *, actor_user_id: str | None = None) -> tuple[list[dict], list[str]]:
         """Persist safe curated matches without replacing household-entered prices."""
         updated: list[str] = []
         for update in catalog_updates(items, retailer):
@@ -436,18 +519,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     "price_checked_at": match["observed_at"],
                     "price_note": match["note"],
                 },
+                expected_item=item,
+                actor_user_id=actor_user_id,
             )
             if patched is None:
                 continue
             for index, current in enumerate(items):
                 if str(current.get("id")) == str(item.get("id")):
-                    items[index] = patched
+                    items[index] = normalize_grocery_item(patched)
                     break
             updated.append(str(item.get("name") or ""))
         return items, updated
 
-    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str) -> None:
+    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str, *, actor_user_id: str | None = None) -> None:
         """Persist the explicit refresh result as household-scoped retailer observations."""
+        if not actor_user_id:
+            raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
         for retailer, result in comparison.items():
             for line in result.get("lines", []):
                 item_id = line.get("item_id")
@@ -455,43 +542,41 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     continue
                 match = line.get("match")
                 if match is None:
-                    _supabase_request(
-                        "DELETE",
-                        "/rest/v1/grocery_price_quotes",
-                        token=token,
-                        query=[
-                            ("household_id", f"eq.{household_id}"),
-                            ("grocery_item_id", f"eq.{item_id}"),
-                            ("retailer", f"eq.{retailer}"),
-                        ],
+                    _supabase_admin_request(
+                        "POST",
+                        "/rest/v1/rpc/delete_grocery_price_quote",
+                        payload={
+                            "p_actor_user_id": actor_user_id,
+                            "p_household_id": household_id,
+                            "p_grocery_item_id": item_id,
+                            "p_retailer": retailer,
+                        },
                     )
                     continue
-                _supabase_request(
+                _supabase_admin_request(
                     "POST",
-                    "/rest/v1/grocery_price_quotes",
-                    token=token,
-                    query=[("on_conflict", "grocery_item_id,retailer")],
+                    "/rest/v1/rpc/upsert_grocery_price_quote",
                     payload={
-                        "household_id": household_id,
-                        "grocery_item_id": item_id,
-                        "retailer": retailer,
-                        "product_key": match["product_key"],
-                        "product_title": match["title"],
-                        "product_url": match["url"],
-                        "price": match["price"],
-                        "observed_at": match["observed_at"],
-                        "confidence": match["confidence"],
-                        "match_basis": match["match_basis"],
-                        "note": match["note"],
+                        "p_actor_user_id": actor_user_id,
+                        "p_household_id": household_id,
+                        "p_grocery_item_id": item_id,
+                        "p_retailer": retailer,
+                        "p_product_key": match["product_key"],
+                        "p_product_title": match["title"],
+                        "p_product_url": match["url"],
+                        "p_price": match["price"],
+                        "p_observed_at": match["observed_at"],
+                        "p_confidence": match["confidence"],
+                        "p_match_basis": match["match_basis"],
+                        "p_note": match["note"],
                     },
-                    prefer="return=minimal,resolution=merge-duplicates",
                 )
 
-    def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False) -> dict:
-        items = self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")
+    def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False, actor_user_id: str | None = None) -> dict:
+        items = [normalize_grocery_item(item) for item in self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")]
         auto_updated: list[str] = []
         if refresh:
-            items, auto_updated = self._apply_catalog_matches(items, household_id, token)
+            items, auto_updated = self._apply_catalog_matches(items, household_id, token, actor_user_id=actor_user_id)
         comparison = compare_cart(items)
         settings = _first(_supabase_request("GET", "/rest/v1/planner_settings", token=token, query=[("select", "weekly_budget,updated_at"), ("household_id", f"eq.{household_id}")])) or {}
         budget = settings.get("weekly_budget")
@@ -1027,7 +1112,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             budget = float(payload.get("budget"))
             if budget < 0: raise ValueError("budget must not be negative")
             _supabase_request("POST", "/rest/v1/planner_settings", token=token, query=[("on_conflict", "household_id")], payload={"household_id": household_id, "weekly_budget": budget, "updated_by": user_id}, prefer="return=minimal,resolution=merge-duplicates")
-            self._respond(self._grocery_snapshot(household_id, token)); return
+            self._respond(self._grocery_snapshot(household_id, token, actor_user_id=user_id)); return
         if route == "/groceries/price":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
             self._respond({"item": self._patch_record(
@@ -1036,20 +1121,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 household_id,
                 token,
                 {
-                    "price": float(payload.get("price")),
+                    "price": _safe_price(payload.get("price")),
                     "price_source": "Manual entry",
                     "price_url": None,
                     "price_confidence": "manual",
                     "price_checked_at": _iso_now(),
                     "price_note": "Entered by household",
                 },
+                allow_price_metadata=True,
+                actor_user_id=user_id,
             )}); return
         if route == "/groceries/item":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
             self._respond({"item": self._patch_record("grocery_items", item_id, household_id, token, {key: payload[key] for key in ("quantity", "unit", "category") if key in payload})}); return
         if route in {"/groceries/refresh", "/groceries/refresh-coles"}:
-            snapshot = self._grocery_snapshot(household_id, token, refresh=True)
-            self._upsert_price_quotes(snapshot.get("comparison", {}), household_id, token)
+            snapshot = self._grocery_snapshot(household_id, token, refresh=True, actor_user_id=user_id)
+            self._upsert_price_quotes(snapshot.get("comparison", {}), household_id, token, actor_user_id=user_id)
             updated = snapshot.get("auto_updated", [])
             response = {**snapshot, "updated_items": updated, "updated_count": len(updated)}
             if route == "/groceries/refresh-coles":
