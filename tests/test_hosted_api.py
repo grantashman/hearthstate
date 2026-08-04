@@ -91,6 +91,22 @@ class HostedApiContractTests(unittest.TestCase):
         rewrite = next(item for item in config["rewrites"] if item["source"] == "/api/:path*")
         self.assertIn("route=/api/:path*", rewrite["destination"])
 
+    def test_pwa_manifest_and_service_worker_are_public_assets(self):
+        request = object.__new__(handler)
+        request._token = Mock(return_value=None)
+        request._send_bytes = Mock()
+
+        for route, content_type, marker in (
+            ("/manifest.webmanifest", "application/manifest+json; charset=utf-8", '"display": "standalone"'),
+            ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v1"),
+        ):
+            with self.subTest(route=route):
+                request._send_bytes.reset_mock()
+                self.assertTrue(request._handle_asset(route))
+                content, returned_type = request._send_bytes.call_args.args[:2]
+                self.assertEqual(returned_type, content_type)
+                self.assertIn(marker.encode(), content)
+
     def test_setup_page_uses_cookie_backed_session_only(self):
         setup = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "hosted.html").read_text()
         self.assertNotIn("localStorage", setup)

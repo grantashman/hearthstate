@@ -1,4 +1,10 @@
 (() => {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+      // Progressive enhancement only: the hosted dashboard remains usable without a service worker.
+    });
+  }
+
   const toggle = document.querySelector('.mobile-nav-toggle');
   const nav = document.querySelector('#primaryNav');
   const sidebar = document.querySelector('.sidebar');
@@ -29,6 +35,36 @@
   window.addEventListener('resize', () => {
     if (window.innerWidth > 780) closeMenu();
   });
+
+  let deferredInstallPrompt = null;
+  const topbarActions = document.querySelector('.topbar-actions');
+  if (topbarActions && !document.querySelector('#installAppButton')) {
+    const installButton = document.createElement('button');
+    installButton.id = 'installAppButton';
+    installButton.className = 'install-button is-hidden';
+    installButton.type = 'button';
+    installButton.setAttribute('aria-label', 'Install Hearthstate as an app');
+    installButton.textContent = 'Install app';
+    topbarActions.insertBefore(installButton, topbarActions.firstChild);
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      installButton.classList.remove('is-hidden');
+    });
+    window.addEventListener('appinstalled', () => {
+      deferredInstallPrompt = null;
+      installButton.classList.add('is-hidden');
+    });
+    installButton.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) return;
+      const promptEvent = deferredInstallPrompt;
+      deferredInstallPrompt = null;
+      installButton.classList.add('is-hidden');
+      await promptEvent.prompt();
+      await promptEvent.userChoice;
+    });
+  }
 
   const activeHouseholdHeaders = {};
   const activeHouseholdId = window.__HEARTHSTATE_VIEWER__?.household_id;

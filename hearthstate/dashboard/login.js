@@ -1,3 +1,9 @@
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+    // Progressive enhancement only: authentication does not depend on offline caching.
+  });
+}
+
 const feedback = document.querySelector('#loginFeedback');
 const magicLinkPanel = document.querySelector('#magicLinkPanel');
 const verificationPanel = document.querySelector('#verificationPanel');
