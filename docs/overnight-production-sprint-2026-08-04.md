@@ -118,4 +118,37 @@ The highest-value follow-ups remain:
 4. Product differentiation around confirmation-first capture, Inbox review,
    privacy-safe activity/undo, and Photon/iMessage household workflows.
 
-PR: <https://github.com/grantashman/hearthstate/pull/10>
+## Post-merge deployment correction
+
+The first PR #10 production smoke test correctly exposed a deployment routing
+bug: Vercel served the Python asset handler for local tests, but `vercel.json`
+did not rewrite the new root-level manifest, service worker, or nested icon
+paths. Those production requests returned 404 while existing health, login, and
+favicon routes remained healthy.
+
+The correction was shipped separately:
+
+- `e139176` — `fix: route hosted PWA assets through Vercel`
+- PR #11: <https://github.com/grantashman/hearthstate/pull/11>
+- Merge commit: `7664379`
+- Production migration/deployment workflow: successful
+
+Final public smoke test against `https://hearthstate.vercel.app`:
+
+| Route | Result |
+|---|---|
+| `/api/health` | HTTP 200, JSON |
+| `/api/auth/config` | HTTP 200, JSON |
+| `/manifest.webmanifest` | HTTP 200, manifest JSON |
+| `/sw.js` | HTTP 200, JavaScript |
+| `/icons/icon-192.png` | HTTP 200, PNG |
+| `/icons/icon-512.png` | HTTP 200, PNG |
+| `/favicon.svg` | HTTP 200, SVG |
+| `/login` | HTTP 200, HTML |
+
+The preview deployment itself required Vercel Deployment Protection and could
+not be inspected anonymously without a bypass credential; no bypass secret
+was requested, copied, or logged.
+
+PR #10: <https://github.com/grantashman/hearthstate/pull/10>
+PR #11: <https://github.com/grantashman/hearthstate/pull/11>
