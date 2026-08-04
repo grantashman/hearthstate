@@ -35,9 +35,7 @@ create unique index if not exists pilot_events_dedupe_idx
     where dedupe_key is not null;
 
 alter table public.pilot_events enable row level security;
-revoke select, insert, update, delete on public.pilot_events from public, anon, authenticated;
-revoke insert on public.pilot_events from authenticated;
-grant select, insert on public.pilot_events to service_role;
+revoke select, insert, update, delete on public.pilot_events from public, anon, authenticated, service_role;
 
 create or replace function public.record_pilot_event(
     p_actor_user_id uuid,

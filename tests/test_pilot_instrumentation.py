@@ -43,7 +43,7 @@ class PilotInstrumentationTests(unittest.TestCase):
         migration = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804040000_pilot_instrumentation.sql").read_text()
         self.assertIn("create table if not exists public.pilot_events", migration)
         self.assertIn("alter table public.pilot_events enable row level security", migration)
-        self.assertIn("revoke insert on public.pilot_events from authenticated", migration)
+        self.assertIn("revoke select, insert, update, delete on public.pilot_events from public, anon, authenticated, service_role", migration)
         self.assertIn("create or replace function public.record_pilot_event", migration)
         self.assertIn("for update", migration)
         self.assertIn("on conflict (household_id, event_name, dedupe_key)", migration)
