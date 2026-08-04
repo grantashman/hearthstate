@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _supabase_admin_request, _uuid, handler
+from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _supabase_admin_request, _supabase_request, _uuid, handler
 
 
 class HostedApiContractTests(unittest.TestCase):
@@ -125,6 +125,216 @@ class HostedApiContractTests(unittest.TestCase):
         request.send_response.assert_called_once_with(302)
         request.send_header.assert_any_call("Location", "/")
 
+    @patch("api.index._json_body", return_value={
+        "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+        "meal_date": "2026-08-08",
+        "meal_type": "dinner",
+        "title": "Tacos",
+        "cook": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+        "ingredients": ["tortillas"],
+        "created_by": "attacker",
+    })
+    @patch("api.index._supabase_request", return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "title": "Tacos"})
+    def test_meal_update_uses_membership_checked_rpc_and_server_bound_actor(self, supabase_request, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {"email": "owner@example.com"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._respond = Mock()
+
+        request._handle_post("/meals")
+
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/update_meal",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "owner-id",
+                "p_meal_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "p_patch": {
+                    "meal_date": "2026-08-08",
+                    "meal_type": "dinner",
+                    "title": "Tacos",
+                    "cook": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+                    "ingredients": ["tortillas"],
+                },
+            },
+        )
+        request._respond.assert_called_once_with({"meal": supabase_request.return_value}, status=200)
+
+    @patch("api.index._supabase_request", return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "cook": None})
+    def test_meal_update_can_clear_the_cook(self, supabase_request):
+        request = object.__new__(handler)
+        updated = request._update_meal(
+            "household-id",
+            "owner-id",
+            "session-token",
+            {
+                "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "cook": "",
+            },
+        )
+        self.assertEqual(updated["cook"], None)
+        self.assertEqual(supabase_request.call_args.kwargs["payload"]["p_patch"], {"cook": None})
+
+    @patch("api.index._supabase_request")
+    def test_meal_cook_display_label_resolves_to_household_member_uuid(self, supabase_request):
+        cook_id = "8f8fad5b-d9cb-469f-a165-70867728951f"
+        request = object.__new__(handler)
+
+        def response(method, path, **kwargs):
+            if path == "/rest/v1/memberships":
+                return [{"user_id": cook_id}]
+            if path == "/rest/v1/profiles":
+                return {"user_id": cook_id, "display_name": "Grant", "email": "grant@example.test"}
+            if path == "/rest/v1/rpc/create_meal":
+                return {"id": "meal-3"}
+            raise AssertionError(f"unexpected request: {method} {path}")
+
+        supabase_request.side_effect = response
+        request._create_meal(
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "session-token",
+            {"meal_date": "2026-08-08", "title": "Dinner", "cook": "grant"},
+        )
+        rpc_call = next(call for call in supabase_request.call_args_list if call.args[1] == "/rest/v1/rpc/create_meal")
+        self.assertEqual(rpc_call.kwargs["payload"]["p_meal"]["cook"], cook_id)
+
+    @patch("api.index._supabase_request", return_value={"id": "meal-2", "title": "Recipe dinner"})
+    def test_meal_creation_normalizes_recipe_ingredient_objects(self, supabase_request):
+        request = object.__new__(handler)
+        request._post_record(
+            "meals",
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "session-token",
+            {
+                "meal_date": "2026-08-08",
+                "title": "Recipe dinner",
+                "ingredients": [{"quantity": "2", "unit": "cups", "name": "rice"}],
+            },
+        )
+        self.assertEqual(
+            supabase_request.call_args.kwargs["payload"]["p_meal"]["ingredients"],
+            ["2 cups rice"],
+        )
+
+    @patch("api.index._supabase_request", return_value={"id": "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49", "ingredients": []})
+    @patch("api.index._json_body", return_value={"meal_id": "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49"})
+    def test_meal_grocery_sync_route_is_not_shadowed_by_delete_route(self, json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=(
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "session-token",
+            {},
+        ))
+        request._context = Mock(return_value=(
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            {},
+        ))
+        request._respond = Mock()
+        request._handle_post("/meals/sync-groceries")
+        request._respond.assert_called_once_with({"added": []})
+
+    @patch("api.index._json_body", return_value={})
+    def test_meal_delete_route_returns_rpc_result_without_extra_nesting(self, json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=(
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "session-token",
+            {},
+        ))
+        request._context = Mock(return_value=(
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            {},
+        ))
+        request._delete_meal = Mock(return_value={
+            "deleted": True,
+            "id": "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49",
+        })
+        request._respond = Mock()
+        request._handle_post(
+            "/meals/4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49/delete"
+        )
+        request._respond.assert_called_once_with({
+            "deleted": True,
+            "id": "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49",
+        })
+
+    @patch("api.index._supabase_request")
+    @patch("api.index._supabase_admin_request")
+    def test_activity_log_uses_trusted_server_channel(self, admin_request, user_request):
+        request = object.__new__(handler)
+        request._log(
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "session-token",
+            "task.completed",
+            "task",
+            "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49",
+        )
+        admin_request.assert_called_once()
+        user_request.assert_not_called()
+
+    @patch("api.index._supabase_request", return_value={"deleted": True, "id": "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49"})
+    def test_meal_delete_uses_membership_checked_rpc_and_server_bound_actor(self, supabase_request):
+        request = object.__new__(handler)
+        deleted = request._delete_meal(
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "session-token",
+            "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49",
+        )
+        self.assertTrue(deleted["deleted"])
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/delete_meal",
+            token="session-token",
+            payload={
+                "p_household_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "p_actor_user_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+                "p_meal_id": "4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49",
+            },
+        )
+
+    def test_meal_update_rejects_oversized_or_malformed_ingredients_before_network_call(self):
+        request = object.__new__(handler)
+        with self.assertRaisesRegex(ValueError, "ingredients"):
+            request._update_meal(
+                "household-id",
+                "owner-id",
+                "session-token",
+                {
+                    "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                    "ingredients": [""],
+                },
+            )
+
+    def test_meal_mutation_migration_locks_membership_and_validates_cook_scope(self):
+        migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text()
+        self.assertIn("create or replace function public.create_meal", migration)
+        self.assertIn("create or replace function public.delete_meal", migration)
+        self.assertIn("meal.deleted", migration)
+        self.assertIn("auth.uid() <> p_actor_user_id", migration)
+        self.assertIn("from public.memberships", migration)
+        self.assertIn("for update", migration)
+        self.assertIn("order by user_id", migration.lower())
+        self.assertIn("meal cook must belong to household", migration)
+        self.assertIn("set search_path = public, pg_temp", migration)
+        self.assertIn("meals_household_cook_membership_fkey", migration)
+        self.assertIn("on delete set null (cook)", migration.lower())
+        self.assertIn("insert into public.activity_log", migration)
+        self.assertIn("meal patch must not be empty", migration)
+        self.assertIn("revoke insert, update, delete on public.meals from authenticated", migration)
+        self.assertIn("revoke insert, update, delete on public.activity_log from authenticated", migration)
+
+    def test_meal_creation_is_database_constrained_to_household_cooks(self):
+        migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text()
+        self.assertIn("foreign key (household_id, cook)", migration.lower())
+        self.assertIn("references public.memberships (household_id, user_id)", migration.lower())
+        self.assertIn("on delete set null (cook)", migration.lower())
+
     def test_invalid_household_context_is_rejected(self):
         with self.assertRaises(ValueError):
             _uuid("not-a-uuid", "household id")
@@ -156,9 +366,54 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("grant@ashman.net.au", migration)
         self.assertIn("service_role", migration)
 
+    @patch("api.index.urlopen")
+    @patch("api.index._config", return_value=("https://supabase.example", "publishable-key"))
+    def test_supabase_request_honors_prefer_without_request_body(self, _config, urlopen):
+        urlopen.return_value.__enter__.return_value.read.return_value = b"[]"
+        _supabase_request("DELETE", "/rest/v1/memberships", token="session-token", prefer="return=representation")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("Prefer"), "return=representation")
+
     def test_supabase_rows_accept_object_or_array(self):
         self.assertEqual(_rows({"id": "one"}), [{"id": "one"}])
         self.assertEqual(_rows([{"id": "one"}, "ignored"]), [{"id": "one"}])
+
+    @patch("api.index._supabase_request")
+    def test_meal_creation_uses_membership_checked_rpc_and_server_bound_actor(self, supabase_request):
+        supabase_request.return_value = {"id": "meal-1", "title": "Tacos"}
+        request = object.__new__(handler)
+        created = request._post_record(
+            "meals",
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "0f8fad5b-d9cb-469f-a165-70867728950e",
+            "access-token",
+            {
+                "meal_date": "2026-08-08",
+                "meal_type": "dinner",
+                "title": "Tacos",
+                "cook": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+                "ingredients": ["tortillas"],
+                "created_by": "attacker",
+                "household_id": "other-household",
+            },
+        )
+        self.assertEqual(created, {"id": "meal-1", "title": "Tacos"})
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/create_meal",
+            token="access-token",
+            payload={
+                "p_household_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "p_actor_user_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+                "p_meal": {
+                    "meal_date": "2026-08-08",
+                    "meal_type": "dinner",
+                    "title": "Tacos",
+                    "cook": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+                    "ingredients": ["tortillas"],
+                },
+            },
+        )
 
     @patch("api.index._supabase_request")
     def test_post_record_owns_household_and_actor_fields(self, supabase_request):
@@ -271,6 +526,165 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertNotIn("'token_hash'", export_section)
         self.assertNotIn("'bridge_key'", export_section)
         self.assertNotIn("channel_integrations", export_section)
+    def test_private_tasks_are_visible_only_to_owner_or_creator_in_service_role_views(self):
+        request = object.__new__(handler)
+        viewer = "0f8fad5b-d9cb-469f-a165-70867728950e"
+        tasks = [
+            {"id": "private-owned", "private": True, "owner": viewer, "created_by": "other"},
+            {"id": "private-created", "private": True, "owner": "other", "created_by": viewer},
+            {"id": "private-hidden", "private": True, "owner": "other", "created_by": "someone-else"},
+            {"id": "shared", "private": False, "owner": "other", "created_by": "someone-else"},
+        ]
+        self.assertEqual(
+            [task["id"] for task in request._visible_tasks(tasks, viewer)],
+            ["private-owned", "private-created", "shared"],
+        )
+
+    @patch("api.index._supabase_admin_request")
+    def test_photon_private_task_completion_uses_actor_bound_rpc(self, admin_request):
+        request = object.__new__(handler)
+        admin_request.return_value = {"id": "task-id", "private": True, "status": "done"}
+        completed = request._complete_task("household-id", "viewer-id", "task-id")
+        self.assertEqual(completed["status"], "done")
+        admin_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/complete_task",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "viewer-id",
+                "p_task_id": "task-id",
+            },
+        )
+
+    @patch("api.index._json_body", return_value={})
+    def test_dashboard_task_completion_route_uses_session_bound_rpc(self, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._complete_task = Mock(return_value={"id": "task-id", "status": "done"})
+        request._record_pilot_event = Mock()
+        request._respond = Mock()
+        request._handle_post("/tasks/2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47/complete")
+        request._complete_task.assert_called_once_with(
+            "household-id",
+            "viewer-id",
+            "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "session-token",
+        )
+
+    def test_context_requires_explicit_household_for_multiple_memberships(self):
+        request = object.__new__(handler)
+        request.headers = {}
+        request._query = Mock(return_value={})
+        request._memberships = Mock(return_value=[{"id": "household-a"}, {"id": "household-b"}])
+        with self.assertRaisesRegex(Exception, "explicit household selection"):
+            request._context("viewer-id", "session-token")
+
+    @patch("api.index._supabase_request", return_value=[{"household_id": "household-id", "user_id": "viewer-id", "role": "member"}])
+    @patch("api.index._json_body", return_value={"token": "raw-invite", "display_name": "Grant"})
+    def test_invitation_acceptance_uses_transactional_session_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {"email": "person@example.test"}))
+        request._respond = Mock()
+        request._handle_post("/auth/invitations/accept")
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/accept_invitation",
+            token="session-token",
+            payload={"raw_token": "raw-invite", "display_name": "Grant"},
+        )
+        request._respond.assert_called_once_with({"membership": {"household_id": "household-id", "user_id": "viewer-id", "role": "member"}}, status=201)
+
+    @patch("api.index._json_body", return_value={})
+    def test_photon_state_command_passes_body_sender(self, _json_body):
+        request = object.__new__(handler)
+        request._channel_integration = Mock(return_value={"id": "integration-id"})
+        request._channel_context = Mock(return_value=({"household_id": "household-id"}, "viewer-id", "service-key", {}))
+        request._photon_state = Mock(return_value={"channel": "photon"})
+        self.assertEqual(request._photon_command({"action": "state", "sender": "+61400025889"}), {"channel": "photon"})
+        request._photon_state.assert_called_once_with("+61400025889")
+
+    @patch("api.index._json_body", return_value={})
+    def test_photon_create_actions_use_actor_bound_rpcs(self, _json_body):
+        request = object.__new__(handler)
+        request._channel_integration = Mock(return_value={"id": "integration-id"})
+        request._channel_context = Mock(return_value=({"household_id": "household-id"}, "viewer-id", "service-key", {}))
+        request._photon_create_rpc = Mock(side_effect=lambda rpc, payload, label: {"id": rpc})
+        for action, payload, rpc_name in (
+            ("create_task", {"title": "Lock the door"}, "create_task"),
+            ("add_grocery", {"name": "Rice"}, "create_grocery_item"),
+            ("create_event", {"title": "Dinner", "starts_at": "2026-08-10T18:00:00Z"}, "create_event"),
+        ):
+            result = request._photon_command({"action": action, "sender": "sender-id", **payload})
+            self.assertEqual(result["action"], action)
+            self.assertEqual(request._photon_create_rpc.call_args.args[0], rpc_name)
+        self.assertEqual(request._photon_create_rpc.call_count, 3)
+
+    @patch("api.index._supabase_admin_request")
+    def test_photon_binding_rejects_ambiguous_household_membership(self, admin_request):
+        request = object.__new__(handler)
+        request._channel_integration = Mock(return_value={"id": "integration-id", "allowed_email": "person@example.test"})
+        admin_request.side_effect = [
+            {"user_id": "viewer-id", "email": "person@example.test"},
+            [{"household_id": "household-a", "role": "owner"}, {"household_id": "household-b", "role": "member"}],
+        ]
+        with self.assertRaisesRegex(Exception, "household_id is required"):
+            request._bind_photon_identity({"email": "person@example.test", "sender": "+61400025889"})
+
+    @patch("api.index._supabase_request")
+    def test_household_member_options_use_profile_labels_and_stable_ids(self, supabase_request):
+        member_id = "8f8fad5b-d9cb-469f-a165-70867728951f"
+        request = object.__new__(handler)
+        request._profile_map = Mock(return_value={member_id: {"display_name": "Grant"}})
+        supabase_request.return_value = [{"user_id": member_id, "role": "member"}]
+        self.assertEqual(
+            request._household_members("household-id", "session-token"),
+            [{"id": member_id, "role": "member", "display_name": "Grant"}],
+        )
+
+    def test_meal_mutation_migration_has_owner_membership_delete_policy(self):
+        migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text().lower()
+        self.assertIn("create policy memberships_delete_owner", migration)
+        self.assertIn("user_id <> (select auth.uid())", migration)
+
+    def test_task_completion_migration_is_actor_bound_and_atomic(self):
+        migration = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804120000_auditable_task_completion.sql").read_text().lower()
+        self.assertIn("create or replace function public.complete_task", migration)
+        self.assertIn("for update", migration)
+        self.assertIn("task_row.private", migration)
+        self.assertIn("task_row.status <> 'open'", migration)
+        self.assertIn("status = 'open'", migration)
+        self.assertIn("drop policy if exists tasks_member_update", migration)
+        self.assertIn("status <> 'done'", migration)
+        self.assertIn("update public.tasks", migration)
+        self.assertIn("insert into public.activity_log", migration)
+        self.assertIn("jsonb_build_object('id', p_task_id, 'status', 'done')", migration)
+        self.assertIn("grant execute on function public.complete_task(uuid, uuid, uuid) to authenticated, service_role", migration)
+        self.assertIn("grant execute on function public.accept_invitation(text, text) to authenticated", migration)
+        self.assertIn("create or replace function public.create_task", migration)
+        self.assertIn("create or replace function public.create_event", migration)
+        self.assertIn("create or replace function public.create_grocery_item", migration)
+        self.assertIn("create or replace function public.create_chore_task", migration)
+        self.assertIn("chore participant must be a user id", migration)
+        self.assertIn("drop policy if exists tasks_member_insert", migration)
+        self.assertIn("delete from public.channel_identities", migration)
+        inbox_migration = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804100000_inbox_suggestions.sql").read_text().lower()
+        archive_start = inbox_migration.index("create or replace function public.archive_inbox_capture")
+        archive_sql = inbox_migration[archive_start:]
+        self.assertIn("from public.memberships", archive_sql)
+        self.assertIn("for update", archive_sql)
+
+    def test_meal_dashboard_payload_contract_includes_household_members(self):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._table = Mock(return_value=[])
+        request._enrich_rows = Mock(return_value=[])
+        request._household_members = Mock(return_value=[{"id": "member-id", "display_name": "Grant"}])
+        request._respond = Mock()
+        request.path = "/api/index.py?route=/api/meals"
+        request._handle_get("/meals")
+        self.assertEqual(request._respond.call_args.args[0]["members"], [{"id": "member-id", "display_name": "Grant"}])
 
 
 if __name__ == "__main__":

@@ -100,6 +100,11 @@ function renderRecipes(recipes) {
   els.grid.querySelectorAll('.grocery-recipe').forEach((button) => button.addEventListener('click', () => addRecipeGroceries(button)));
 }
 
+function renderPlanCookOptions(members) {
+  const options = (Array.isArray(members) ? members : []).map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.display_name || member.id)}</option>`).join('');
+  els.planCook.innerHTML = `<option value="">Decide later</option>${options}`;
+}
+
 async function loadRecipes() {
   els.status.textContent = 'Refreshing';
   const params = new URLSearchParams();
@@ -110,6 +115,7 @@ async function loadRecipes() {
     const response = await fetch(`/api/recipes?${params.toString()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
     const payload = await response.json();
+    renderPlanCookOptions(payload.members);
     renderRecipes(payload.recipes);
     const heading = els.tag.value === 'saved' ? 'Saved for later' : els.tag.value === '' ? 'Simple and healthy' : `${filterLabel()} recipes`;
     els.heading.textContent = heading;
@@ -144,7 +150,7 @@ function openPlanDialog(recipe) {
   currentPlanRecipe = recipe;
   els.planTitle.textContent = `Plan ${recipe.title}`;
   els.planDate.value = els.date.value || new Date().toISOString().slice(0, 10);
-  els.planCook.value = 'grant';
+  els.planCook.value = '';
   els.planFeedback.classList.add('is-hidden');
   const ingredients = recipe.ingredients || [];
   els.planChecklist.innerHTML = ingredients.map((ingredient, index) => {

@@ -24,7 +24,7 @@ Photon/iMessage remains available as a messaging transport through the Hermes `h
 5. `/api/dashboard` and page-specific endpoints call Supabase through `api/index.py`, always with authenticated household context.
 6. Supabase RLS protects profiles, households, memberships, tasks, events, meals, groceries, recipes, Inbox items, activity, chores, settings, preferences, invitations, and the service-role-only pilot measurement ledger.
 
-An authenticated member visiting `/setup` is redirected to `/`. An unprovisioned account may use `/setup` to create its first household. Hosted provisioning is currently operator-assisted; public onboarding remains roadmap work.
+An authenticated member visiting `/setup` is redirected to `/`. An unprovisioned account may use `/setup` to create its first household; hosted onboarding is available through the dashboard flow.
 
 ## Product surface
 
@@ -32,8 +32,8 @@ The hosted dashboard includes:
 
 - Overview with **What needs attention?**, Today, weekly planning, a universal Inbox, activity, and grocery signals. Inbox captures now create privacy-scoped, editable suggestions; accepting a suggestion is the only path from the review UI to a task, event, meal, grocery item, or resolved note.
 - Calendar and dated task projection with assignees and conflict detection.
-- Tasks with ownership, recurrence, completion, editing, deletion confirmation, and undo history.
-- Meals and recipes with cook assignment, ingredient ownership checks, planning, and grocery sync.
+- Tasks with ownership, recurrence, completion, editing, deletion confirmation, and activity history.
+- Meals and recipes with cook assignment, ingredient ownership checks, planning, grocery sync, and auditable household-scoped meal edits.
 - Groceries with curated supermarket matching for Coles, ALDI Australia, and Woolworths, quantities, per-retailer cart comparison, equivalent-product safeguards, provenance, budgets, manual prices, and fail-closed unknown pricing.
 
 Grocery matching uses controlled product aliases rather than unconstrained fuzzy matching. For example, `Coke Zero` resolves to the curated Woolworths Coca-Cola Zero Sugar 2L observation, while ALDI requires an explicit size when its 600mL and 30x375mL Zero Sugar packs would otherwise be ambiguous. Grocery price metadata is server-controlled: ordinary grocery writes cannot set prices or provenance, the manual-price route supplies fixed manual metadata, and the dashboard links only to HTTPS Coles, ALDI, or Woolworths domains. The database migration also removes authenticated PostgREST write privileges for protected price columns and quote mutations; only service-role-only RPCs can persist curated/manual price metadata and refresh observations, and each RPC re-checks and locks the actor's household membership before mutating. A recipe/import line such as `600 | ml | Coke Zero` is canonicalized to one packaged purchase (`Coke Zero 600ml`, quantity `1`, unit `each`) only when a known catalog product supports it. Explicit same-family size differences may be shown as a **closest pack**, but they are never treated as equivalent for a cheapest-retailer recommendation.
@@ -105,13 +105,13 @@ Hosted `/api/health` should report `service: hearthstate` and `backend: supabase
 Completed foundation:
 
 - Household identity, membership roles, invitations, sign-in sessions, owner administration, and hosted API boundary.
-- Privacy-aware planner behavior, activity history, reversible mutations, chores, conflicts, recipes, meals, groceries, and notification preferences in the hosted schema/API.
+- Privacy-aware planner behavior, activity history, auditable mutations, chores, conflicts, recipes, meals, groceries, and notification preferences in the hosted schema/API.
 
 Next priorities:
 
 1. Run the pilot using the [privacy-safe instrumentation and retention contract](docs/pilot-instrumentation.md) to measure activation, repeated capture, suggestion review, conversion, task completion, and weekly active households.
-2. Close the remaining public hosted onboarding gap and dogfood the universal Inbox with multiple household members.
+2. Dogfood the self-serve hosted onboarding path and universal Inbox with multiple household members.
 3. Policy-compliant live retailer refresh behind the curated matcher fallback.
-4. External calendar sync, push delivery, provider idempotency, billing, and richer multi-action parsing.
+4. Mobile-first PWA work, external calendar sync, push delivery, provider idempotency, billing, and richer multi-action parsing.
 
 The product strategy and implementation history are preserved in [`.hermes/plans/2026-08-03_141918-hearthstate-commercial-roadmap.md`](.hermes/plans/2026-08-03_141918-hearthstate-commercial-roadmap.md).

@@ -96,7 +96,7 @@ class PilotInstrumentationTests(unittest.TestCase):
         request = object.__new__(handler)
         request._authenticate = lambda: ("user-id", "access-token", {})
         request._context = lambda user_id, token: ("household-id", [])
-        request._patch_record = lambda *args, **kwargs: {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "done"}
+        request._complete_task = lambda *args, **kwargs: {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "done"}
         request._respond = patch("api.index.handler._respond").start()
         request._record_pilot_event = patch("api.index.handler._record_pilot_event").start()
         try:

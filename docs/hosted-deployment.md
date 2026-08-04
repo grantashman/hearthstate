@@ -37,7 +37,7 @@ The login page sends its current `/login` origin explicitly when requesting a ma
 
 ## Provisioning
 
-The first hosted household is provisioned in Supabase as an operator step. An authenticated account without a membership may use `/setup` to create its first household; an existing member visiting `/setup` is redirected to `/`.
+An authenticated account without a membership may use `/setup` to create its first household; the database RPC creates the household and owner membership atomically. An existing member visiting `/setup` is redirected to `/`. Operators may pre-provision a household when onboarding a managed pilot account, but it is not required for the public path.
 
 The initial Photon mapping is the configured Australian sender to `grant@ashman.net.au`. The migration binds it automatically when the profile already exists; otherwise run the protected identity bind command from the Hermes skill after the account signs in and joins a household.
 

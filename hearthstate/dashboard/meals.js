@@ -48,6 +48,14 @@ function setFormMode(editing) {
   els.cancel.classList.toggle('is-hidden', !editing);
 }
 
+function renderCookOptions(members) {
+  const select = els.form.elements.cook;
+  const selected = select.value;
+  const options = (Array.isArray(members) ? members : []).map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.display_name || member.id)}</option>`).join('');
+  select.innerHTML = `<option value="">Decide later</option>${options}`;
+  if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+}
+
 function resetMealForm() {
   els.form.reset();
   els.id.value = '';
@@ -123,6 +131,7 @@ async function loadMeals() {
     const response = await fetch('/api/meals', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
     const payload = await response.json();
+    renderCookOptions(payload.members);
     currentMeals = payload.meals;
     renderMeals(currentMeals);
     els.updated.textContent = `UPDATED ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(payload.generated_at)).toUpperCase()}`;
