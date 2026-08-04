@@ -112,7 +112,7 @@ async function loadRecipes() {
   if (els.tag.value && els.tag.value !== 'saved') params.set('tag', els.tag.value);
   if (els.tag.value === 'saved') params.set('saved_by', 'grant');
   try {
-    const response = await fetch(`/api/recipes?${params.toString()}`, { cache: 'no-store' });
+    const response = await hearthstateFetch(`/api/recipes?${params.toString()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
     const payload = await response.json();
     renderPlanCookOptions(payload.members);
@@ -134,7 +134,7 @@ async function saveRecipe(button) {
   const saved = button.dataset.saved !== 'true';
   button.disabled = true;
   try {
-    const response = await fetch(`/api/recipes/${button.dataset.recipeId}/save`, {
+    const response = await hearthstateFetch(`/api/recipes/${button.dataset.recipeId}/save`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ saved_by: 'grant', saved }),
     });
@@ -179,7 +179,7 @@ async function submitPlan(event) {
   els.planConfirm.disabled = true;
   els.planConfirm.textContent = 'planning…';
   try {
-    const response = await fetch(`/api/recipes/${currentPlanRecipe.id}/plan`, {
+    const response = await hearthstateFetch(`/api/recipes/${currentPlanRecipe.id}/plan`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         meal_date: els.planDate.value,
@@ -206,7 +206,7 @@ async function addRecipeGroceries(button) {
   button.disabled = true;
   button.textContent = 'adding…';
   try {
-    const response = await fetch(`/api/recipes/${button.dataset.recipeId}/shopping-list`, {
+    const response = await hearthstateFetch(`/api/recipes/${button.dataset.recipeId}/shopping-list`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meal_id: button.dataset.recipeId, created_by: 'grant' }),
     });
@@ -238,7 +238,7 @@ els.importForm.addEventListener('submit', async (event) => {
   const ingredients = parseIngredients(data.get('ingredients'));
   const groceryIngredientIndexes = [...els.checklist.querySelectorAll('input:not(:checked)')]
     .map((input) => Number(input.dataset.ingredientIndex));
-  const response = await fetch('/api/recipes/import', {
+  const response = await hearthstateFetch('/api/recipes/import', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: data.get('title'),

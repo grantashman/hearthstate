@@ -83,7 +83,7 @@ async function deleteMeal(mealId) {
   const meal = currentMeals.find((item) => String(item.id) === String(mealId));
   if (!meal || !window.confirm(`Delete “${meal.title}”? This cannot be undone.`)) return;
   try {
-    const response = await fetch(`/api/meals/${meal.id}/delete`, {
+    const response = await hearthstateFetch(`/api/meals/${meal.id}/delete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -128,7 +128,7 @@ function renderMeals(meals) {
 async function loadMeals() {
   els.status.textContent = 'Refreshing';
   try {
-    const response = await fetch('/api/meals', { cache: 'no-store' });
+    const response = await hearthstateFetch('/api/meals', { cache: 'no-store' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
     const payload = await response.json();
     renderCookOptions(payload.members);
@@ -149,7 +149,7 @@ async function syncGroceries(button) {
   button.disabled = true;
   button.textContent = 'adding…';
   try {
-    const response = await fetch('/api/meals/sync-groceries', {
+    const response = await hearthstateFetch('/api/meals/sync-groceries', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meal_id: button.dataset.mealId, created_by: 'grant' }),
@@ -170,7 +170,7 @@ els.form.addEventListener('submit', async (event) => {
   const id = String(data.get('id') || '').trim();
   els.submit.disabled = true;
   try {
-    const response = await fetch('/api/meals', {
+    const response = await hearthstateFetch('/api/meals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

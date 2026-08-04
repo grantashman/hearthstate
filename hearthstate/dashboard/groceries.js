@@ -126,12 +126,12 @@ function render(payload) {
 
 async function load() {
   els.sync.textContent = 'Loading grocery list'; els.refresh.classList.add('is-loading');
-  try { const response = await fetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); render(await response.json()); els.error.classList.add('is-hidden'); els.sync.textContent = 'Live · refresh for prices'; }
+  try { const response = await hearthstateFetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); render(await response.json()); els.error.classList.add('is-hidden'); els.sync.textContent = 'Live · refresh for prices'; }
   catch (error) { els.error.textContent = 'Could not load the grocery budget.'; els.error.classList.remove('is-hidden'); els.sync.textContent = 'Offline'; console.error(error); }
   finally { els.refresh.classList.remove('is-loading'); }
 }
 async function saveManualPrice(event) {
-  event.preventDefault(); const form = event.currentTarget; const response = await fetch('/api/groceries/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, price: Number(new FormData(form).get('price')), source: 'Manual entry', confidence: 'manual', note: 'Entered by household' }) });
+  event.preventDefault(); const form = event.currentTarget; const response = await hearthstateFetch('/api/groceries/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, price: Number(new FormData(form).get('price')), source: 'Manual entry', confidence: 'manual', note: 'Entered by household' }) });
   if (!response.ok) { els.error.textContent = 'Could not save that price.'; els.error.classList.remove('is-hidden'); return; } await load();
 }
 async function saveQuantity(event) {
@@ -143,16 +143,16 @@ async function saveQuantity(event) {
     els.error.classList.remove('is-hidden');
     return;
   }
-  const response = await fetch('/api/groceries/item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, quantity }) });
+  const response = await hearthstateFetch('/api/groceries/item', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, quantity }) });
   if (!response.ok) { els.error.textContent = 'Could not update that quantity.'; els.error.classList.remove('is-hidden'); return; }
   await load();
 }
-els.budgetForm.addEventListener('submit', async (event) => { event.preventDefault(); const budget = Number(new FormData(els.budgetForm).get('budget')); if (!Number.isFinite(budget) || budget < 0) return; const response = await fetch('/api/groceries/budget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget, updated_by: 'grant' }) }); if (!response.ok) { els.error.textContent = 'Could not save the weekly budget.'; els.error.classList.remove('is-hidden'); return; } render(await response.json()); });
+els.budgetForm.addEventListener('submit', async (event) => { event.preventDefault(); const budget = Number(new FormData(els.budgetForm).get('budget')); if (!Number.isFinite(budget) || budget < 0) return; const response = await hearthstateFetch('/api/groceries/budget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget, updated_by: 'grant' }) }); if (!response.ok) { els.error.textContent = 'Could not save the weekly budget.'; els.error.classList.remove('is-hidden'); return; } render(await response.json()); });
 els.refreshColes.addEventListener('click', async () => {
   els.refreshColes.disabled = true;
   els.refreshColes.textContent = 'Checking…';
   try {
-    const response = await fetch('/api/groceries/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const response = await hearthstateFetch('/api/groceries/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
     render(await response.json());
     els.sync.textContent = 'Live · retailers compared';

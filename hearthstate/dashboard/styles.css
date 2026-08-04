@@ -129,6 +129,8 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 .refresh-button:active { transform: scale(.94); }
 .refresh-button.is-loading svg { animation: spin 700ms linear infinite; }
 .refresh-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+.install-button { min-height: 32px; padding: 0 10px; color: var(--evergreen-deep); border: 1px solid var(--evergreen); border-radius: 8px; background: var(--evergreen-wash); font-size: 10px; font-weight: 750; white-space: nowrap; }
+.install-button:hover, .install-button:focus-visible { color: var(--paper); background: var(--evergreen); outline: 0; box-shadow: 0 0 0 3px var(--evergreen-wash); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .welcome-row { display: flex; align-items: end; justify-content: space-between; gap: 28px; flex-wrap: wrap; padding: 55px 0 37px; }

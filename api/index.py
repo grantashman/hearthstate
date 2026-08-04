@@ -1292,7 +1292,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "/notifications": ("notifications.html", "text/html; charset=utf-8", True), "/notifications/": ("notifications.html", "text/html; charset=utf-8", True),
         }
         assets = {name: (name, content_type, False) for name, content_type in {
-            "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml"}.items()}
+            "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml", "manifest.webmanifest": "application/manifest+json; charset=utf-8", "icons/icon-192.png": "image/png", "icons/icon-512.png": "image/png"}.items()}
         if route == "/":
             if not self._token():
                 filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
@@ -1707,7 +1707,18 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 )
                 self._respond({"task": task})
             else:
-                deleted = self._delete_record("tasks", task_id, household_id, token); self._respond({"deleted": deleted})
+                deleted = _first(_supabase_request(
+                    "POST",
+                    "/rest/v1/rpc/delete_task",
+                    token=token,
+                    payload={
+                        "p_household_id": household_id,
+                        "p_actor_user_id": user_id,
+                        "p_task_id": task_id,
+                    },
+                ))
+                if not deleted: raise SupabaseHTTPError(404, "task not found")
+                self._respond({"deleted": str(deleted.get("id") or task_id), "task": deleted})
             return
         if route == "/tasks":
             title = str(payload.get("title", "")).strip()
@@ -1764,12 +1775,35 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")
             parts = route.removeprefix("/admin/members/").strip("/").split("/"); member_id = _uuid(parts[0], "member id")
             if len(parts) == 2 and parts[1] == "remove":
-                removed = _rows(_supabase_request("DELETE", "/rest/v1/memberships", token=token, query=[("household_id", f"eq.{household_id}"), ("user_id", f"eq.{member_id}")], prefer="return=representation"))
-                if not removed: raise SupabaseHTTPError(404, "member not found")
+                member = _first(_supabase_request(
+                    "POST",
+                    "/rest/v1/rpc/manage_membership",
+                    token=token,
+                    payload={
+                        "p_household_id": household_id,
+                        "p_actor_user_id": user_id,
+                        "p_member_user_id": member_id,
+                        "p_action": "remove",
+                        "p_role": None,
+                    },
+                ))
+                if not member: raise SupabaseHTTPError(404, "member not found")
                 self._respond({"member": {"id": member_id}}); return
             role = str(payload.get("role", "member"));
             if role not in {"owner", "member", "child", "guest"}: raise ValueError("invalid role")
-            member = _first(_supabase_request("PATCH", "/rest/v1/memberships", token=token, query=[("household_id", f"eq.{household_id}"), ("user_id", f"eq.{member_id}")], payload={"role": role})) or {}
+            member = _first(_supabase_request(
+                "POST",
+                "/rest/v1/rpc/manage_membership",
+                token=token,
+                payload={
+                    "p_household_id": household_id,
+                    "p_actor_user_id": user_id,
+                    "p_member_user_id": member_id,
+                    "p_action": "role",
+                    "p_role": role,
+                },
+            ))
+            if not member: raise SupabaseHTTPError(404, "member not found")
             self._respond({"member": {"id": member_id, **member}}); return
         if route == "/auth/invitations":
             if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")

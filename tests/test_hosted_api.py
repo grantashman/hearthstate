@@ -91,6 +91,25 @@ class HostedApiContractTests(unittest.TestCase):
         rewrite = next(item for item in config["rewrites"] if item["source"] == "/api/:path*")
         self.assertIn("route=/api/:path*", rewrite["destination"])
 
+    def test_pwa_manifest_and_service_worker_are_public_assets(self):
+        request = object.__new__(handler)
+        request._token = Mock(return_value=None)
+        request._send_bytes = Mock()
+
+        for route, content_type, marker in (
+            ("/manifest.webmanifest", "application/manifest+json; charset=utf-8", '"display": "standalone"'),
+            ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v2"),
+            ("/icons/icon-192.png", "image/png", None),
+            ("/icons/icon-512.png", "image/png", None),
+        ):
+            with self.subTest(route=route):
+                request._send_bytes.reset_mock()
+                self.assertTrue(request._handle_asset(route))
+                content, returned_type = request._send_bytes.call_args.args[:2]
+                self.assertEqual(returned_type, content_type)
+                if marker:
+                    self.assertIn(marker.encode(), content)
+
     def test_setup_page_uses_cookie_backed_session_only(self):
         setup = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "hosted.html").read_text()
         self.assertNotIn("localStorage", setup)
@@ -642,7 +661,53 @@ class HostedApiContractTests(unittest.TestCase):
             [{"id": member_id, "role": "member", "display_name": "Grant"}],
         )
 
-    def test_meal_mutation_migration_has_owner_membership_delete_policy(self):
+    @patch("api.index._supabase_request", return_value={"household_id": "household-id", "user_id": "member-id", "role": "member"})
+    @patch("api.index._json_body", return_value={})
+    def test_membership_admin_routes_use_transactional_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {"email": "owner@example.test"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._role = Mock(return_value="owner")
+        request._respond = Mock()
+        request._handle_post("/admin/members/8f8fad5b-d9cb-469f-a165-70867728951f/remove")
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/manage_membership",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "owner-id",
+                "p_member_user_id": "8f8fad5b-d9cb-469f-a165-70867728951f",
+                "p_action": "remove",
+                "p_role": None,
+            },
+        )
+
+    @patch("api.index._supabase_request", return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "open"})
+    @patch("api.index._json_body", return_value={})
+    def test_task_delete_route_uses_actor_bound_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {"email": "viewer@example.test"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._respond = Mock()
+        request._handle_post("/tasks/2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47/delete")
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/delete_task",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "viewer-id",
+                "p_task_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            },
+        )
+        request._respond.assert_called_once_with(
+            {
+                "deleted": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "task": {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "open"},
+            }
+        )
+
         migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text().lower()
         self.assertIn("create policy memberships_delete_owner", migration)
         self.assertIn("user_id <> (select auth.uid())", migration)
