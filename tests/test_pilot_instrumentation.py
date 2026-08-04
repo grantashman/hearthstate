@@ -161,9 +161,7 @@ class PilotInstrumentationTests(unittest.TestCase):
         request = object.__new__(handler)
         request._authenticate = lambda: ("user-id", "access-token", {})
         request._context = lambda user_id, token: ("household-id", [])
-        request._post_record = Mock(return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"})
-        request._patch_record = Mock(return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "converted"})
-        request._log = Mock()
+        request._create_inbox_capture = Mock(return_value={"item": {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"}, "suggestion": {"id": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"}})
         request._respond = Mock()
         request._record_pilot_event = Mock()
         with patch("api.index._json_body", return_value={"original_text": "private school note", "source": "dashboard", "private": True}):
@@ -178,8 +176,13 @@ class PilotInstrumentationTests(unittest.TestCase):
             dedupe_key="capture:2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
         )
         request._record_pilot_event.reset_mock()
-        with patch("api.index._json_body", return_value={"type": "task", "title": "School form", "due_at": "2026-08-05T09:00:00+00:00"}):
-            request._handle_post("/inbox/2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47/convert")
+        with patch("api.index._json_body", return_value={
+            "suggestion_id": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+            "decision": "accept",
+            "suggestion_type": "task",
+            "payload": {"title": "School form", "due_at": "2026-08-05T09:00:00+00:00"},
+        }), patch("api.index._supabase_request", return_value={"created_type": "task"}):
+            request._handle_post("/inbox/2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47/suggestion/review")
         request._record_pilot_event.assert_called_once_with(
             "household-id",
             "user-id",
