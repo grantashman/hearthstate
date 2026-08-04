@@ -1718,7 +1718,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     },
                 ))
                 if not deleted: raise SupabaseHTTPError(404, "task not found")
-                self._respond({"deleted": True, "task": deleted})
+                self._respond({"deleted": str(deleted.get("id") or task_id), "task": deleted})
             return
         if route == "/tasks":
             title = str(payload.get("title", "")).strip()

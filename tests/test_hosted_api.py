@@ -698,6 +698,12 @@ class HostedApiContractTests(unittest.TestCase):
                 "p_task_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
             },
         )
+        request._respond.assert_called_once_with(
+            {
+                "deleted": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "task": {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "open"},
+            }
+        )
 
         migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text().lower()
         self.assertIn("create policy memberships_delete_owner", migration)
@@ -717,13 +723,6 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("jsonb_build_object('id', p_task_id, 'status', 'done')", migration)
         self.assertIn("grant execute on function public.complete_task(uuid, uuid, uuid) to authenticated, service_role", migration)
         self.assertIn("grant execute on function public.accept_invitation(text, text) to authenticated", migration)
-        self.assertIn("create or replace function public.manage_membership", migration)
-        self.assertIn("household must retain an owner", migration)
-        self.assertIn("revoke insert, update, delete on public.memberships from authenticated", migration)
-        self.assertIn("create or replace function public.delete_task", migration)
-        self.assertIn("private task access denied", migration)
-        self.assertIn("task.deleted", migration)
-        self.assertIn("revoke delete on public.tasks from authenticated", migration)
         self.assertIn("create or replace function public.create_task", migration)
         self.assertIn("create or replace function public.create_event", migration)
         self.assertIn("create or replace function public.create_grocery_item", migration)

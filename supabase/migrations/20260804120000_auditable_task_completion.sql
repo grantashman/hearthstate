@@ -456,6 +456,11 @@ begin
        and task_row.created_by is distinct from p_actor_user_id then
         raise exception 'private task access denied' using errcode = '42501';
     end if;
+    if not task_row.private
+       and actor_membership.role <> 'owner'
+       and task_row.created_by is distinct from p_actor_user_id then
+        raise exception 'task deletion access denied' using errcode = '42501';
+    end if;
     delete from public.tasks
     where id = task_row.id
     returning * into deleted_task;
