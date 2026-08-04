@@ -13,6 +13,11 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 from uuid import UUID
 
+try:
+    from .pricing import catalog_updates, compare_cart
+except ImportError:  # Vercel may load api/index.py as a standalone function module.
+    from pricing import catalog_updates, compare_cart
+
 
 # The publishable key is safe to expose to the browser. Production should still
 # set these values in Vercel so the deployment is explicit and portable.
@@ -391,8 +396,78 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         except SupabaseHTTPError:
             return
 
+    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles") -> tuple[list[dict], list[str]]:
+        """Persist safe curated matches without replacing household-entered prices."""
+        updated: list[str] = []
+        for update in catalog_updates(items, retailer):
+            item = update["item"]
+            match = update["match"]
+            patched = self._patch_record(
+                "grocery_items",
+                item.get("id"),
+                household_id,
+                token,
+                {
+                    "price": match["price"],
+                    "price_source": match["title"],
+                    "price_url": match["url"],
+                    "price_confidence": match["confidence"],
+                    "price_checked_at": match["observed_at"],
+                    "price_note": match["note"],
+                },
+            )
+            for index, current in enumerate(items):
+                if str(current.get("id")) == str(item.get("id")):
+                    items[index] = patched
+                    break
+            updated.append(str(item.get("name") or ""))
+        return items, updated
+
+    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str) -> None:
+        """Persist the explicit refresh result as household-scoped retailer observations."""
+        for retailer, result in comparison.items():
+            for line in result.get("lines", []):
+                item_id = line.get("item_id")
+                if not item_id:
+                    continue
+                match = line.get("match")
+                if match is None:
+                    _supabase_request(
+                        "DELETE",
+                        "/rest/v1/grocery_price_quotes",
+                        token=token,
+                        query=[
+                            ("household_id", f"eq.{household_id}"),
+                            ("grocery_item_id", f"eq.{item_id}"),
+                            ("retailer", f"eq.{retailer}"),
+                        ],
+                    )
+                    continue
+                _supabase_request(
+                    "POST",
+                    "/rest/v1/grocery_price_quotes",
+                    token=token,
+                    query=[("on_conflict", "grocery_item_id,retailer")],
+                    payload={
+                        "household_id": household_id,
+                        "grocery_item_id": item_id,
+                        "retailer": retailer,
+                        "product_key": match["product_key"],
+                        "product_title": match["title"],
+                        "product_url": match["url"],
+                        "price": match["price"],
+                        "observed_at": match["observed_at"],
+                        "confidence": match["confidence"],
+                        "match_basis": match["match_basis"],
+                        "note": match["note"],
+                    },
+                    prefer="return=minimal,resolution=merge-duplicates",
+                )
+
     def _grocery_snapshot(self, household_id: str, token: str) -> dict:
         items = self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")
+        items, auto_updated = self._apply_catalog_matches(items, household_id, token)
+        comparison = compare_cart(items)
         settings = _first(_supabase_request("GET", "/rest/v1/planner_settings", token=token, query=[("select", "weekly_budget,updated_at"), ("household_id", f"eq.{household_id}")])) or {}
         budget = settings.get("weekly_budget")
         total = round(sum(float(item.get("price") or 0) * float(item.get("quantity") or 1) for item in items), 2)
@@ -402,6 +477,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 item["line_total"] = round(float(item["price"]) * float(item.get("quantity") or 1), 2)
             else:
                 item["line_total"] = None
+        retailer_totals = [
+            {
+                "retailer": key,
+                "retailer_label": value["retailer_label"],
+                "total": value["total"],
+                "priced_count": value["priced_count"],
+                "unknown_count": value["unknown_count"],
+                "unknown_items": value["unknown_items"],
+                "complete": value["complete"],
+                "total_status": value["total_status"],
+            }
+            for key, value in comparison.items()
+        ]
+        ranked = sorted(retailer_totals, key=lambda value: (not value["complete"], value["total"]))
+        recommended = next((value for value in ranked if value["complete"]), None) if items else None
+        best_known = ranked[0] if ranked and items else None
         return {
             "items": items,
             "total_count": len(items),
@@ -413,6 +504,13 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "remaining": remaining,
             "over_budget": remaining is not None and remaining < 0,
             "updated_at": settings.get("updated_at"),
+            "auto_updated": auto_updated,
+            "comparison": comparison,
+            "retailer_totals": retailer_totals,
+            "recommended_retailer": recommended["retailer"] if recommended else None,
+            "recommended_retailer_label": recommended["retailer_label"] if recommended else None,
+            "best_known_retailer": best_known["retailer"] if best_known else None,
+            "comparison_note": "Only a complete cart can be recommended; partial totals exclude unmatched items.",
         }
 
     def _calendar_items(self, household_id: str, token: str, now: datetime) -> list[dict]:
@@ -905,8 +1003,12 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if route == "/groceries/item":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
             self._respond({"item": self._patch_record("grocery_items", item_id, household_id, token, {key: payload[key] for key in ("quantity", "unit", "category") if key in payload})}); return
-        if route == "/groceries/refresh-coles":
-            self._respond({"updated": 0, **self._grocery_snapshot(household_id, token)}); return
+        if route in {"/groceries/refresh", "/groceries/refresh-coles"}:
+            snapshot = self._grocery_snapshot(household_id, token)
+            self._upsert_price_quotes(snapshot.get("comparison", {}), household_id, token)
+            updated = snapshot.get("auto_updated", [])
+            self._respond({**snapshot, "updated": updated, "updated_count": len(updated)})
+            return
         if route == "/recipes/import":
             title = str(payload.get("title", "")).strip(); source_url = str(payload.get("source_url", "user://recipe")).strip()
             if not title: raise ValueError("title is required")

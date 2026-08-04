@@ -527,6 +527,16 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 .quick-price-form button:hover, .quantity-form button:hover { color: var(--paper); background: var(--evergreen); }
 .grocery-sidebar { display: grid; gap: 16px; }
 .grocery-sidebar .records-panel { min-height: 0; }
+.retailer-comparison { display: grid; gap: 8px; margin-top: 18px; }
+.retailer-total { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--paper-deep); }
+.retailer-total:last-child { border-bottom: 0; }
+.retailer-total > div { display: grid; gap: 3px; min-width: 0; }
+.retailer-total > div > strong { color: var(--ink); font-size: 12px; }
+.retailer-total > div > span { color: var(--ink-faint); font-size: 9px; }
+.retailer-total > strong { color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.retailer-total.is-recommended { margin: 0 -10px; padding: 11px 10px; border: 1px solid #d0ded5; border-radius: 7px; background: var(--evergreen-wash); }
+.retailer-total.is-recommended > strong { color: var(--evergreen); }
+.retailer-unknown { overflow: hidden; color: var(--ember-deep); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .price-legend { display: grid; gap: 15px; margin-top: 20px; }
 .price-legend > div { display: flex; gap: 10px; align-items: start; }
 .price-legend span:last-child { display: grid; gap: 4px; }
