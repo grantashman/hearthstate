@@ -106,10 +106,12 @@ def _supabase_request(
     headers = {"apikey": api_key or publishable_key, "Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if prefer:
+        headers["Prefer"] = prefer
     body = None
     if payload is not None:
         headers["Content-Type"] = "application/json"
-        headers["Prefer"] = prefer or "return=representation"
+        headers.setdefault("Prefer", "return=representation")
         body = json.dumps(payload).encode("utf-8")
     request = Request(url, data=body, method=method, headers=headers)
     try:
@@ -409,6 +411,8 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 raise SupabaseHTTPError(409, "household setup required")
             return None
         requested = self.headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0]
+        if not requested and len(memberships) > 1:
+            raise SupabaseHTTPError(409, "explicit household selection required")
         household_id = _uuid(requested, "household id") if requested else str(memberships[0]["id"])
         if not any(str(item["id"]) == household_id for item in memberships):
             raise SupabaseHTTPError(403, "household membership required")
@@ -426,6 +430,61 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if limit is not None:
             query.append(("limit", str(limit)))
         return _rows(_supabase_request("GET", f"/rest/v1/{table}", token=token, query=query))
+
+    def _household_members(self, household_id: str, token: str) -> list[dict]:
+        memberships = _rows(_supabase_request(
+            "GET",
+            "/rest/v1/memberships",
+            token=token,
+            query=[
+                ("select", "user_id,role"),
+                ("household_id", f"eq.{household_id}"),
+                ("order", "created_at.asc"),
+            ],
+        ))
+        profiles = self._profile_map({str(row.get("user_id")) for row in memberships}, token)
+        return [
+            {
+                "id": str(row.get("user_id")),
+                "role": row.get("role"),
+                "display_name": profiles.get(str(row.get("user_id")), {}).get("display_name") or str(row.get("user_id")),
+            }
+            for row in memberships
+            if row.get("user_id")
+        ]
+
+    def _visible_tasks(self, tasks: list[dict], user_id: str) -> list[dict]:
+        return [
+            task for task in tasks
+            if not task.get("private") or str(task.get("owner")) == str(user_id) or str(task.get("created_by")) == str(user_id)
+        ]
+
+    def _photon_create_rpc(self, rpc_name: str, payload: dict, label: str) -> dict:
+        created = _first(_supabase_admin_request(
+            "POST",
+            f"/rest/v1/rpc/{rpc_name}",
+            payload=payload,
+        ))
+        if not created:
+            raise SupabaseHTTPError(502, f"Supabase did not return the created {label}")
+        return created
+
+    def _complete_task(self, household_id: str, user_id: str, task_id: str, token: str | None = None) -> dict:
+        request = _supabase_request if token else _supabase_admin_request
+        kwargs = {"token": token} if token else {}
+        completed = _first(request(
+            "POST",
+            "/rest/v1/rpc/complete_task",
+            payload={
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_task_id": task_id,
+            },
+            **kwargs,
+        ))
+        if not completed:
+            raise SupabaseHTTPError(502, "Supabase did not return the completed task")
+        return completed
 
     def _profile_map(self, user_ids: set[str], token: str) -> dict[str, dict]:
         profiles: dict[str, dict] = {}
@@ -523,7 +582,89 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             return []
         return [row for row in snapshot if isinstance(row, dict)]
 
+    def _resolve_meal_cook(self, household_id: str, token: str, value: object) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        raw = str(value).strip()
+        if raw.casefold() == "all":
+            return None
+        try:
+            return _uuid(raw, "cook id")
+        except ValueError:
+            label = raw.casefold()
+        memberships = _rows(_supabase_request(
+            "GET",
+            "/rest/v1/memberships",
+            token=token,
+            query=[("select", "user_id"), ("household_id", f"eq.{household_id}")],
+        ))
+        user_ids = {str(row.get("user_id")) for row in memberships if row.get("user_id")}
+        profiles = self._profile_map(user_ids, token)
+        matches = []
+        for user_id in user_ids:
+            profile = profiles.get(user_id, {})
+            display_name = str(profile.get("display_name") or "").strip().casefold()
+            email_name = str(profile.get("email") or "").split("@", 1)[0].strip().casefold()
+            if label in {display_name, email_name}:
+                matches.append(user_id)
+        if len(matches) != 1:
+            raise ValueError("invalid cook id")
+        return _uuid(matches[0], "cook id")
+
+    def _create_meal(self, household_id: str, user_id: str, token: str, payload: dict) -> dict:
+        allowed = {"meal_date", "meal_type", "title", "cook", "status", "ingredients"}
+        meal = {key: payload[key] for key in allowed if key in payload}
+        if not str(meal.get("meal_date", "")).strip():
+            raise ValueError("meal_date is required")
+        title = str(meal.get("title", "")).strip()
+        if not title or len(title) > 500:
+            raise ValueError("title is required")
+        meal["title"] = title
+        meal_type = str(meal.get("meal_type", "dinner")).strip().lower()
+        if meal_type not in {"breakfast", "lunch", "dinner"}:
+            raise ValueError("invalid meal_type")
+        meal["meal_type"] = meal_type
+        if "cook" in meal:
+            meal["cook"] = self._resolve_meal_cook(household_id, token, meal["cook"])
+        if "status" in meal:
+            status = str(meal["status"] or "").strip().lower()
+            if status not in {"planned", "served", "archived"}:
+                raise ValueError("invalid meal status")
+            meal["status"] = status
+        if "ingredients" in meal:
+            ingredients = meal["ingredients"]
+            if not isinstance(ingredients, list) or len(ingredients) > 100:
+                raise ValueError("ingredients must be a list of 100 items or fewer")
+            normalized_ingredients = []
+            for item in ingredients:
+                if isinstance(item, dict):
+                    name = str(item.get("name", "")).strip()
+                    if not name:
+                        raise ValueError("ingredients must contain a name")
+                    quantity = str(item.get("quantity", "")).strip()
+                    unit = str(item.get("unit", "")).strip()
+                    item = " ".join(part for part in (quantity, unit, name) if part)
+                if not isinstance(item, str) or not item.strip() or len(item.strip()) > 200:
+                    raise ValueError("ingredients must contain non-empty strings of 200 characters or fewer")
+                normalized_ingredients.append(item.strip())
+            meal["ingredients"] = normalized_ingredients
+        created = _first(_supabase_request(
+            "POST",
+            "/rest/v1/rpc/create_meal",
+            token=token,
+            payload={
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_meal": meal,
+            },
+        ))
+        if not created:
+            raise SupabaseHTTPError(502, "Supabase did not return the created meal")
+        return created
+
     def _post_record(self, table: str, household_id: str, user_id: str, token: str, payload: dict) -> dict:
+        if table == "meals":
+            return self._create_meal(household_id, user_id, token, payload)
         record = self._record_payload(table, payload, user_id, household_id)
         rows = _rows(_supabase_request("POST", f"/rest/v1/{table}", token=token, payload=record))
         if not rows:
@@ -606,8 +747,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 raise ValueError("title is required")
             patch["title"] = title
         if "cook" in patch:
-            cook = patch["cook"]
-            patch["cook"] = None if cook is None or not str(cook).strip() else _uuid(cook, "cook id")
+            patch["cook"] = self._resolve_meal_cook(household_id, token, patch["cook"])
         if "status" in patch:
             status = str(patch["status"] or "").strip().lower()
             if status not in {"planned", "served", "archived"}:
@@ -635,6 +775,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             raise SupabaseHTTPError(502, "Supabase did not return the updated meal")
         return updated
 
+    def _delete_meal(self, household_id: str, user_id: str, token: str, record_id: object) -> dict:
+        meal_id = _uuid(record_id, "meal id")
+        deleted = _first(_supabase_request(
+            "POST",
+            "/rest/v1/rpc/delete_meal",
+            token=token,
+            payload={
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_meal_id": meal_id,
+            },
+        ))
+        if not deleted:
+            raise SupabaseHTTPError(502, "Supabase did not return the meal deletion result")
+        return deleted
+
     def _delete_record(self, table: str, record_id: object, household_id: str, token: str) -> str:
         identifier = _uuid(record_id, f"{table} id")
         _supabase_request("DELETE", f"/rest/v1/{table}", token=token, query=[("id", f"eq.{identifier}"), ("household_id", f"eq.{household_id}")])
@@ -642,7 +798,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
 
     def _log(self, household_id: str, user_id: str, token: str, action: str, entity_type: str, entity_id: str | None = None, before: dict | None = None, after: dict | None = None) -> None:
         try:
-            _supabase_request("POST", "/rest/v1/activity_log", token=token, payload={"household_id": household_id, "actor": user_id, "action": action, "entity_type": entity_type, "entity_id": entity_id, "before_json": before, "after_json": after})
+            _supabase_admin_request("POST", "/rest/v1/activity_log", payload={"household_id": household_id, "actor": user_id, "action": action, "entity_type": entity_type, "entity_id": entity_id, "before_json": before, "after_json": after})
         except SupabaseHTTPError:
             return
 
@@ -842,9 +998,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "comparison_note": "Only a complete cart with equivalent product sizes and variants can be recommended; partial or non-equivalent totals are shown for planning only.",
         }
 
-    def _calendar_items(self, household_id: str, token: str, now: datetime) -> list[dict]:
+    def _calendar_items(self, household_id: str, user_id: str, token: str, now: datetime) -> list[dict]:
         events = self._enrich_rows(self._table("events", household_id, token, ("status", "eq.confirmed"), order="starts_at.asc"), token)
-        tasks = self._enrich_rows(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), token)
+        tasks = self._enrich_rows(self._visible_tasks(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), user_id), token)
         meals = self._enrich_rows(self._table("meals", household_id, token, ("status", "eq.planned"), order="meal_date.asc"), token)
         items = []
         for event in events:
@@ -859,9 +1015,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
 
     def _dashboard(self, household_id: str, user_id: str, token: str, user: dict) -> dict:
         now = datetime.now(timezone.utc)
-        tasks = self._enrich_rows(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), token)
+        tasks = self._enrich_rows(self._visible_tasks(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), user_id), token)
         events = self._table("events", household_id, token, ("status", "eq.confirmed"), order="starts_at.asc")
-        meals = self._table("meals", household_id, token, ("status", "eq.planned"), order="meal_date.asc")
+        meals = self._enrich_rows(self._table("meals", household_id, token, ("status", "eq.planned"), order="meal_date.asc"), token)
         inbox = self._inbox_snapshot(household_id, user_id, token)
         groceries = self._grocery_snapshot(household_id, token)
         profile = _first(_supabase_request("GET", "/rest/v1/profiles", token=token, query=[("select", "display_name"), ("user_id", f"eq.{user_id}")])) or {}
@@ -870,7 +1026,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             due = _parse_datetime(task.get("due_at"))
             urgency = "now" if due and due <= now else "soon" if due and due <= now + timedelta(days=1) else "open"
             attention.append({**task, "urgency": urgency, "owner_label": task.get("owner_label") or "Unassigned", "meta_label": task.get("assignee_label") or task.get("owner_label") or "Unassigned", "due_label": _format_day(task.get("due_at"), now) if due else "No due date", "action_type": "complete", "action_label": "Mark done", "href": f"/tasks?edit={task.get('id')}"})
-        calendar = self._calendar_items(household_id, token, now)
+        calendar = self._calendar_items(household_id, user_id, token, now)
         today = [item for item in calendar if str(item.get("starts_at", "")).startswith(now.date().isoformat())]
         upcoming = [item for item in calendar if now.date().isoformat() < str(item.get("starts_at", ""))[:10] <= (now + timedelta(days=7)).date().isoformat()]
         planning_week = []
@@ -982,9 +1138,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         query = self._query()
         return str(query.get("sender", [""])[0] or "").strip()
 
-    def _photon_state(self) -> dict:
+    def _photon_state(self, sender: str | None = None) -> dict:
         integration = self._channel_integration("photon")
-        identity, user_id, service_key, profile = self._channel_context(integration, self._channel_sender())
+        identity, user_id, service_key, profile = self._channel_context(integration, sender or self._channel_sender())
         state = self._dashboard(str(identity["household_id"]), user_id, service_key, {"email": profile.get("email", "")})
         state["channel"] = "photon"
         state["sender"] = identity["external_user_id"]
@@ -1004,10 +1160,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         ))
         if not profile:
             raise SupabaseHTTPError(409, "Hearthstate profile must sign in before channel binding")
-        membership = _first(_supabase_admin_request(
+        membership_rows = _rows(_supabase_admin_request(
             "GET", "/rest/v1/memberships",
             query=[("select", "household_id,role"), ("user_id", f"eq.{profile['user_id']}"), ("order", "created_at.asc")],
         ))
+        requested_household = payload.get("household_id")
+        if requested_household:
+            requested_household = _uuid(requested_household, "household id")
+            membership = next((row for row in membership_rows if str(row.get("household_id")) == requested_household), None)
+            if not membership:
+                raise SupabaseHTTPError(403, "requested household is not a membership")
+        elif len(membership_rows) == 1:
+            membership = membership_rows[0]
+        elif len(membership_rows) > 1:
+            raise SupabaseHTTPError(409, "household_id is required for multi-household channel binding")
+        else:
+            membership = None
         if not membership:
             raise SupabaseHTTPError(409, "Hearthstate user must belong to a household before channel binding")
         identity = _first(_supabase_admin_request(
@@ -1024,7 +1192,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         household_id = str(identity["household_id"])
         action = str(payload.get("action", "")).strip().lower()
         if action in {"state", "list_state"}:
-            return self._photon_state()
+            return self._photon_state(payload.get("sender"))
         if action == "capture":
             raw_text = payload.get("text")
             if not isinstance(raw_text, str):
@@ -1052,23 +1220,51 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             title = str(payload.get("title", "")).strip()
             if not title:
                 raise ValueError("title is required")
-            task = self._post_record("tasks", household_id, user_id, service_key, payload)
+            private = payload.get("private", False)
+            if not isinstance(private, bool):
+                raise ValueError("private must be a boolean")
+            if str(payload.get("status", "")).strip().lower() == "done":
+                raise ValueError("new tasks must start open")
+            task = self._photon_create_rpc("create_task", {
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_title": title,
+                "p_due_at": payload.get("due_at") or None,
+                "p_owner": _uuid(payload["owner"], "task owner") if payload.get("owner") else None,
+                "p_assignee": _uuid(payload["assignee"], "task assignee") if payload.get("assignee") else None,
+                "p_private": private,
+                "p_recurrence": str(payload.get("recurrence", "none")),
+            }, "task")
             return {"action": action, "task": task}
         if action == "complete_task":
             task_id = _uuid(payload.get("task_id"), "task id")
-            task = self._patch_record("tasks", task_id, household_id, service_key, {"status": "done"})
-            self._log(household_id, user_id, service_key, "task.completed", "task", task_id, after=task)
+            task = self._complete_task(household_id, user_id, task_id)
             return {"action": action, "task": task}
         if action == "add_grocery":
             name = str(payload.get("name", "")).strip()
             if not name:
                 raise ValueError("name is required")
-            item = self._post_record("grocery_items", household_id, user_id, service_key, payload)
+            item = self._photon_create_rpc("create_grocery_item", {
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_name": name,
+                "p_quantity": payload.get("quantity", 1),
+                "p_unit": payload.get("unit", "each"),
+                "p_category": payload.get("category", "General"),
+            }, "grocery item")
             return {"action": action, "item": item}
         if action == "create_event":
             if not str(payload.get("title", "")).strip() or not str(payload.get("starts_at", "")).strip():
                 raise ValueError("title and starts_at are required")
-            event = self._post_record("events", household_id, user_id, service_key, payload)
+            event = self._photon_create_rpc("create_event", {
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_title": str(payload["title"]).strip(),
+                "p_starts_at": payload["starts_at"],
+                "p_ends_at": payload.get("ends_at") or None,
+                "p_person": payload.get("person"),
+                "p_assignee": _uuid(payload["assignee"], "event assignee") if payload.get("assignee") else None,
+            }, "event")
             return {"action": action, "event": event}
         if action == "create_meal":
             if not str(payload.get("title", "")).strip() or not str(payload.get("meal_date", "")).strip():
@@ -1246,14 +1442,14 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 if tag == "saved" and not recipe["saved"]: continue
                 if tag and tag != "saved" and tag not in recipe["tags"]: continue
                 filtered.append(recipe)
-            self._respond({"recipes": filtered, "generated_at": _iso_now()})
+            self._respond({"recipes": filtered, "members": self._household_members(household_id, token), "generated_at": _iso_now()})
         elif route == "/tasks":
-            self._respond({"viewer": user_id, "generated_at": _iso_now(), "tasks": self._enrich_rows(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), token)})
+            self._respond({"viewer": user_id, "generated_at": _iso_now(), "tasks": self._enrich_rows(self._visible_tasks(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), user_id), token)})
         elif route == "/calendar":
-            self._respond({"viewer": user_id, "generated_at": _iso_now(), "calendar": self._calendar_items(household_id, token, datetime.now(timezone.utc))})
+            self._respond({"viewer": user_id, "generated_at": _iso_now(), "calendar": self._calendar_items(household_id, user_id, token, datetime.now(timezone.utc))})
         elif route == "/meals":
             meals = self._enrich_rows(self._table("meals", household_id, token, order="meal_date.asc"), token)
-            self._respond({"generated_at": _iso_now(), "meals": meals})
+            self._respond({"generated_at": _iso_now(), "meals": meals, "members": self._household_members(household_id, token)})
         elif route == "/notifications/preferences":
             briefing_type = self._query().get("briefing_type", ["morning"])[0].lower() or "morning"
             preferences = _first(_supabase_request("GET", "/rest/v1/notification_preferences", token=token, query=[("select", "*"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}"), ("briefing_type", f"eq.{briefing_type}")])) or {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": True, "preferred_time": "07:00", "quiet_start": "21:00", "quiet_end": "07:00", "channel": "email"}
@@ -1284,17 +1480,17 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             user_id, token, user = self._authenticate()
             raw_token = str(payload.get("token", "")).strip()
             if not raw_token: raise ValueError("invitation token is required")
-            token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-            invitation = _first(_supabase_admin_request("GET", "/rest/v1/invitations", query=[("select", "id,household_id,email,role,expires_at,accepted_at,revoked_at"), ("token_hash", f"eq.{token_hash}")]))
-            if not invitation or invitation.get("accepted_at") or invitation.get("revoked_at") or (_parse_datetime(invitation.get("expires_at")) or datetime.now(timezone.utc)) <= datetime.now(timezone.utc):
-                raise SupabaseHTTPError(400, "invitation is invalid or expired")
-            if str(invitation.get("email", "")).lower() != str(user.get("email", "")).lower():
-                raise SupabaseHTTPError(403, "invitation email does not match sign-in email")
-            membership = _first(_supabase_admin_request("POST", "/rest/v1/memberships", payload={"household_id": invitation["household_id"], "user_id": user_id, "role": invitation["role"]}, prefer="return=representation,resolution=merge-duplicates", query=[("on_conflict", "household_id,user_id")])) or {}
-            _supabase_admin_request("PATCH", "/rest/v1/invitations", query=[("id", f"eq.{invitation['id']}")], payload={"accepted_at": _iso_now(), "accepted_user_id": user_id})
-            display_name = str(payload.get("display_name", "")).strip() or str(user.get("email", "Household member")).split("@", 1)[0]
-            _supabase_admin_request("POST", "/rest/v1/profiles", query=[("on_conflict", "user_id")], payload={"user_id": user_id, "email": user.get("email"), "display_name": display_name}, prefer="return=minimal,resolution=merge-duplicates")
-            self._respond({"membership": membership or {}}, status=201)
+            display_name = str(payload.get("display_name", "")).strip()
+            if len(display_name) > 200: raise ValueError("display name must be 200 characters or fewer")
+            membership = _first(_supabase_request(
+                "POST",
+                "/rest/v1/rpc/accept_invitation",
+                token=token,
+                payload={"raw_token": raw_token, "display_name": display_name},
+            ))
+            if not membership:
+                raise SupabaseHTTPError(502, "Supabase did not return the accepted membership")
+            self._respond({"membership": membership}, status=201)
             return
         if route == "/households":
             user_id, token, _ = self._authenticate()
@@ -1421,10 +1617,14 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             chore_id = _uuid(route.removeprefix("/chores/").strip("/"), "chore id")
             chore = _first(_supabase_request("GET", "/rest/v1/chore_templates", token=token, query=[("select", "*"), ("id", f"eq.{chore_id}"), ("household_id", f"eq.{household_id}")]))
             if not chore: raise SupabaseHTTPError(404, "chore not found")
-            participants = chore.get("participants") if isinstance(chore.get("participants"), list) else []
-            assignee = participants[int(chore.get("next_index", 0)) % len(participants)] if participants else None
-            task = self._post_record("tasks", household_id, user_id, token, {"title": chore["title"], "due_at": payload.get("due_date"), "assignee": assignee})
-            _supabase_request("PATCH", "/rest/v1/chore_templates", token=token, query=[("id", f"eq.{chore_id}")], payload={"next_index": int(chore.get("next_index", 0)) + 1})
+            task = _first(_supabase_request(
+                "POST",
+                "/rest/v1/rpc/create_chore_task",
+                token=token,
+                payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_chore_id": chore_id, "p_due_at": payload.get("due_date") or None},
+            ))
+            if not task:
+                raise SupabaseHTTPError(502, "Supabase did not return the chore task")
             self._respond({"task": task}, status=201); return
         if route == "/groceries/budget":
             budget = float(payload.get("budget"))
@@ -1495,7 +1695,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if len(parts) != 2 or parts[1] not in {"complete", "delete"}: self._respond({"error": "not found"}, status=404); return
             task_id = _uuid(parts[0], "task id")
             if parts[1] == "complete":
-                task = self._patch_record("tasks", task_id, household_id, token, {"status": "done"})
+                task = self._complete_task(household_id, user_id, task_id, token)
                 self._record_pilot_event(
                     household_id,
                     user_id,
@@ -1512,20 +1712,25 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if route == "/tasks":
             title = str(payload.get("title", "")).strip()
             if not title: raise ValueError("title is required")
-            task = self._patch_record("tasks", payload["id"], household_id, token, payload) if payload.get("id") else self._post_record("tasks", household_id, user_id, token, payload)
+            if payload.get("id") and str(payload.get("status", "")).strip().lower() == "done":
+                task = self._complete_task(household_id, user_id, _uuid(payload["id"], "task id"), token)
+            elif not payload.get("id") and str(payload.get("status", "")).strip().lower() == "done":
+                raise ValueError("new tasks must start open")
+            else:
+                task = self._patch_record("tasks", payload["id"], household_id, token, payload) if payload.get("id") else self._post_record("tasks", household_id, user_id, token, payload)
             self._respond({"task": task}, status=200 if payload.get("id") else 201); return
         if route == "/calendar":
             if not str(payload.get("title", "")).strip() or not str(payload.get("starts_at", "")).strip(): raise ValueError("title and starts_at are required")
             event = self._patch_record("events", payload["id"], household_id, token, payload) if payload.get("id") else self._post_record("events", household_id, user_id, token, payload)
             self._respond({"event": event}, status=200 if payload.get("id") else 201); return
-        if route.startswith("/meals/"):
-            parts = route.removeprefix("/meals/").strip("/").split("/")
-            if len(parts) != 2 or parts[1] != "delete": self._respond({"error": "not found"}, status=404); return
-            self._respond({"deleted": self._delete_record("meals", parts[0], household_id, token)}); return
         if route == "/meals/sync-groceries":
             meal = _first(_supabase_request("GET", "/rest/v1/meals", token=token, query=[("select", "ingredients"), ("id", f"eq.{_uuid(payload.get('meal_id'), 'meal id')}"), ("household_id", f"eq.{household_id}")])) or {}
             added = [self._post_record("grocery_items", household_id, user_id, token, {"name": str(item), "category": "Meal"}) for item in meal.get("ingredients", []) if str(item).strip()]
             self._respond({"added": added}); return
+        if route.startswith("/meals/"):
+            parts = route.removeprefix("/meals/").strip("/").split("/")
+            if len(parts) != 2 or parts[1] != "delete": self._respond({"error": "not found"}, status=404); return
+            self._respond(self._delete_meal(household_id, user_id, token, parts[0])); return
         if route == "/meals":
             if payload.get("id"):
                 meal = self._update_meal(household_id, user_id, token, payload)
@@ -1559,7 +1764,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")
             parts = route.removeprefix("/admin/members/").strip("/").split("/"); member_id = _uuid(parts[0], "member id")
             if len(parts) == 2 and parts[1] == "remove":
-                _supabase_request("DELETE", "/rest/v1/memberships", token=token, query=[("household_id", f"eq.{household_id}"), ("user_id", f"eq.{member_id}")]); self._respond({"member": {"id": member_id}}); return
+                removed = _rows(_supabase_request("DELETE", "/rest/v1/memberships", token=token, query=[("household_id", f"eq.{household_id}"), ("user_id", f"eq.{member_id}")], prefer="return=representation"))
+                if not removed: raise SupabaseHTTPError(404, "member not found")
+                self._respond({"member": {"id": member_id}}); return
             role = str(payload.get("role", "member"));
             if role not in {"owner", "member", "child", "guest"}: raise ValueError("invalid role")
             member = _first(_supabase_request("PATCH", "/rest/v1/memberships", token=token, query=[("household_id", f"eq.{household_id}"), ("user_id", f"eq.{member_id}")], payload={"role": role})) or {}

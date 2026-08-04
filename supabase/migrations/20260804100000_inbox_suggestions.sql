@@ -356,15 +356,20 @@ begin
                 )) then
             raise exception 'meal ingredients are invalid' using errcode = '22023';
         end if;
-        insert into public.meals (household_id, meal_date, meal_type, title, ingredients, created_by)
-        values (
+        execute 'select * from public.create_meal($1, $2, $3)'
+        into meal_row
+        using
             p_household_id,
-            (payload->>'meal_date')::date,
-            meal_type_value,
-            title_value,
-            case when jsonb_typeof(payload->'ingredients') = 'array' then payload->'ingredients' else '[]'::jsonb end,
-            p_actor_user_id
-        ) returning * into meal_row;
+            p_actor_user_id,
+            jsonb_build_object(
+                'meal_date', payload->>'meal_date',
+                'meal_type', meal_type_value,
+                'title', title_value,
+                'ingredients', case
+                    when jsonb_typeof(payload->'ingredients') = 'array' then payload->'ingredients'
+                    else '[]'::jsonb
+                end
+            );
         created_record := to_jsonb(meal_row);
         created_id := meal_row.id;
         created_type := 'meal';
@@ -448,6 +453,7 @@ security definer
 set search_path = public, private, extensions
 as $$
 declare
+    actor_membership public.memberships;
     capture_row public.inbox_items;
     suggestion_row public.inbox_suggestions;
     reviewed_suggestion public.inbox_suggestions;
@@ -458,10 +464,11 @@ begin
         raise exception 'authenticated actor required' using errcode = '42501';
     end if;
 
-    if not exists (
-        select 1 from public.memberships
-        where household_id = p_household_id and user_id = p_actor_user_id
-    ) then
+    select * into actor_membership
+    from public.memberships
+    where household_id = p_household_id and user_id = p_actor_user_id
+    for update;
+    if not found then
         raise exception 'household membership required' using errcode = '42501';
     end if;
 

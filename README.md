@@ -24,7 +24,7 @@ Photon/iMessage remains available as a messaging transport through the Hermes `h
 5. `/api/dashboard` and page-specific endpoints call Supabase through `api/index.py`, always with authenticated household context.
 6. Supabase RLS protects profiles, households, memberships, tasks, events, meals, groceries, recipes, Inbox items, activity, chores, settings, preferences, invitations, and the service-role-only pilot measurement ledger.
 
-An authenticated member visiting `/setup` is redirected to `/`. An unprovisioned account may use `/setup` to create its first household. Hosted provisioning is currently operator-assisted; public onboarding remains roadmap work.
+An authenticated member visiting `/setup` is redirected to `/`. An unprovisioned account may use `/setup` to create its first household; hosted onboarding is available through the dashboard flow.
 
 ## Product surface
 
@@ -32,7 +32,7 @@ The hosted dashboard includes:
 
 - Overview with **What needs attention?**, Today, weekly planning, a universal Inbox, activity, and grocery signals. Inbox captures now create privacy-scoped, editable suggestions; accepting a suggestion is the only path from the review UI to a task, event, meal, grocery item, or resolved note.
 - Calendar and dated task projection with assignees and conflict detection.
-- Tasks with ownership, recurrence, completion, editing, deletion confirmation, and undo history.
+- Tasks with ownership, recurrence, completion, editing, deletion confirmation, and activity history.
 - Meals and recipes with cook assignment, ingredient ownership checks, planning, grocery sync, and auditable household-scoped meal edits.
 - Groceries with curated supermarket matching for Coles, ALDI Australia, and Woolworths, quantities, per-retailer cart comparison, equivalent-product safeguards, provenance, budgets, manual prices, and fail-closed unknown pricing.
 
@@ -105,7 +105,7 @@ Hosted `/api/health` should report `service: hearthstate` and `backend: supabase
 Completed foundation:
 
 - Household identity, membership roles, invitations, sign-in sessions, owner administration, and hosted API boundary.
-- Privacy-aware planner behavior, activity history, reversible mutations, chores, conflicts, recipes, meals, groceries, and notification preferences in the hosted schema/API.
+- Privacy-aware planner behavior, activity history, auditable mutations, chores, conflicts, recipes, meals, groceries, and notification preferences in the hosted schema/API.
 
 Next priorities:
 

@@ -201,6 +201,7 @@ class InboxSuggestionTests(unittest.TestCase):
         self.assertIn("grant execute on function public.create_inbox_capture(uuid, uuid, text, text, boolean, text, jsonb) to authenticated, service_role", migration)
         self.assertIn("auth.role()", migration)
         self.assertIn("p_actor_user_id)", migration)
+        self.assertIn("public.create_meal", migration)
         self.assertIn("grant execute on function public.review_inbox_suggestion(uuid, uuid, uuid, uuid, text, text, jsonb) to authenticated, service_role", migration)
         self.assertIn("grant execute on function public.archive_inbox_capture(uuid, uuid, uuid) to authenticated, service_role", migration)
         self.assertIn("grant execute on function public.read_inbox_snapshot(uuid, uuid) to authenticated, service_role", migration)

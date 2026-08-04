@@ -49,15 +49,14 @@ insert into public.channel_identities (integration_id, external_user_id, user_id
 select integration.id, '+61400025889', profile.user_id, membership.household_id
 from public.channel_integrations integration
 join public.profiles profile on lower(profile.email) = 'grant@ashman.net.au'
-join lateral (
-    select m.household_id
-    from public.memberships m
-    where m.user_id = profile.user_id
-    order by m.created_at asc
-    limit 1
-) membership on true
+join public.memberships membership on membership.user_id = profile.user_id
 where integration.channel = 'photon'
   and integration.name = 'Hearthstate Photon bridge'
+  and not exists (
+      select 1 from public.memberships another_membership
+      where another_membership.user_id = profile.user_id
+        and another_membership.household_id <> membership.household_id
+  )
 on conflict (integration_id, external_user_id) do update
 set user_id = excluded.user_id,
     household_id = excluded.household_id;

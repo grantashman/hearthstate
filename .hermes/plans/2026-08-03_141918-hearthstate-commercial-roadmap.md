@@ -463,7 +463,7 @@ Start here when development resumes:
 2. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals. **Complete on `main`.**
 3. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile. **Complete for dashboard and Photon.**
 4. **Confirmation-first suggestions:** Let owners/members accept, edit, reject, or leave captures unresolved without silent mutations. **Complete on `main`.**
-5. **Auditable meal mutations:** Keep cook changes and related meal edits household-scoped, actor-bound, and reversible/auditable. **Current iteration.**
+5. **Auditable meal mutations:** Keep cook changes and related meal edits household-scoped, actor-bound, and auditable. **Current iteration.**
 6. **PWA pass:** Make capture and grocery mode mobile-first.
 7. **Pilot recruitment:** Start interviews before beginning native iOS work.
 8. **Delivery adapters:** Add push only after the email path has pilot evidence.
