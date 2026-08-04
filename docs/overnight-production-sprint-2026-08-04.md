@@ -98,8 +98,10 @@ and were not fabricated as completed:
 - Confirm SSL enforcement, network restrictions, MFA, auth email confirmation,
   OTP expiry, and production SMTP settings.
 - Confirm backup/PITR settings against the household data recovery objective.
-- Run migration `20260804120000_auditable_task_completion.sql` in the hosted
-  Supabase project and verify the RPC grants/functions in the database.
+- Confirmed by the post-merge production workflow: migration
+  `20260804120000_auditable_task_completion.sql` was applied to the hosted
+  Supabase project; continue verifying its RPC grants/functions during staging
+  database testing.
 - Configure Vercel CSP/security headers, WAF/rate limiting, spend alerts,
   observability, and a documented rollback path.
 - Add a staging database test suite covering RLS, cross-household RPC attempts,
