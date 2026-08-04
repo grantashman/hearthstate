@@ -6,6 +6,7 @@ const els = {
   budgetTotal: document.querySelector('#budgetTotal'), unknownCount: document.querySelector('#unknownCount'), remainingTotal: document.querySelector('#remainingTotal'),
   budgetStatus: document.querySelector('#budgetStatus'), remainingStatus: document.querySelector('#remainingStatus'), budgetSignal: document.querySelector('#budgetSignal'),
   budgetSignalNote: document.querySelector('#budgetSignalNote'), updatedAt: document.querySelector('#updatedAt'),
+  comparison: document.querySelector('#retailerComparison'), comparisonNote: document.querySelector('#comparisonNote'),
 };
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const money = (value) => value == null ? '—' : new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -18,7 +19,13 @@ function syncTheme() {
   const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#1d1917' : '#f3ede3';
 }
 function setTheme(theme) { document.documentElement.dataset.theme = theme; try { localStorage.setItem('hearthstate-theme', theme); } catch (error) {} syncTheme(); }
-function checkedLabel(value) { return value ? `Checked ${new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`))}` : ''; }
+function checkedLabel(value) {
+  if (!value) return '';
+  const raw = String(value);
+  const parsed = new Date(raw.length === 10 ? `${raw}T12:00:00` : raw);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return `Checked ${new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(parsed)}`;
+}
 function unitLabel(item) { return `${item.quantity === 1 ? '' : `${item.quantity} `}${item.unit || 'each'}`; }
 function quantityValue(item) {
   const quantity = Number(item.quantity);
@@ -41,6 +48,27 @@ function renderItem(item) {
   return `<article class="grocery-record"><div class="grocery-check" aria-hidden="true"></div><div class="grocery-record-main"><div class="grocery-name-line"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(unitLabel(item))}</span></div>${provenance}</div>${renderQuantityEditor(item)}${priceDetail}</article>`;
 }
 
+function renderComparison(payload) {
+  if (!els.comparison || !els.comparisonNote) return;
+  const totals = payload.retailer_totals || [];
+  if (!payload.total_count || !totals.length) {
+    els.comparisonNote.textContent = 'Add an open grocery item to compare retailer totals.';
+    els.comparison.innerHTML = '';
+    return;
+  }
+  els.comparisonNote.textContent = payload.recommended_retailer_label
+    ? `${payload.recommended_retailer_label} is lowest for the fully matched cart.`
+    : 'No retailer has a complete match for every item yet.';
+  els.comparison.innerHTML = totals.map((retailer) => {
+    const status = retailer.complete
+      ? `${retailer.priced_count} of ${payload.total_count} items matched`
+      : `Partial · ${retailer.unknown_count} item${retailer.unknown_count === 1 ? '' : 's'} not matched`;
+    const unknown = retailer.unknown_items?.length ? `<small class="retailer-unknown">Missing: ${retailer.unknown_items.map(escapeHTML).join(', ')}</small>` : '';
+    const recommended = retailer.retailer === payload.recommended_retailer;
+    return `<div class="retailer-total${recommended ? ' is-recommended' : ''}"><div><strong>${escapeHTML(retailer.retailer_label)}</strong><span>${escapeHTML(status)}</span>${unknown}</div><strong>${money(retailer.total)}</strong></div>`;
+  }).join('');
+}
+
 function render(payload) {
   const { items } = payload;
   els.itemCount.textContent = payload.total_count;
@@ -55,7 +83,8 @@ function render(payload) {
   if (payload.budget != null) els.budgetInput.value = payload.budget.toFixed(2);
   els.list.innerHTML = items.map(renderItem).join('');
   els.list.classList.toggle('is-hidden', items.length === 0); els.empty.classList.toggle('is-hidden', items.length !== 0);
-  els.updatedAt.textContent = `UPDATED ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(payload.generated_at)).toUpperCase()}`;
+  els.updatedAt.textContent = `UPDATED ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(payload.generated_at || Date.now())).toUpperCase()}`;
+  renderComparison(payload);
   els.list.querySelectorAll('.quick-price-form').forEach((form) => form.addEventListener('submit', saveManualPrice));
   els.list.querySelectorAll('.quantity-form').forEach((form) => form.addEventListener('submit', saveQuantity));
 }
@@ -84,5 +113,22 @@ async function saveQuantity(event) {
   await load();
 }
 els.budgetForm.addEventListener('submit', async (event) => { event.preventDefault(); const budget = Number(new FormData(els.budgetForm).get('budget')); if (!Number.isFinite(budget) || budget < 0) return; const response = await fetch('/api/groceries/budget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget, updated_by: 'grant' }) }); if (!response.ok) { els.error.textContent = 'Could not save the weekly budget.'; els.error.classList.remove('is-hidden'); return; } render(await response.json()); });
-els.refreshColes.addEventListener('click', async () => { els.refreshColes.disabled = true; els.refreshColes.textContent = 'Checking…'; try { const response = await fetch('/api/groceries/refresh-coles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); render(await response.json()); els.sync.textContent = 'Live · auto-matched'; } finally { els.refreshColes.disabled = false; els.refreshColes.textContent = 'Refresh Coles matches'; } });
+els.refreshColes.addEventListener('click', async () => {
+  els.refreshColes.disabled = true;
+  els.refreshColes.textContent = 'Checking…';
+  try {
+    const response = await fetch('/api/groceries/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    render(await response.json());
+    els.sync.textContent = 'Live · retailers compared';
+    els.error.classList.add('is-hidden');
+  } catch (error) {
+    els.error.textContent = 'Could not refresh supermarket prices.';
+    els.error.classList.remove('is-hidden');
+    console.error(error);
+  } finally {
+    els.refreshColes.disabled = false;
+    els.refreshColes.textContent = 'Refresh supermarket prices';
+  }
+});
 els.theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')); els.refresh.addEventListener('click', load); syncTheme(); load(); window.setInterval(load, 60000);
