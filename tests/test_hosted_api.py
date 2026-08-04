@@ -95,6 +95,9 @@ class HostedApiContractTests(unittest.TestCase):
         request = object.__new__(handler)
         request._token = Mock(return_value=None)
         request._send_bytes = Mock()
+        rewrites = json.loads((Path(__file__).parents[1] / "vercel.json").read_text())["rewrites"]
+        rewrite_sources = {item["source"] for item in rewrites}
+        self.assertTrue({"/manifest.webmanifest", "/sw.js", "/icons/:path*"}.issubset(rewrite_sources))
 
         for route, content_type, marker in (
             ("/manifest.webmanifest", "application/manifest+json; charset=utf-8", '"display": "standalone"'),
