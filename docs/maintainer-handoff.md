@@ -99,6 +99,7 @@ Hosted `/api/health` should report `service: hearthstate` and `backend: supabase
 ## Known boundaries and next work
 
 - Hosted provisioning is currently an operator step; public onboarding and owner-confirmed export/deletion remain roadmap work.
+- The grocery matcher now mutates household prices only during an explicit retailer refresh; ordinary reads are side-effect free, and recommendations require equivalent product sizes/variants.
 - A rate-limited, policy-compliant live retailer adapter remains future work behind the curated matcher.
 - External calendar sync, push delivery, provider idempotency, analytics/pilot instrumentation, billing, and richer multi-action parsing remain future work.
 - Keep household isolation and hosted Supabase behavior covered by API contract tests and production read-only checks.

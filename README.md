@@ -34,7 +34,7 @@ The hosted dashboard includes:
 - Calendar and dated task projection with assignees and conflict detection.
 - Tasks with ownership, recurrence, completion, editing, deletion confirmation, and undo history.
 - Meals and recipes with cook assignment, ingredient ownership checks, planning, and grocery sync.
-- Groceries with curated supermarket matching for Coles, ALDI Australia, and Woolworths, quantities, per-retailer cart comparison, provenance, budgets, manual prices, and fail-closed unknown pricing.
+- Groceries with curated supermarket matching for Coles, ALDI Australia, and Woolworths, quantities, per-retailer cart comparison, equivalent-product safeguards, provenance, budgets, manual prices, and fail-closed unknown pricing.
 - Owner administration for household name, roles, members, invitations, and revocation.
 - Authenticated notification preferences.
 

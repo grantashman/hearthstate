@@ -39,11 +39,12 @@ function renderQuantityEditor(item) {
 function renderItem(item) {
   const priced = item.price != null;
   const source = item.price_source || '';
+  const observedRetailer = ['Coles', 'ALDI', 'Woolworths'].find((retailer) => source.startsWith(retailer));
   const priceDetail = priced
     ? `<div class="grocery-price"><strong>${money(item.line_total)}</strong><span>${item.quantity === 1 ? money(item.price) : `${money(item.price)} each`}</span></div>`
     : `<div class="grocery-price unknown-price"><strong>Unknown</strong><span>Not counted</span></div>`;
   const provenance = priced
-    ? `<div class="price-provenance"><span class="price-badge ${source.startsWith('Coles') ? 'is-coles' : 'is-manual'}">${source.startsWith('Coles') ? 'Coles' : 'Manual'}</span>${item.price_url ? `<a href="${escapeHTML(item.price_url)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
+    ? `<div class="price-provenance"><span class="price-badge ${observedRetailer ? 'is-coles' : 'is-manual'}">${observedRetailer || 'Manual'}</span>${item.price_url ? `<a href="${escapeHTML(item.price_url)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
     : `<form class="quick-price-form" data-item-id="${item.id}"><label>Set a price</label><div><span>$</span><input name="price" type="number" min="0" step="0.01" placeholder="0.00" required /><button type="submit">Save</button></div></form>`;
   return `<article class="grocery-record"><div class="grocery-check" aria-hidden="true"></div><div class="grocery-record-main"><div class="grocery-name-line"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(unitLabel(item))}</span></div>${provenance}</div>${renderQuantityEditor(item)}${priceDetail}</article>`;
 }
@@ -57,15 +58,21 @@ function renderComparison(payload) {
     return;
   }
   els.comparisonNote.textContent = payload.recommended_retailer_label
-    ? `${payload.recommended_retailer_label} is lowest for the fully matched cart.`
-    : 'No retailer has a complete match for every item yet.';
+    ? `${payload.recommended_retailer_label} is lowest for the fully matched, equivalent cart.`
+    : payload.comparison_not_comparable_items?.length
+      ? `Totals are shown for planning, but product sizes or variants differ for: ${payload.comparison_not_comparable_items.join(', ')}.`
+      : 'No retailer has a complete match for every item yet.';
   els.comparison.innerHTML = totals.map((retailer) => {
+    const lines = payload.comparison?.[retailer.retailer]?.lines || [];
     const status = retailer.complete
-      ? `${retailer.priced_count} of ${payload.total_count} items matched`
+      ? retailer.comparable
+        ? `${retailer.priced_count} of ${payload.total_count} equivalent items matched`
+        : 'Complete prices · products are not equivalent'
       : `Partial · ${retailer.unknown_count} item${retailer.unknown_count === 1 ? '' : 's'} not matched`;
     const unknown = retailer.unknown_items?.length ? `<small class="retailer-unknown">Missing: ${retailer.unknown_items.map(escapeHTML).join(', ')}</small>` : '';
-    const recommended = retailer.retailer === payload.recommended_retailer;
-    return `<div class="retailer-total${recommended ? ' is-recommended' : ''}"><div><strong>${escapeHTML(retailer.retailer_label)}</strong><span>${escapeHTML(status)}</span>${unknown}</div><strong>${money(retailer.total)}</strong></div>`;
+    const products = lines.length ? `<details class="retailer-products"><summary>Products compared</summary><ul>${lines.map((line) => `<li><span>${escapeHTML(line.name || '')}</span><small>${line.match ? `${escapeHTML(line.match.title)} · ${money(line.match.price)} each` : 'No safe match'}</small></li>`).join('')}</ul></details>` : '';
+    const recommended = retailer.retailer === payload.recommended_retailer && retailer.comparable;
+    return `<div class="retailer-total${recommended ? ' is-recommended' : ''}"><div><strong>${escapeHTML(retailer.retailer_label)}</strong><span>${escapeHTML(status)}</span>${unknown}${products}</div><strong>${money(retailer.total)}</strong></div>`;
   }).join('');
 }
 
@@ -90,8 +97,8 @@ function render(payload) {
 }
 
 async function load() {
-  els.sync.textContent = 'Matching prices'; els.refresh.classList.add('is-loading');
-  try { const response = await fetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); render(await response.json()); els.error.classList.add('is-hidden'); els.sync.textContent = 'Live · auto-matched'; }
+  els.sync.textContent = 'Loading grocery list'; els.refresh.classList.add('is-loading');
+  try { const response = await fetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); render(await response.json()); els.error.classList.add('is-hidden'); els.sync.textContent = 'Live · refresh for prices'; }
   catch (error) { els.error.textContent = 'Could not load the grocery budget.'; els.error.classList.remove('is-hidden'); els.sync.textContent = 'Offline'; console.error(error); }
   finally { els.refresh.classList.remove('is-loading'); }
 }

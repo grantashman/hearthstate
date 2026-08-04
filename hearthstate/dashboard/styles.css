@@ -533,6 +533,11 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 .retailer-total > div { display: grid; gap: 3px; min-width: 0; }
 .retailer-total > div > strong { color: var(--ink); font-size: 12px; }
 .retailer-total > div > span { color: var(--ink-faint); font-size: 9px; }
+.retailer-products { margin-top: 7px; color: var(--ink); font-size: 0.76rem; }
+.retailer-products summary { color: var(--accent); cursor: pointer; font-weight: 700; }
+.retailer-products ul { display: grid; gap: 5px; margin: 7px 0 0; padding-left: 16px; }
+.retailer-products li { display: grid; gap: 2px; }
+.retailer-products small { color: var(--muted); line-height: 1.35; }
 .retailer-total > strong { color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .retailer-total.is-recommended { margin: 0 -10px; padding: 11px 10px; border: 1px solid #d0ded5; border-radius: 7px; background: var(--evergreen-wash); }
 .retailer-total.is-recommended > strong { color: var(--evergreen); }
