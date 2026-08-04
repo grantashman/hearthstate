@@ -449,6 +449,11 @@ def _variant_tokens(value: object) -> set[str]:
     return {phrase for phrase in _VARIANT_PHRASES if phrase in normalized}
 
 
+def _count_unit(unit: object) -> bool:
+    normalized = normalize_name(unit)
+    return not normalized or normalized in {"each", "item", "items", "pack", "packs", "packet", "packets", "bottle", "bottles", "can", "cans"}
+
+
 def _safe_alias_match(query: object, alias: object) -> int:
     query_normalized = normalize_name(query)
     alias_normalized = normalize_name(alias)
@@ -476,11 +481,18 @@ def _compatible_constraints(query: object, product: dict) -> bool:
     return query_variants.issubset(product_variants)
 
 
+def _comparison_key(key: str, product: dict) -> str:
+    sizes = ",".join(_size_tokens(product.get("source", ""))) or "unspecified"
+    variants = ",".join(sorted(_variant_tokens(product.get("source", "")))) or "default"
+    return f"{key}|sizes={sizes}|variants={variants}"
+
+
 def _materialize(retailer: str, key: str, product: dict, basis: str) -> dict:
     return {
         "retailer": retailer,
         "retailer_label": RETAILER_LABELS[retailer],
         "product_key": key,
+        "comparison_key": _comparison_key(key, product),
         "title": product["source"],
         "price": float(product["price"]),
         "url": product["url"],
@@ -491,8 +503,10 @@ def _materialize(retailer: str, key: str, product: dict, basis: str) -> dict:
     }
 
 
-def match_item(name: object, retailer: str) -> dict | None:
+def match_item(name: object, retailer: str, unit: object = "each") -> dict | None:
     retailer_key = str(retailer or "").strip().lower()
+    if not _count_unit(unit):
+        return None
     catalog = RETAILER_CATALOGS.get(retailer_key)
     if catalog is None:
         raise ValueError(f"unsupported retailer: {retailer}")
@@ -523,7 +537,7 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
             except (TypeError, ValueError):
                 quantity = 1.0
             quantity = quantity if quantity > 0 else 1.0
-            match = match_item(item.get("name", ""), retailer)
+            match = match_item(item.get("name", ""), retailer, item.get("unit", "each"))
             line_total = round(match["price"] * quantity, 2) if match else None
             if line_total is None:
                 unknown.append(str(item.get("name") or ""))
@@ -541,6 +555,22 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
             "total_status": "complete" if not unknown else "partial" if lines else "unavailable",
             "lines": lines,
         }
+    item_names = [str(item.get("name") or "") for item in items]
+    not_comparable_indexes: set[int] = set()
+    for index in range(len(items)):
+        keys = {
+            result["lines"][index]["match"].get("comparison_key")
+            if result["lines"][index]["match"] else None
+            for result in comparison.values()
+        }
+        if len(keys) != 1 or None in keys:
+            not_comparable_indexes.add(index)
+    comparable = bool(items) and all(result["complete"] for result in comparison.values()) and not not_comparable_indexes
+    not_comparable_items = [item_names[index] for index in sorted(not_comparable_indexes)]
+    for result in comparison.values():
+        result["comparable"] = comparable
+        result["not_comparable_items"] = not_comparable_items
+        result["comparison_status"] = "comparable" if comparable else "non_equivalent" if not_comparable_items and all(result["complete"] for result in comparison.values()) else "partial"
     return comparison
 
 
@@ -550,7 +580,7 @@ def catalog_updates(items: list[dict], retailer: str = "coles") -> list[dict]:
         source = str(item.get("price_source") or "").strip().lower()
         if item.get("price_confidence") == "manual" or source.startswith("manual"):
             continue
-        match = match_item(item.get("name", ""), retailer)
+        match = match_item(item.get("name", ""), retailer, item.get("unit", "each"))
         if match is None:
             continue
         expected = {

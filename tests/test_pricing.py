@@ -41,6 +41,23 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertIsNone(match_item("milk powder", "coles"))
         self.assertIsNotNone(match_item("coles brand white pepper", "coles"))
 
+    def test_non_count_units_fail_closed_instead_of_treating_pack_price_as_weight_price(self):
+        comparison = compare_cart([{"name": "potatoes", "quantity": 2, "unit": "kg"}])
+        self.assertTrue(all(result["unknown_count"] == 1 for result in comparison.values()))
+        self.assertTrue(all(result["total"] == 0 for result in comparison.values()))
+
+    def test_cart_with_non_equivalent_products_is_not_recommended(self):
+        comparison = compare_cart([{"name": "eggs", "quantity": 1}])
+        self.assertTrue(all(result["complete"] for result in comparison.values()))
+        self.assertFalse(any(result["comparable"] for result in comparison.values()))
+        self.assertEqual(comparison["coles"]["not_comparable_items"], ["eggs"])
+
+    def test_cart_line_includes_equivalence_key_and_title(self):
+        comparison = compare_cart([{"name": "eggs", "quantity": 1}])
+        match = comparison["coles"]["lines"][0]["match"]
+        self.assertIn("comparison_key", match)
+        self.assertIn("title", match)
+
     def test_catalog_match_is_idempotent_after_supabase_timestamp_round_trip(self):
         item = {
             "name": "eggs",
