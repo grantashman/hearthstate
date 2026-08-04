@@ -180,6 +180,56 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat()
 
 
+_PILOT_EVENT_METADATA_FIELDS = {
+    "household_created": {"source"},
+    "member_invited": {"role"},
+    "member_active": {"source"},
+    "dashboard_opened": {"source"},
+    "capture_created": {"source", "private"},
+    "capture_converted": {"conversion_type"},
+    "task_completed": {"source"},
+    "briefing_opened": {"source"},
+    "briefing_acted_on": {"source", "action"},
+    "conflict_resolved": {"source", "resolution"},
+    "subscription_started": {"plan"},
+    "subscription_cancelled": {"plan"},
+    "subscription_renewed": {"plan"},
+}
+_PILOT_EVENT_METADATA_VALUES = {
+    "source": {"setup", "dashboard", "email", "photon", "notification", "client", "unknown"},
+    "role": {"member", "child", "guest"},
+    "conversion_type": {"task", "event", "meal", "grocery"},
+    "action": {"task_completed", "grocery_opened", "calendar_opened", "dismissed", "unknown"},
+    "resolution": {"accepted", "dismissed", "snoozed", "unknown"},
+    "plan": {"pilot", "monthly", "annual", "unknown"},
+}
+_PILOT_CLIENT_EVENTS = {"briefing_opened", "briefing_acted_on", "conflict_resolved"}
+
+
+def _sanitize_pilot_metadata(event_name: str, metadata: object) -> dict:
+    allowed = _PILOT_EVENT_METADATA_FIELDS.get(event_name)
+    if allowed is None:
+        raise ValueError("unsupported pilot event")
+    if metadata is None:
+        return {}
+    if not isinstance(metadata, dict):
+        raise ValueError("pilot metadata must be an object")
+    sanitized: dict[str, object] = {}
+    for key in allowed:
+        value = metadata.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, int) and not isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, str):
+            normalized = value.strip().lower()
+            if len(normalized) <= 80 and normalized in _PILOT_EVENT_METADATA_VALUES.get(key, set()):
+                sanitized[key] = normalized
+    return sanitized
+
+
 def _parse_datetime(value: object) -> datetime | None:
     if not value:
         return None
@@ -452,6 +502,26 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         try:
             _supabase_request("POST", "/rest/v1/activity_log", token=token, payload={"household_id": household_id, "actor": user_id, "action": action, "entity_type": entity_type, "entity_id": entity_id, "before_json": before, "after_json": after})
         except SupabaseHTTPError:
+            return
+
+    def _record_pilot_event(self, household_id: str, user_id: str, event_name: str, *, entity_type: str | None = None, entity_id: str | None = None, metadata: object = None, dedupe_key: str | None = None) -> None:
+        sanitized = _sanitize_pilot_metadata(event_name, metadata)
+        try:
+            _supabase_admin_request(
+                "POST",
+                "/rest/v1/rpc/record_pilot_event",
+                payload={
+                    "p_actor_user_id": user_id,
+                    "p_household_id": household_id,
+                    "p_event_name": event_name,
+                    "p_entity_type": entity_type,
+                    "p_entity_id": entity_id,
+                    "p_metadata": sanitized,
+                    "p_dedupe_key": dedupe_key,
+                },
+            )
+        except SupabaseHTTPError:
+            # Observability must never turn a successful household mutation into a 5xx.
             return
 
     def _patch_automatic_price(self, item_id: object, household_id: str, token: str, payload: dict, *, expected_item: dict, actor_user_id: str | None = None) -> dict | None:
@@ -969,6 +1039,24 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         assert context is not None
         household_id, _ = context
         if route == "/dashboard":
+            active_day = _iso_now().split("T", 1)[0]
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "member_active",
+                entity_type="member",
+                entity_id=user_id,
+                metadata={"source": "dashboard"},
+                dedupe_key=f"active:{user_id}:{active_day}",
+            )
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "dashboard_opened",
+                entity_type="dashboard",
+                metadata={"source": "dashboard"},
+                dedupe_key=f"dashboard:{user_id}:{active_day}",
+            )
             self._respond({**self._dashboard(household_id, user_id, token, user), "household_id": household_id})
         elif route == "/inbox":
             self._respond({"viewer": user_id, "items": self._table("inbox_items", household_id, token, ("status", "eq.open"), order="created_at.desc", limit=100), "generated_at": _iso_now()})
@@ -1057,8 +1145,19 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             user_id, token, _ = self._authenticate()
             name = str(payload.get("name", "")).strip()
             if not name: raise ValueError("household name is required")
-            household = _first(_supabase_request("POST", "/rest/v1/rpc/create_household", token=token, payload={"household_name": name}))
-            self._respond({"household": household or {}}, status=201)
+            household = _first(_supabase_request("POST", "/rest/v1/rpc/create_household", token=token, payload={"household_name": name})) or {}
+            household_id = str(household.get("id") or "").strip()
+            if household_id:
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "household_created",
+                    entity_type="household",
+                    entity_id=household_id,
+                    metadata={"source": "setup"},
+                    dedupe_key=f"household:{household_id}",
+                )
+            self._respond({"household": household}, status=201)
             return
         user_id, token, user = self._authenticate()
         if route in {"/admin/export", "/admin/delete"}:
@@ -1069,12 +1168,38 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         assert context is not None
         household_id, _ = context
 
+        if route == "/pilot/events":
+            event_name = str(payload.get("event_name", "")).strip().lower()
+            if event_name not in _PILOT_CLIENT_EVENTS:
+                raise ValueError("unsupported pilot event")
+            entity_id = _uuid(payload.get("entity_id"), "pilot event entity id")
+            entity_type = "briefing" if event_name.startswith("briefing_") else "conflict"
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                event_name,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                metadata=payload.get("metadata"),
+            )
+            self._respond({"recorded": True})
+            return
+
         if route == "/inbox":
             text = str(payload.get("original_text", "")).strip()
             if not text or len(text) > 4000: raise ValueError("original_text is required and must be 4000 characters or fewer")
             if not isinstance(payload.get("private", False), bool): raise ValueError("private must be a boolean")
             item = self._post_record("inbox_items", household_id, user_id, token, {"original_text": text, "source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)})
             self._log(household_id, user_id, token, "inbox.created", "inbox", item.get("id"), after=item)
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "capture_created",
+                entity_type="capture",
+                entity_id=str(item.get("id")),
+                metadata={"source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)},
+                dedupe_key=f"capture:{item.get('id')}",
+            )
             self._respond({"item": item}, status=201)
             return
         if route.startswith("/inbox/"):
@@ -1090,6 +1215,15 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if not table: raise ValueError("unsupported conversion type")
             created = self._post_record(table, household_id, user_id, token, payload)
             item = self._patch_record("inbox_items", item_id, household_id, token, {"status": "converted"})
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "capture_converted",
+                entity_type="capture",
+                entity_id=str(item_id),
+                metadata={"conversion_type": conversion},
+                dedupe_key=f"conversion:{item_id}",
+            )
             self._respond({conversion: created, "item": item}, status=201); return
         if route == "/activity/undo":
             self._respond({"undone": None}); return
@@ -1177,7 +1311,17 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if len(parts) != 2 or parts[1] not in {"complete", "delete"}: self._respond({"error": "not found"}, status=404); return
             task_id = _uuid(parts[0], "task id")
             if parts[1] == "complete":
-                task = self._patch_record("tasks", task_id, household_id, token, {"status": "done"}); self._respond({"task": task})
+                task = self._patch_record("tasks", task_id, household_id, token, {"status": "done"})
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "task_completed",
+                    entity_type="task",
+                    entity_id=str(task.get("id") or task_id),
+                    metadata={"source": "dashboard"},
+                    dedupe_key=f"task:{task_id}",
+                )
+                self._respond({"task": task})
             else:
                 deleted = self._delete_record("tasks", task_id, household_id, token); self._respond({"deleted": deleted})
             return
@@ -1239,6 +1383,17 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if role not in {"member", "child", "guest"}: raise ValueError("invalid role")
             raw_token = secrets.token_urlsafe(32); expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
             invitation = _first(_supabase_request("POST", "/rest/v1/invitations", token=token, payload={"household_id": household_id, "email": email, "role": role, "token_hash": hashlib.sha256(raw_token.encode()).hexdigest(), "invited_by": user_id, "expires_at": expires_at})) or {}
+            invitation_id = invitation.get("id")
+            if invitation_id:
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "member_invited",
+                    entity_type="invitation",
+                    entity_id=str(invitation_id),
+                    metadata={"role": role},
+                    dedupe_key=f"invitation:{invitation_id}",
+                )
             invitation.pop("token_hash", None); invitation["url"] = f"/invite?token={raw_token}"
             self._respond({"invitation": invitation}, status=201); return
         if route.startswith("/admin/invitations/") and route.endswith("/revoke"):

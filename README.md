@@ -22,7 +22,7 @@ Photon/iMessage remains available as a messaging transport through the Hermes `h
 3. `/api/auth/session` validates the Supabase access token and establishes the `HearthstateHostedSession` HttpOnly cookie.
 4. `/api/me` resolves the account's household memberships.
 5. `/api/dashboard` and page-specific endpoints call Supabase through `api/index.py`, always with authenticated household context.
-6. Supabase RLS protects profiles, households, memberships, tasks, events, meals, groceries, recipes, Inbox items, activity, chores, settings, preferences, and invitations.
+6. Supabase RLS protects profiles, households, memberships, tasks, events, meals, groceries, recipes, Inbox items, activity, chores, settings, preferences, invitations, and the service-role-only pilot measurement ledger.
 
 An authenticated member visiting `/setup` is redirected to `/`. An unprovisioned account may use `/setup` to create its first household. Hosted provisioning is currently operator-assisted; public onboarding remains roadmap work.
 
@@ -110,7 +110,7 @@ Completed foundation:
 Next priorities:
 
 1. Public hosted onboarding and owner-confirmed household export/deletion.
-2. Pilot instrumentation and retention measurement.
+2. Run the pilot using the [privacy-safe instrumentation and retention contract](docs/pilot-instrumentation.md) to measure activation, repeated capture, conversion, task completion, and weekly active households before adding expensive infrastructure.
 3. Policy-compliant live retailer refresh behind the curated matcher fallback.
 4. External calendar sync, push delivery, provider idempotency, billing, and richer multi-action parsing.
 
