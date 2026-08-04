@@ -587,6 +587,54 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             raise SupabaseHTTPError(404, f"{table} record not found")
         return rows[0]
 
+    def _update_meal(self, household_id: str, user_id: str, token: str, payload: dict) -> dict:
+        meal_id = _uuid(payload.get("id"), "meal id")
+        allowed = {"meal_date", "meal_type", "title", "cook", "status", "ingredients"}
+        patch = {key: payload[key] for key in allowed if key in payload}
+        if not patch:
+            raise ValueError("meal fields are required")
+        if "meal_date" in patch and not str(patch["meal_date"] or "").strip():
+            raise ValueError("meal_date is required")
+        if "meal_type" in patch:
+            meal_type = str(patch["meal_type"] or "").strip().lower()
+            if meal_type not in {"breakfast", "lunch", "dinner"}:
+                raise ValueError("invalid meal_type")
+            patch["meal_type"] = meal_type
+        if "title" in patch:
+            title = str(patch["title"] or "").strip()
+            if not title or len(title) > 500:
+                raise ValueError("title is required")
+            patch["title"] = title
+        if "cook" in patch:
+            cook = patch["cook"]
+            patch["cook"] = None if cook is None or not str(cook).strip() else _uuid(cook, "cook id")
+        if "status" in patch:
+            status = str(patch["status"] or "").strip().lower()
+            if status not in {"planned", "served", "archived"}:
+                raise ValueError("invalid meal status")
+            patch["status"] = status
+        if "ingredients" in patch:
+            ingredients = patch["ingredients"]
+            if not isinstance(ingredients, list) or len(ingredients) > 100:
+                raise ValueError("ingredients must be a list of 100 items or fewer")
+            if any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 200 for item in ingredients):
+                raise ValueError("ingredients must contain non-empty strings of 200 characters or fewer")
+            patch["ingredients"] = [item.strip() for item in ingredients]
+        updated = _first(_supabase_request(
+            "POST",
+            "/rest/v1/rpc/update_meal",
+            token=token,
+            payload={
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_meal_id": meal_id,
+                "p_patch": patch,
+            },
+        ))
+        if not updated:
+            raise SupabaseHTTPError(502, "Supabase did not return the updated meal")
+        return updated
+
     def _delete_record(self, table: str, record_id: object, household_id: str, token: str) -> str:
         identifier = _uuid(record_id, f"{table} id")
         _supabase_request("DELETE", f"/rest/v1/{table}", token=token, query=[("id", f"eq.{identifier}"), ("household_id", f"eq.{household_id}")])
@@ -1479,9 +1527,13 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             added = [self._post_record("grocery_items", household_id, user_id, token, {"name": str(item), "category": "Meal"}) for item in meal.get("ingredients", []) if str(item).strip()]
             self._respond({"added": added}); return
         if route == "/meals":
+            if payload.get("id"):
+                meal = self._update_meal(household_id, user_id, token, payload)
+                self._respond({"meal": meal}, status=200)
+                return
             if not str(payload.get("title", "")).strip() or not str(payload.get("meal_date", "")).strip(): raise ValueError("title and meal_date are required")
-            meal = self._patch_record("meals", payload["id"], household_id, token, payload) if payload.get("id") else self._post_record("meals", household_id, user_id, token, payload)
-            self._respond({"meal": meal}, status=200 if payload.get("id") else 201); return
+            meal = self._post_record("meals", household_id, user_id, token, payload)
+            self._respond({"meal": meal}, status=201); return
         if route == "/notifications/preferences":
             briefing_type = str(payload.get("briefing_type", "morning"))
             preference = {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": bool(payload.get("enabled", True)), "preferred_time": str(payload.get("preferred_time", "07:00")), "quiet_start": str(payload.get("quiet_start", "21:00")), "quiet_end": str(payload.get("quiet_end", "07:00")), "channel": "email", "updated_at": _iso_now()}

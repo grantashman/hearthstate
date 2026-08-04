@@ -2,7 +2,7 @@
 
 > **Purpose:** Preserve the product decision, market research, pricing hypothesis, and implementation sequence so future sessions can resume without reconstructing the discussion.
 >
-> **Current status:** P1.1, P1.2, P1.3, and the hosted Photon capture boundary are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, hosted Supabase Auth sessions, Vercel API transport, owner administration, AgentMail sign-in/invitation delivery, and authenticated Photon-to-Hearthstate commands are covered by the test suite. P2.4 has per-member briefing preferences, an authenticated Notifications settings page, atomic delivery claims, bounded retry state, and AgentMail briefing delivery for the local deployment. The next release is P1.4 data portability, followed by P0.1 pilot instrumentation and P2.1/P2.2 confirmation-first capture. Hosted provisioning remains operator-assisted; public onboarding and pilot recruitment remain before a commercial pilot.
+> **Current status:** P1.1, P1.2, P1.3, P1.4, P0.1, P2.1, and P2.2 are implemented on `main`: account/household isolation, owner invitations, one-time invitation acceptance, one-time sign-in tokens, hosted Supabase Auth sessions, Vercel API transport, owner administration, AgentMail sign-in/invitation delivery, authenticated Photon-to-Hearthstate commands, owner-confirmed portability, privacy-safe pilot instrumentation, and confirmation-first Inbox suggestions. The current iteration advances P2.3 with auditable meal edits: household-scoped cook changes, actor-bound updates, and before/after activity history. Hosted provisioning remains operator-assisted only for managed pilot setup; public first-household onboarding is available at `/setup`.
 
 ## Executive decision
 
@@ -37,7 +37,7 @@ The repository contains a working hosted vertical slice:
 - CI on Python 3.11 and 3.12.
 - Hosted API contract tests and browser asset checks passing at the current release.
 
-The current deployment is not yet a commercial SaaS product. Hosted production runs on Vercel and Supabase, while external calendar sync, commercial billing, native push infrastructure, pilot instrumentation, and a public onboarding path remain future work.
+The current deployment is not yet a commercial SaaS product. Hosted production runs on Vercel and Supabase, while external calendar sync, commercial billing, native push infrastructure, and a paid pilot remain future work. Authenticated accounts can self-serve their first household through `/setup`; hosted provisioning is no longer an operator-only prerequisite.
 
 ## Market and competitor notes
 
@@ -138,7 +138,7 @@ The implementation sequence is:
 5. Paid pilot and retention iteration.
 6. Broader automation and Android.
 
-The next coding sequence is **P1.4 data portability → P0.1 pilot instrumentation → P2.1/P2.2 universal Inbox and confirmation-first suggestions**. Each phase must ship with behavior tests, privacy/authorization probes, hosted deployment verification, and an explicit gate before the next phase begins. Hosted provisioning/onboarding remains an operational prerequisite for pilot households rather than a reason to delay the trust boundary. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
+P1.4 data portability, P0.1 pilot instrumentation, and P2.1/P2.2 universal Inbox and confirmation-first suggestions are complete on `main`. The current iteration advances P2.3 with auditable meal edits: cook changes are household-scoped, actor-bound, and recorded in activity history. Each phase must ship with behavior tests, privacy/authorization probes, hosted deployment verification, and an explicit gate before the next phase begins. The hosted architecture and route/session ownership are documented in `docs/maintainer-handoff.md`.
 
 ---
 
@@ -290,6 +290,8 @@ Next additions:
 - “What can we prepare before Saturday?”
 
 **Done when:** Each command has a success, ambiguity, not-found, and privacy test.
+
+**Current iteration:** Hosted meal editing now routes through a transactional `update_meal` RPC. It locks the actor membership and meal row, validates that an assigned cook belongs to the household, permits clearing the cook, and appends a before/after activity record. The broader natural-language additions remain separate work.
 
 ### P2.4 Deliver briefings through a real scheduler
 
@@ -457,13 +459,14 @@ Reconsider positioning or scope if:
 
 Start here when development resumes:
 
-1. **Data portability:** Ship owner-confirmed household export and deletion with documented retention behavior. **Current release.**
-2. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals. **Next gate.**
-3. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile.
-4. **Confirmation-first suggestions:** Let owners/members accept, edit, reject, or leave captures unresolved without silent mutations.
-5. **PWA pass:** Make capture and grocery mode mobile-first.
-6. **Pilot recruitment:** Start interviews before beginning native iOS work.
-7. **Delivery adapters:** Add push only after the email path has pilot evidence.
+1. **Data portability:** Ship owner-confirmed household export and deletion with documented retention behavior. **Complete on `main`.**
+2. **Pilot instrumentation:** Emit the events listed in Phase 0, including briefing opened/acted-on signals. **Complete on `main`.**
+3. **Capture contract:** Define one Inbox payload shared by web, Photon, email, and mobile. **Complete for dashboard and Photon.**
+4. **Confirmation-first suggestions:** Let owners/members accept, edit, reject, or leave captures unresolved without silent mutations. **Complete on `main`.**
+5. **Auditable meal mutations:** Keep cook changes and related meal edits household-scoped, actor-bound, and reversible/auditable. **Current iteration.**
+6. **PWA pass:** Make capture and grocery mode mobile-first.
+7. **Pilot recruitment:** Start interviews before beginning native iOS work.
+8. **Delivery adapters:** Add push only after the email path has pilot evidence.
 
 # Decisions deliberately postponed
 

@@ -125,6 +125,81 @@ class HostedApiContractTests(unittest.TestCase):
         request.send_response.assert_called_once_with(302)
         request.send_header.assert_any_call("Location", "/")
 
+    @patch("api.index._json_body", return_value={
+        "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+        "meal_date": "2026-08-08",
+        "meal_type": "dinner",
+        "title": "Tacos",
+        "cook": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+        "ingredients": ["tortillas"],
+        "created_by": "attacker",
+    })
+    @patch("api.index._supabase_request", return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "title": "Tacos"})
+    def test_meal_update_uses_membership_checked_rpc_and_server_bound_actor(self, supabase_request, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {"email": "owner@example.com"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._respond = Mock()
+
+        request._handle_post("/meals")
+
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/update_meal",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "owner-id",
+                "p_meal_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "p_patch": {
+                    "meal_date": "2026-08-08",
+                    "meal_type": "dinner",
+                    "title": "Tacos",
+                    "cook": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48",
+                    "ingredients": ["tortillas"],
+                },
+            },
+        )
+        request._respond.assert_called_once_with({"meal": supabase_request.return_value}, status=200)
+
+    @patch("api.index._supabase_request", return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "cook": None})
+    def test_meal_update_can_clear_the_cook(self, supabase_request):
+        request = object.__new__(handler)
+        updated = request._update_meal(
+            "household-id",
+            "owner-id",
+            "session-token",
+            {
+                "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                "cook": "",
+            },
+        )
+        self.assertEqual(updated["cook"], None)
+        self.assertEqual(supabase_request.call_args.kwargs["payload"]["p_patch"], {"cook": None})
+
+    def test_meal_update_rejects_oversized_or_malformed_ingredients_before_network_call(self):
+        request = object.__new__(handler)
+        with self.assertRaisesRegex(ValueError, "ingredients"):
+            request._update_meal(
+                "household-id",
+                "owner-id",
+                "session-token",
+                {
+                    "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                    "ingredients": [""],
+                },
+            )
+
+    def test_meal_update_migration_locks_membership_and_validates_cook_scope(self):
+        migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text()
+        self.assertIn("create or replace function public.update_meal", migration)
+        self.assertIn("auth.uid() <> p_actor_user_id", migration)
+        self.assertIn("from public.memberships", migration)
+        self.assertIn("for update", migration)
+        self.assertIn("meal cook must belong to household", migration)
+        self.assertIn("insert into public.activity_log", migration)
+        self.assertIn("revoke update on public.meals from authenticated", migration)
+
     def test_invalid_household_context_is_rejected(self):
         with self.assertRaises(ValueError):
             _uuid("not-a-uuid", "household id")
