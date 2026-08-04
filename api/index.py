@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -14,9 +15,9 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 try:
-    from .pricing import catalog_updates, compare_cart
+    from .pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
 except ImportError:  # Vercel may load api/index.py as a standalone function module.
-    from pricing import catalog_updates, compare_cart
+    from pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
 
 
 # The publishable key is safe to expose to the browser. Production should still
@@ -66,6 +67,18 @@ def _json_body(request: BaseHTTPRequestHandler) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("JSON object required")
     return payload
+
+
+def _safe_price(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("price must be a non-negative finite number")
+    try:
+        price = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("price must be a non-negative finite number") from exc
+    if not math.isfinite(price) or price < 0 or price > 99_999_999.99:
+        raise ValueError("price must be a non-negative finite number")
+    return price
 
 
 def _safe_error(raw: bytes) -> str:
@@ -165,6 +178,56 @@ def _first(value: object) -> dict | None:
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat()
+
+
+_PILOT_EVENT_METADATA_FIELDS = {
+    "household_created": {"source"},
+    "member_invited": {"role"},
+    "member_active": {"source"},
+    "dashboard_opened": {"source"},
+    "capture_created": {"source", "private"},
+    "capture_converted": {"conversion_type"},
+    "task_completed": {"source"},
+    "briefing_opened": {"source"},
+    "briefing_acted_on": {"source", "action"},
+    "conflict_resolved": {"source", "resolution"},
+    "subscription_started": {"plan"},
+    "subscription_cancelled": {"plan"},
+    "subscription_renewed": {"plan"},
+}
+_PILOT_EVENT_METADATA_VALUES = {
+    "source": {"setup", "dashboard", "email", "photon", "notification", "client", "unknown"},
+    "role": {"member", "child", "guest"},
+    "conversion_type": {"task", "event", "meal", "grocery"},
+    "action": {"task_completed", "grocery_opened", "calendar_opened", "dismissed", "unknown"},
+    "resolution": {"accepted", "dismissed", "snoozed", "unknown"},
+    "plan": {"pilot", "monthly", "annual", "unknown"},
+}
+_PILOT_CLIENT_EVENTS = {"briefing_opened", "briefing_acted_on", "conflict_resolved"}
+
+
+def _sanitize_pilot_metadata(event_name: str, metadata: object) -> dict:
+    allowed = _PILOT_EVENT_METADATA_FIELDS.get(event_name)
+    if allowed is None:
+        raise ValueError("unsupported pilot event")
+    if metadata is None:
+        return {}
+    if not isinstance(metadata, dict):
+        raise ValueError("pilot metadata must be an object")
+    sanitized: dict[str, object] = {}
+    for key in allowed:
+        value = metadata.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, int) and not isinstance(value, bool):
+            sanitized[key] = value
+        elif isinstance(value, str):
+            normalized = value.strip().lower()
+            if len(normalized) <= 80 and normalized in _PILOT_EVENT_METADATA_VALUES.get(key, set()):
+                sanitized[key] = normalized
+    return sanitized
 
 
 def _parse_datetime(value: object) -> datetime | None:
@@ -355,11 +418,13 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "tasks": {"title", "due_at", "owner", "assignee", "private", "recurrence", "status"},
             "events": {"title", "starts_at", "ends_at", "person", "assignee", "status"},
             "meals": {"meal_date", "meal_type", "title", "cook", "status", "ingredients"},
-            "grocery_items": {"name", "quantity", "unit", "category", "price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note", "status"},
+            "grocery_items": {"name", "quantity", "unit", "category", "status"},
             "recipes": {"source", "source_policy", "title", "source_url", "image_url", "summary", "tags", "prep_minutes", "cook_minutes", "ingredients"},
             "chore_templates": {"title", "cadence", "participants", "next_index", "active"},
         }.get(table, set())
         record = {key: value for key, value in payload.items() if key in fields}
+        if table == "grocery_items":
+            record = normalize_grocery_item(record)
         record["household_id"] = household_id
         record["created_by"] = user_id
         return record
@@ -371,17 +436,60 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             raise SupabaseHTTPError(502, "Supabase did not return the created record")
         return rows[0]
 
-    def _patch_record(self, table: str, record_id: object, household_id: str, token: str, payload: dict) -> dict:
+    def _patch_record(self, table: str, record_id: object, household_id: str, token: str, payload: dict, *, allow_price_metadata: bool = False, actor_user_id: str | None = None) -> dict:
         identifier = _uuid(record_id, f"{table} id")
+        grocery_fields = {"name", "quantity", "unit", "category", "status"}
+        if allow_price_metadata:
+            grocery_fields.update({"price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note"})
         allowed = {
             "tasks": {"title", "due_at", "owner", "assignee", "private", "recurrence", "status"},
             "events": {"title", "starts_at", "ends_at", "person", "assignee", "status"},
             "meals": {"meal_date", "meal_type", "title", "cook", "status", "ingredients"},
-            "grocery_items": {"name", "quantity", "unit", "category", "price", "price_source", "price_url", "price_checked_at", "price_confidence", "price_note", "status"},
+            "grocery_items": grocery_fields,
         }.get(table, set())
         record = {key: value for key, value in payload.items() if key in allowed}
-        rows = _rows(_supabase_request("PATCH", f"/rest/v1/{table}", token=token, query=[("id", f"eq.{identifier}"), ("household_id", f"eq.{household_id}")], payload=record))
+        compare_and_swap_row = None
+        if table == "grocery_items" and any(key in record for key in ("name", "quantity", "unit", "category")):
+            compare_and_swap_row = _first(_supabase_request(
+                "GET",
+                "/rest/v1/grocery_items",
+                token=token,
+                query=[
+                    ("select", "name,quantity,unit,category"),
+                    ("id", f"eq.{identifier}"),
+                    ("household_id", f"eq.{household_id}"),
+                ],
+            ))
+            if compare_and_swap_row:
+                canonical = normalize_grocery_item(compare_and_swap_row)
+                record = {key: canonical[key] for key in ("name", "quantity", "unit", "category") if key in canonical}
+                record.update({key: value for key, value in payload.items() if key in allowed})
+            record = normalize_grocery_item(record)
+        query = [("id", f"eq.{identifier}"), ("household_id", f"eq.{household_id}")]
+        if compare_and_swap_row:
+            for field in ("name", "quantity", "unit", "category"):
+                if field in compare_and_swap_row:
+                    value = compare_and_swap_row[field]
+                    query.append((field, "is.null" if value is None else f"eq.{value}"))
+        if table == "grocery_items" and allow_price_metadata:
+            if not actor_user_id:
+                raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
+            rows = _rows(_supabase_admin_request(
+                "POST",
+                "/rest/v1/rpc/set_grocery_manual_price",
+                payload={
+                    "p_actor_user_id": actor_user_id,
+                    "p_household_id": household_id,
+                    "p_item_id": identifier,
+                    "p_price": record.get("price"),
+                    "p_checked_at": record.get("price_checked_at"),
+                },
+            ))
+        else:
+            rows = _rows(_supabase_request("PATCH", f"/rest/v1/{table}", token=token, query=query, payload=record))
         if not rows:
+            if compare_and_swap_row:
+                raise SupabaseHTTPError(409, "grocery item changed; retry the quantity update")
             raise SupabaseHTTPError(404, f"{table} record not found")
         return rows[0]
 
@@ -396,29 +504,74 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         except SupabaseHTTPError:
             return
 
-    def _patch_automatic_price(self, item_id: object, household_id: str, token: str, payload: dict) -> dict | None:
-        """Apply a catalog price only if the row is still not marked manual.
+    def _record_pilot_event(self, household_id: str, user_id: str, event_name: str, *, entity_type: str | None = None, entity_id: str | None = None, metadata: object = None, dedupe_key: str | None = None) -> None:
+        try:
+            sanitized = _sanitize_pilot_metadata(event_name, metadata)
+            _supabase_admin_request(
+                "POST",
+                "/rest/v1/rpc/record_pilot_event",
+                payload={
+                    "p_actor_user_id": user_id,
+                    "p_household_id": household_id,
+                    "p_event_name": event_name,
+                    "p_entity_type": entity_type,
+                    "p_entity_id": entity_id,
+                    "p_metadata": sanitized,
+                    "p_dedupe_key": dedupe_key,
+                },
+            )
+        except Exception:
+            # Observability must never turn a successful household mutation into a 5xx.
+            return
 
-        The filters make the read/patch boundary optimistic: if a household
-        member saves a manual price between the snapshot read and this patch,
-        PostgREST updates zero rows and the manual value wins.
-        """
+    def _patch_automatic_price(self, item_id: object, household_id: str, token: str, payload: dict, *, expected_item: dict, actor_user_id: str | None = None) -> dict | None:
+        """Apply a catalog price only if the item identity is unchanged and non-manual."""
         identifier = _uuid(item_id, "grocery_items id")
-        rows = _rows(_supabase_request(
-            "PATCH",
+        current = _first(_supabase_request(
+            "GET",
             "/rest/v1/grocery_items",
             token=token,
             query=[
+                ("select", "name,quantity,unit,category,price_confidence,price_source"),
                 ("id", f"eq.{identifier}"),
                 ("household_id", f"eq.{household_id}"),
-                ("or", "(price_confidence.is.null,price_confidence.neq.manual)"),
-                ("or", "(price_source.is.null,price_source.not.ilike.Manual*)"),
             ],
-            payload=payload,
+        ))
+        if not current:
+            return None
+        current_identity = normalize_grocery_item(current)
+        expected_identity = normalize_grocery_item(expected_item)
+        if any(current_identity.get(field) != expected_identity.get(field) for field in ("name", "quantity", "unit", "category")):
+            return None
+        if _is_manual_price(current):
+            return None
+        if not actor_user_id:
+            raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
+        rpc_payload = {
+            "p_actor_user_id": actor_user_id,
+            "p_household_id": household_id,
+            "p_item_id": identifier,
+            "p_expected_name": current.get("name"),
+            "p_expected_quantity": current.get("quantity"),
+            "p_expected_unit": current.get("unit"),
+            "p_expected_category": current.get("category"),
+            "p_expected_price_confidence": current.get("price_confidence"),
+            "p_expected_price_source": current.get("price_source"),
+            "p_price": payload.get("price"),
+            "p_price_source": payload.get("price_source"),
+            "p_price_url": payload.get("price_url"),
+            "p_price_confidence": payload.get("price_confidence"),
+            "p_price_checked_at": payload.get("price_checked_at"),
+            "p_price_note": payload.get("price_note"),
+        }
+        rows = _rows(_supabase_admin_request(
+            "POST",
+            "/rest/v1/rpc/apply_grocery_automatic_price",
+            payload=rpc_payload,
         ))
         return rows[0] if rows else None
 
-    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles") -> tuple[list[dict], list[str]]:
+    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles", *, actor_user_id: str | None = None) -> tuple[list[dict], list[str]]:
         """Persist safe curated matches without replacing household-entered prices."""
         updated: list[str] = []
         for update in catalog_updates(items, retailer):
@@ -436,18 +589,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     "price_checked_at": match["observed_at"],
                     "price_note": match["note"],
                 },
+                expected_item=item,
+                actor_user_id=actor_user_id,
             )
             if patched is None:
                 continue
             for index, current in enumerate(items):
                 if str(current.get("id")) == str(item.get("id")):
-                    items[index] = patched
+                    items[index] = normalize_grocery_item(patched)
                     break
             updated.append(str(item.get("name") or ""))
         return items, updated
 
-    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str) -> None:
+    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str, *, actor_user_id: str | None = None) -> None:
         """Persist the explicit refresh result as household-scoped retailer observations."""
+        if not actor_user_id:
+            raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
         for retailer, result in comparison.items():
             for line in result.get("lines", []):
                 item_id = line.get("item_id")
@@ -455,43 +612,41 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     continue
                 match = line.get("match")
                 if match is None:
-                    _supabase_request(
-                        "DELETE",
-                        "/rest/v1/grocery_price_quotes",
-                        token=token,
-                        query=[
-                            ("household_id", f"eq.{household_id}"),
-                            ("grocery_item_id", f"eq.{item_id}"),
-                            ("retailer", f"eq.{retailer}"),
-                        ],
+                    _supabase_admin_request(
+                        "POST",
+                        "/rest/v1/rpc/delete_grocery_price_quote",
+                        payload={
+                            "p_actor_user_id": actor_user_id,
+                            "p_household_id": household_id,
+                            "p_grocery_item_id": item_id,
+                            "p_retailer": retailer,
+                        },
                     )
                     continue
-                _supabase_request(
+                _supabase_admin_request(
                     "POST",
-                    "/rest/v1/grocery_price_quotes",
-                    token=token,
-                    query=[("on_conflict", "grocery_item_id,retailer")],
+                    "/rest/v1/rpc/upsert_grocery_price_quote",
                     payload={
-                        "household_id": household_id,
-                        "grocery_item_id": item_id,
-                        "retailer": retailer,
-                        "product_key": match["product_key"],
-                        "product_title": match["title"],
-                        "product_url": match["url"],
-                        "price": match["price"],
-                        "observed_at": match["observed_at"],
-                        "confidence": match["confidence"],
-                        "match_basis": match["match_basis"],
-                        "note": match["note"],
+                        "p_actor_user_id": actor_user_id,
+                        "p_household_id": household_id,
+                        "p_grocery_item_id": item_id,
+                        "p_retailer": retailer,
+                        "p_product_key": match["product_key"],
+                        "p_product_title": match["title"],
+                        "p_product_url": match["url"],
+                        "p_price": match["price"],
+                        "p_observed_at": match["observed_at"],
+                        "p_confidence": match["confidence"],
+                        "p_match_basis": match["match_basis"],
+                        "p_note": match["note"],
                     },
-                    prefer="return=minimal,resolution=merge-duplicates",
                 )
 
-    def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False) -> dict:
-        items = self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")
+    def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False, actor_user_id: str | None = None) -> dict:
+        items = [normalize_grocery_item(item) for item in self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")]
         auto_updated: list[str] = []
         if refresh:
-            items, auto_updated = self._apply_catalog_matches(items, household_id, token)
+            items, auto_updated = self._apply_catalog_matches(items, household_id, token, actor_user_id=actor_user_id)
         comparison = compare_cart(items)
         settings = _first(_supabase_request("GET", "/rest/v1/planner_settings", token=token, query=[("select", "weekly_budget,updated_at"), ("household_id", f"eq.{household_id}")])) or {}
         budget = settings.get("weekly_budget")
@@ -884,6 +1039,24 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         assert context is not None
         household_id, _ = context
         if route == "/dashboard":
+            active_day = _iso_now().split("T", 1)[0]
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "member_active",
+                entity_type="member",
+                entity_id=user_id,
+                metadata={"source": "dashboard"},
+                dedupe_key=f"active:{user_id}:{active_day}",
+            )
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "dashboard_opened",
+                entity_type="dashboard",
+                metadata={"source": "dashboard"},
+                dedupe_key=f"dashboard:{user_id}:{active_day}",
+            )
             self._respond({**self._dashboard(household_id, user_id, token, user), "household_id": household_id})
         elif route == "/inbox":
             self._respond({"viewer": user_id, "items": self._table("inbox_items", household_id, token, ("status", "eq.open"), order="created_at.desc", limit=100), "generated_at": _iso_now()})
@@ -972,8 +1145,19 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             user_id, token, _ = self._authenticate()
             name = str(payload.get("name", "")).strip()
             if not name: raise ValueError("household name is required")
-            household = _first(_supabase_request("POST", "/rest/v1/rpc/create_household", token=token, payload={"household_name": name}))
-            self._respond({"household": household or {}}, status=201)
+            household = _first(_supabase_request("POST", "/rest/v1/rpc/create_household", token=token, payload={"household_name": name})) or {}
+            household_id = str(household.get("id") or "").strip()
+            if household_id:
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "household_created",
+                    entity_type="household",
+                    entity_id=household_id,
+                    metadata={"source": "setup"},
+                    dedupe_key=f"household:{household_id}",
+                )
+            self._respond({"household": household}, status=201)
             return
         user_id, token, user = self._authenticate()
         if route in {"/admin/export", "/admin/delete"}:
@@ -984,12 +1168,38 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         assert context is not None
         household_id, _ = context
 
+        if route == "/pilot/events":
+            event_name = str(payload.get("event_name", "")).strip().lower()
+            if event_name not in _PILOT_CLIENT_EVENTS:
+                raise ValueError("unsupported pilot event")
+            if "entity_id" in payload:
+                raise ValueError("client pilot events cannot include entity ids")
+            entity_type = "briefing" if event_name.startswith("briefing_") else "conflict"
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                event_name,
+                entity_type=entity_type,
+                metadata=payload.get("metadata"),
+            )
+            self._respond({"recorded": True})
+            return
+
         if route == "/inbox":
             text = str(payload.get("original_text", "")).strip()
             if not text or len(text) > 4000: raise ValueError("original_text is required and must be 4000 characters or fewer")
             if not isinstance(payload.get("private", False), bool): raise ValueError("private must be a boolean")
             item = self._post_record("inbox_items", household_id, user_id, token, {"original_text": text, "source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)})
             self._log(household_id, user_id, token, "inbox.created", "inbox", item.get("id"), after=item)
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "capture_created",
+                entity_type="capture",
+                entity_id=str(item.get("id")),
+                metadata={"source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)},
+                dedupe_key=f"capture:{item.get('id')}",
+            )
             self._respond({"item": item}, status=201)
             return
         if route.startswith("/inbox/"):
@@ -1005,6 +1215,15 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if not table: raise ValueError("unsupported conversion type")
             created = self._post_record(table, household_id, user_id, token, payload)
             item = self._patch_record("inbox_items", item_id, household_id, token, {"status": "converted"})
+            self._record_pilot_event(
+                household_id,
+                user_id,
+                "capture_converted",
+                entity_type="capture",
+                entity_id=str(item_id),
+                metadata={"conversion_type": conversion},
+                dedupe_key=f"conversion:{item_id}",
+            )
             self._respond({conversion: created, "item": item}, status=201); return
         if route == "/activity/undo":
             self._respond({"undone": None}); return
@@ -1027,7 +1246,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             budget = float(payload.get("budget"))
             if budget < 0: raise ValueError("budget must not be negative")
             _supabase_request("POST", "/rest/v1/planner_settings", token=token, query=[("on_conflict", "household_id")], payload={"household_id": household_id, "weekly_budget": budget, "updated_by": user_id}, prefer="return=minimal,resolution=merge-duplicates")
-            self._respond(self._grocery_snapshot(household_id, token)); return
+            self._respond(self._grocery_snapshot(household_id, token, actor_user_id=user_id)); return
         if route == "/groceries/price":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
             self._respond({"item": self._patch_record(
@@ -1036,20 +1255,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 household_id,
                 token,
                 {
-                    "price": float(payload.get("price")),
+                    "price": _safe_price(payload.get("price")),
                     "price_source": "Manual entry",
                     "price_url": None,
                     "price_confidence": "manual",
                     "price_checked_at": _iso_now(),
                     "price_note": "Entered by household",
                 },
+                allow_price_metadata=True,
+                actor_user_id=user_id,
             )}); return
         if route == "/groceries/item":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
             self._respond({"item": self._patch_record("grocery_items", item_id, household_id, token, {key: payload[key] for key in ("quantity", "unit", "category") if key in payload})}); return
         if route in {"/groceries/refresh", "/groceries/refresh-coles"}:
-            snapshot = self._grocery_snapshot(household_id, token, refresh=True)
-            self._upsert_price_quotes(snapshot.get("comparison", {}), household_id, token)
+            snapshot = self._grocery_snapshot(household_id, token, refresh=True, actor_user_id=user_id)
+            self._upsert_price_quotes(snapshot.get("comparison", {}), household_id, token, actor_user_id=user_id)
             updated = snapshot.get("auto_updated", [])
             response = {**snapshot, "updated_items": updated, "updated_count": len(updated)}
             if route == "/groceries/refresh-coles":
@@ -1090,7 +1311,17 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if len(parts) != 2 or parts[1] not in {"complete", "delete"}: self._respond({"error": "not found"}, status=404); return
             task_id = _uuid(parts[0], "task id")
             if parts[1] == "complete":
-                task = self._patch_record("tasks", task_id, household_id, token, {"status": "done"}); self._respond({"task": task})
+                task = self._patch_record("tasks", task_id, household_id, token, {"status": "done"})
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "task_completed",
+                    entity_type="task",
+                    entity_id=str(task.get("id") or task_id),
+                    metadata={"source": "dashboard"},
+                    dedupe_key=f"task:{task_id}",
+                )
+                self._respond({"task": task})
             else:
                 deleted = self._delete_record("tasks", task_id, household_id, token); self._respond({"deleted": deleted})
             return
@@ -1152,6 +1383,17 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if role not in {"member", "child", "guest"}: raise ValueError("invalid role")
             raw_token = secrets.token_urlsafe(32); expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
             invitation = _first(_supabase_request("POST", "/rest/v1/invitations", token=token, payload={"household_id": household_id, "email": email, "role": role, "token_hash": hashlib.sha256(raw_token.encode()).hexdigest(), "invited_by": user_id, "expires_at": expires_at})) or {}
+            invitation_id = invitation.get("id")
+            if invitation_id:
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "member_invited",
+                    entity_type="invitation",
+                    entity_id=str(invitation_id),
+                    metadata={"role": role},
+                    dedupe_key=f"invitation:{invitation_id}",
+                )
             invitation.pop("token_hash", None); invitation["url"] = f"/invite?token={raw_token}"
             self._respond({"invitation": invitation}, status=201); return
         if route.startswith("/admin/invitations/") and route.endswith("/revoke"):

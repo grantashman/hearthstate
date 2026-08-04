@@ -35,7 +35,7 @@ The repository is hosted-only. Retired SQLite/account databases may remain as ig
 4. `/api/auth/session` validates the token and establishes the `HearthstateHostedSession` HttpOnly cookie.
 5. `/api/me` resolves the account's household memberships.
 6. Members go to `/`; an authenticated member visiting `/setup` is redirected to `/`. A genuinely unprovisioned account may still use `/setup` to create its first household.
-7. `/api/dashboard` and page-specific endpoints read or mutate only the active household.
+7. `/api/dashboard` and page-specific endpoints read or mutate only the active household. Grocery price/provenance writes and retailer quote refreshes use service-role-only RPCs that lock and re-check the server-derived actor's membership inside the mutation transaction; authenticated PostgREST clients retain only safe grocery-column writes and quote reads.
 
 Photon bridge requests use `X-Hearthstate-Photon-Key`, resolve the sender through `channel_identities`, re-check membership, and then use the server-only Supabase service role for the mapped household. The bridge exposes state plus a finite command set; it does not accept arbitrary table names or SQL.
 
@@ -99,7 +99,7 @@ Hosted `/api/health` should report `service: hearthstate` and `backend: supabase
 ## Known boundaries and next work
 
 - Hosted provisioning is currently an operator step; public onboarding and owner-confirmed export/deletion remain roadmap work.
-- The grocery matcher now mutates household prices only during an explicit retailer refresh; ordinary reads are side-effect free, and recommendations require equivalent product sizes/variants.
+- The grocery matcher now mutates household prices only during an explicit retailer refresh; ordinary reads are side-effect free, and recommendations require equivalent product sizes/variants. Controlled aliases support retailer-specific naming (including `Coke Zero`), size-qualified recipe lines become one packaged purchase only when a catalog product supports that interpretation, and an opt-in closest-pack fallback is displayed as non-equivalent planning information. Price/provenance fields are server-controlled: generic grocery writes strip them, the manual-price route supplies fixed metadata, automatic refresh uses exact metadata CAS, and dashboard links are restricted to HTTPS retailer domains.
 - A rate-limited, policy-compliant live retailer adapter remains future work behind the curated matcher.
-- External calendar sync, push delivery, provider idempotency, analytics/pilot instrumentation, billing, and richer multi-action parsing remain future work.
+- Server-side pilot instrumentation records privacy-safe funnel events (household creation, member activation, dashboard opens, capture creation/conversion, task completion, invitations, briefing signals, and conflict resolution) through a service-role-only RPC. Raw capture text, titles, email addresses, URLs, and message bodies are excluded from event metadata.
 - Keep household isolation and hosted Supabase behavior covered by API contract tests and production read-only checks.

@@ -1,15 +1,61 @@
 import unittest
 
-from api.pricing import catalog_updates, compare_cart, match_item, normalize_name
+from api.pricing import catalog_updates, compare_cart, match_item, normalize_grocery_item, normalize_name
 
 
 class RetailerMatcherTests(unittest.TestCase):
     def test_normalization_handles_apostrophes_and_recipe_measurements(self):
         self.assertEqual(normalize_name("Cole’s  1L Full-Cream Milk"), "coles 1l full cream milk")
 
+    def test_woolworths_coke_zero_alias_uses_linked_product(self):
+        match = match_item("Coke Zero", "woolworths")
+        self.assertIsNotNone(match)
+        self.assertEqual(match["title"], "Coca-Cola Zero Sugar Soft Drink Bottle 2L")
+        self.assertEqual(match["price"], 4.00)
+        self.assertEqual(match["url"], "https://www.woolworths.com.au/shop/productdetails/672966/coca-cola-zero-sugar-soft-drink-bottle")
+
+    def test_woolworths_coke_zero_can_be_shown_as_closest_pack_for_600ml_request(self):
+        match = match_item("Coke Zero 600ml", "woolworths")
+        self.assertIsNotNone(match)
+        self.assertEqual(match["title"], "Coca-Cola Zero Sugar Soft Drink Bottle 2L")
+        self.assertEqual(match["size_match"], "closest")
+        self.assertEqual(match["requested_size"], "600ml")
+
+    def test_aldi_coke_zero_uses_brand_name_and_exact_size(self):
+        match = match_item("Coke Zero 600ml", "aldi")
+        self.assertIsNotNone(match)
+        self.assertEqual(match["title"], "Coke Coca Cola Zero Sugar 600ml")
+        self.assertEqual(match["price"], 3.99)
+        self.assertEqual(match["url"], "https://www.aldi.com.au/product/coca-cola-coke-coca-cola-zero-sugar-600ml-000000000000366926")
+
+    def test_aldi_generic_coke_zero_fails_closed_when_pack_sizes_are_ambiguous(self):
+        self.assertIsNone(match_item("Coke Zero", "aldi"))
+
+    def test_size_quantity_becomes_one_purchase_when_it_matches_a_packaged_product(self):
+        item = normalize_grocery_item({"name": "Coke Zero", "quantity": 600, "unit": "ml"})
+        self.assertEqual(item["name"], "Coke Zero 600ml")
+        self.assertEqual(item["quantity"], 1)
+        self.assertEqual(item["unit"], "each")
+
+    def test_loose_weighted_product_does_not_become_one_pack(self):
+        item = normalize_grocery_item({"name": "bananas", "quantity": 170, "unit": "g"})
+        self.assertEqual(item["name"], "bananas")
+        self.assertEqual(item["quantity"], 170)
+        self.assertEqual(item["unit"], "g")
+
+    def test_size_quantity_only_normalizes_for_an_exact_catalog_pack(self):
+        nearest = normalize_grocery_item({"name": "Coke Zero", "quantity": 500, "unit": "ml"})
+        self.assertEqual(nearest["name"], "Coke Zero")
+        self.assertEqual(nearest["quantity"], 500)
+        self.assertEqual(nearest["unit"], "ml")
+
+        item = normalize_grocery_item({"name": "potatoes", "quantity": 2, "unit": "kg"})
+        self.assertEqual(item["name"], "potatoes")
+        self.assertEqual(item["quantity"], 2)
+        self.assertEqual(item["unit"], "kg")
+
     def test_coles_alias_match_returns_explainable_provenance(self):
         match = match_item("cole’s brand white pepper", "coles")
-
         self.assertIsNotNone(match)
         self.assertEqual(match["retailer"], "coles")
         self.assertEqual(match["title"], "Coles White Pepper 100g")
@@ -29,6 +75,14 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertIsNotNone(match_item("2L Coke Zero", "coles"))
         self.assertIsNone(match_item("600mL Coke Zero", "coles"))
 
+    def test_invalid_signed_size_fails_closed(self):
+        self.assertIsNone(match_item("Coke Zero -600ml", "aldi"))
+
+    def test_zero_size_comparison_fails_closed_instead_of_crashing(self):
+        comparison = compare_cart([{"name": "Coke Zero 0ml", "quantity": 1, "unit": "each"}])
+        self.assertTrue(all(result["unknown_count"] == 1 for result in comparison.values()))
+        self.assertTrue(all(result["total"] == 0 for result in comparison.values()))
+
     def test_explicit_variant_fails_closed_instead_of_substituting_original(self):
         self.assertIsNotNone(match_item("franks hot sauce", "coles"))
         self.assertIsNone(match_item("Frank's Buffalo hot sauce", "coles"))
@@ -36,6 +90,14 @@ class RetailerMatcherTests(unittest.TestCase):
 
     def test_manual_source_is_protected_even_without_confidence_flag(self):
         self.assertEqual(catalog_updates([{"name": "eggs", "price": 4.25, "price_source": "Manual entry"}]), [])
+
+    def test_manual_confidence_is_casefolded_and_trimmed(self):
+        self.assertEqual(catalog_updates([{"name": "eggs", "price_confidence": "Manual"}]), [])
+        self.assertEqual(catalog_updates([{"name": "eggs", "price_confidence": " manual "}]), [])
+
+    def test_manual_price_source_and_confidence_are_casefolded_and_trimmed(self):
+        self.assertEqual(catalog_updates([{"name": "eggs", "price_source": " manual entry "}]), [])
+        self.assertEqual(catalog_updates([{"name": "eggs", "price_confidence": "MANUAL "}]), [])
 
     def test_unknown_product_variant_is_not_inherited_from_generic_alias(self):
         self.assertIsNone(match_item("milk powder", "coles"))
@@ -72,6 +134,32 @@ class RetailerMatcherTests(unittest.TestCase):
 
     def test_unknown_item_is_not_guessed(self):
         self.assertIsNone(match_item("mystery pantry item", "aldi"))
+
+    def test_generic_coke_zero_is_equivalent_across_matching_2l_catalogs(self):
+        comparison = compare_cart([{"name": "Coke Zero", "quantity": 1}], retailers=("coles", "woolworths"))
+        self.assertTrue(comparison["coles"]["comparable"])
+        self.assertTrue(comparison["woolworths"]["comparable"])
+        self.assertEqual(
+            comparison["coles"]["lines"][0]["match"]["comparison_key"],
+            comparison["woolworths"]["lines"][0]["match"]["comparison_key"],
+        )
+
+    def test_size_qualified_coke_zero_comparison_uses_one_pack(self):
+        comparison = compare_cart([{"name": "Coke Zero", "quantity": 600, "unit": "ml"}])
+        self.assertEqual(comparison["aldi"]["total"], 3.99)
+        self.assertEqual(comparison["aldi"]["lines"][0]["quantity"], 1)
+        self.assertEqual(comparison["aldi"]["lines"][0]["name"], "Coke Zero 600ml")
+        self.assertEqual(comparison["woolworths"]["lines"][0]["match"]["size_match"], "closest")
+        self.assertFalse(comparison["woolworths"]["comparable"])
+
+    def test_closest_pack_is_not_automatic_price_update(self):
+        item = {"name": "Coke Zero 600ml", "quantity": 1, "unit": "each"}
+        self.assertEqual(catalog_updates([item], "woolworths"), [])
+
+    def test_closest_pack_is_not_comparable(self):
+        comparison = compare_cart([{"name": "Coke Zero 600ml", "quantity": 1}], retailers=("woolworths",))
+        self.assertEqual(comparison["woolworths"]["lines"][0]["match"]["size_match"], "closest")
+        self.assertFalse(comparison["woolworths"]["comparable"])
 
     def test_cart_comparison_returns_each_retailer_total_and_unknown_counts(self):
         comparison = compare_cart(

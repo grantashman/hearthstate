@@ -2,10 +2,136 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import unittest
 
-from api.index import handler
+from api.index import SupabaseHTTPError, handler
 
 
 class HostedGroceryMatchingTests(unittest.TestCase):
+    def test_size_qualified_existing_row_is_displayed_as_one_pack(self):
+        item = {
+            "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "name": "Coke Zero",
+            "quantity": 600,
+            "unit": "ml",
+            "price": None,
+            "price_confidence": None,
+            "status": "open",
+        }
+        request = object.__new__(handler)
+        request._table = Mock(return_value=[item])
+        with patch("api.index._supabase_request", return_value=[]):
+            snapshot = request._grocery_snapshot("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "access-token")
+        self.assertEqual(snapshot["items"][0]["name"], "Coke Zero 600ml")
+        self.assertEqual(snapshot["items"][0]["quantity"], 1)
+        self.assertEqual(snapshot["items"][0]["unit"], "each")
+        self.assertEqual(snapshot["comparison"]["aldi"]["total"], 3.99)
+
+    def test_refresh_patch_keeps_size_qualified_item_as_one_pack(self):
+        item = {
+            "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "name": "Coke Zero",
+            "quantity": 600,
+            "unit": "ml",
+            "price": None,
+            "price_confidence": None,
+            "status": "open",
+        }
+        request = object.__new__(handler)
+        request._patch_automatic_price = Mock(return_value={**item, "price": 4.00})
+        items, updated = request._apply_catalog_matches([item], "household-id", "access-token", retailer="aldi")
+        self.assertEqual(updated, ["Coke Zero 600ml"])
+        self.assertEqual(items[0]["name"], "Coke Zero 600ml")
+        self.assertEqual(items[0]["quantity"], 1)
+        self.assertEqual(items[0]["unit"], "each")
+
+    def test_grocery_record_payload_canonicalizes_size_as_one_purchase(self):
+        request = object.__new__(handler)
+        record = request._record_payload(
+            "grocery_items",
+            {"name": "Coke Zero", "quantity": 600, "unit": "ml", "category": "Recipe"},
+            "user-id",
+            "household-id",
+        )
+        self.assertEqual(record["name"], "Coke Zero 600ml")
+        self.assertEqual(record["quantity"], 1)
+        self.assertEqual(record["unit"], "each")
+        self.assertNotIn("requested_size", record)
+        self.assertNotIn("price", record)
+        self.assertNotIn("price_source", record)
+        self.assertNotIn("price_url", record)
+        self.assertNotIn("price_confidence", record)
+
+    def test_record_payload_retains_meal_fields(self):
+        request = object.__new__(handler)
+        record = request._record_payload("meals", {"meal_date": "2026-08-04", "meal_type": "dinner", "title": "Tacos", "cook": "user-id", "status": "planned", "ingredients": []}, "user-id", "household-id")
+        self.assertEqual(record["title"], "Tacos")
+        self.assertEqual(record["household_id"], "household-id")
+
+    def test_generic_grocery_patch_rejects_client_provenance_fields(self):
+        request = object.__new__(handler)
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        existing = {"id": item_id, "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe"}
+        with patch("api.index._supabase_request", side_effect=[[existing], [{**existing, "quantity": 2}]]) as supabase:
+            request._patch_record("grocery_items", item_id, "household-id", "access-token", {"quantity": 2, "price": 1, "price_url": "javascript:alert(1)", "price_source": "Coles fake"})
+        payload = supabase.call_args_list[1].kwargs["payload"]
+        self.assertNotIn("price", payload)
+        self.assertNotIn("price_url", payload)
+        self.assertNotIn("price_source", payload)
+
+    def test_manual_price_patch_uses_membership_checked_transactional_rpc(self):
+        request = object.__new__(handler)
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        with patch("api.index._supabase_request") as member_request, patch("api.index._supabase_admin_request", return_value=[{"id": item_id}]) as admin_request:
+            request._patch_record("grocery_items", item_id, "household-id", "access-token", {"price": 4.25, "price_source": "Manual entry", "price_confidence": "manual"}, allow_price_metadata=True, actor_user_id="user-id")
+        self.assertEqual(admin_request.call_args.args[:2], ("POST", "/rest/v1/rpc/set_grocery_manual_price"))
+        self.assertEqual(admin_request.call_args.kwargs["payload"]["p_actor_user_id"], "user-id")
+        member_request.assert_not_called()
+
+
+    def test_manual_price_patch_is_the_only_price_metadata_path(self):
+        request = object.__new__(handler)
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        existing = {"id": item_id, "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe"}
+        with patch("api.index._supabase_admin_request", return_value=[{**existing, "price": 4.25}]) as admin_request:
+            request._patch_record("grocery_items", item_id, "household-id", "access-token", {"price": 4.25, "price_source": "Manual entry", "price_confidence": "manual"}, allow_price_metadata=True, actor_user_id="user-id")
+        payload = admin_request.call_args.kwargs["payload"]
+        self.assertEqual(payload["p_price"], 4.25)
+        self.assertEqual(payload["p_item_id"], item_id)
+
+    def test_quantity_patch_persists_canonical_existing_pack(self):
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        existing = {"id": item_id, "name": "Coke Zero", "quantity": 600, "unit": "ml", "category": "Recipe"}
+        patched = {**existing, "name": "Coke Zero 600ml", "quantity": 2, "unit": "each"}
+        request = object.__new__(handler)
+        with patch("api.index._supabase_request", side_effect=[[existing], [patched]]) as supabase:
+            result = request._patch_record("grocery_items", item_id, "household-id", "access-token", {"quantity": 2})
+        payload = supabase.call_args_list[1].kwargs["payload"]
+        self.assertEqual(payload["name"], "Coke Zero 600ml")
+        self.assertEqual(payload["quantity"], 2)
+        self.assertEqual(payload["unit"], "each")
+        self.assertNotIn("requested_size", payload)
+        self.assertEqual(result["quantity"], 2)
+
+    def test_quantity_patch_uses_compare_and_swap_identity_filters(self):
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        existing = {"id": item_id, "name": "Coke Zero", "quantity": 600, "unit": "ml", "category": "Recipe"}
+        request = object.__new__(handler)
+        with patch("api.index._supabase_request", side_effect=[[existing], [{**existing, "quantity": 1}]]) as supabase:
+            request._patch_record("grocery_items", item_id, "household-id", "access-token", {"quantity": 1})
+        patch_query = supabase.call_args_list[1].kwargs["query"]
+        self.assertIn(("name", "eq.Coke Zero"), patch_query)
+        self.assertIn(("quantity", "eq.600"), patch_query)
+        self.assertIn(("unit", "eq.ml"), patch_query)
+        self.assertIn(("category", "eq.Recipe"), patch_query)
+
+    def test_quantity_patch_reports_conflict_when_identity_changed(self):
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        existing = {"id": item_id, "name": "Coke Zero", "quantity": 600, "unit": "ml", "category": "Recipe"}
+        request = object.__new__(handler)
+        with patch("api.index._supabase_request", side_effect=[[existing], []]):
+            with self.assertRaises(SupabaseHTTPError) as error:
+                request._patch_record("grocery_items", item_id, "household-id", "access-token", {"quantity": 1})
+        self.assertEqual(error.exception.status, 409)
+
     def test_snapshot_does_not_mutate_or_recommend_non_equivalent_prices(self):
         item = {
             "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
@@ -19,10 +145,8 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         request = object.__new__(handler)
         request._table = Mock(return_value=[item])
         request._patch_record = Mock()
-
         with patch("api.index._supabase_request", return_value=[]):
             snapshot = request._grocery_snapshot("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "access-token")
-
         request._patch_record.assert_not_called()
         self.assertIsNone(snapshot["items"][0]["price"])
         self.assertEqual(snapshot["priced_count"], 0)
@@ -48,23 +172,63 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         request._patch_automatic_price.assert_called_once()
         self.assertEqual(snapshot["items"][0]["price"], 5.70)
 
+    def test_automatic_price_patch_uses_membership_checked_transactional_rpc(self):
+        request = object.__new__(handler)
+        item = {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe", "price_confidence": None, "price_source": None}
+        with patch("api.index._supabase_request", return_value=[item]) as member_request, patch("api.index._supabase_admin_request", return_value=[{**item, "price": 5.70}]) as admin_request:
+            result = request._patch_automatic_price(item["id"], "household-id", "access-token", {"price": 5.70}, expected_item=item, actor_user_id="user-id")
+        self.assertEqual(result["price"], 5.70)
+        self.assertEqual(admin_request.call_args.args[:2], ("POST", "/rest/v1/rpc/apply_grocery_automatic_price"))
+        self.assertEqual(admin_request.call_args.kwargs["payload"]["p_actor_user_id"], "user-id")
+        member_request.assert_called_once()
+
     def test_automatic_patch_is_conditional_on_non_manual_current_row(self):
         request = object.__new__(handler)
-        with patch("api.index._supabase_request", return_value=[]) as supabase_request:
+        item = {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe", "price_confidence": None, "price_source": None}
+        with patch("api.index._supabase_request", return_value=[item]) as member_request, patch("api.index._supabase_admin_request", return_value=[]) as admin_request:
             result = request._patch_automatic_price(
-                "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
-                "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+                item["id"],
+                "household-id",
                 "access-token",
                 {"price": 5.70},
+                expected_item=item,
+                actor_user_id="user-id",
             )
         self.assertIsNone(result)
-        query = supabase_request.call_args.kwargs["query"]
-        self.assertIn(("or", "(price_confidence.is.null,price_confidence.neq.manual)"), query)
-        self.assertIn(("or", "(price_source.is.null,price_source.not.ilike.Manual*)"), query)
+        rpc_payload = admin_request.call_args.kwargs["payload"]
+        self.assertIsNone(rpc_payload["p_expected_price_confidence"])
+        self.assertIsNone(rpc_payload["p_expected_price_source"])
+        self.assertEqual(rpc_payload["p_actor_user_id"], "user-id")
+
+    def test_automatic_patch_uses_exact_metadata_cas_for_whitespace_races(self):
+        request = object.__new__(handler)
+        current = {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe", "price_confidence": "curated", "price_source": "Catalog title"}
+        with patch("api.index._supabase_request", return_value=[current]) as member_request, patch("api.index._supabase_admin_request", return_value=[]) as admin_request:
+            request._patch_automatic_price(current["id"], "household-id", "access-token", {"price": 5.70}, expected_item=current, actor_user_id="user-id")
+        rpc_payload = admin_request.call_args.kwargs["payload"]
+        self.assertEqual(rpc_payload["p_expected_price_confidence"], "curated")
+        self.assertEqual(rpc_payload["p_expected_price_source"], "Catalog title")
+        self.assertEqual(rpc_payload["p_actor_user_id"], "user-id")
+
+    def test_automatic_patch_checks_current_item_identity_before_pricing(self):
+        request = object.__new__(handler)
+        expected = {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe"}
+        changed = {**expected, "name": "bananas"}
+        with patch("api.index._supabase_request", return_value=[changed]) as supabase_request:
+            result = request._patch_automatic_price(expected["id"], "household-id", "access-token", {"price": 5.70}, expected_item=expected)
+        self.assertIsNone(result)
+        self.assertEqual(supabase_request.call_count, 1)
+
+    def test_automatic_patch_uses_case_insensitive_manual_protection(self):
+        request = object.__new__(handler)
+        current = {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "eggs", "quantity": 1, "unit": "each", "category": "Recipe", "price_confidence": "Manual ", "price_source": None}
+        with patch("api.index._supabase_request", return_value=[current]) as supabase_request:
+            result = request._patch_automatic_price(current["id"], "household-id", "access-token", {"price": 5.70}, expected_item=current)
+        self.assertIsNone(result)
+        self.assertEqual(supabase_request.call_count, 1)
 
     def test_manual_price_endpoint_ignores_client_metadata(self):
         request = object.__new__(handler)
-        request.headers = {}
         request._authenticate = Mock(return_value=("user-id", "access-token", {"email": "person@example.com"}))
         request._context = Mock(return_value=("household-id", []))
         request._patch_record = Mock(return_value={"id": "item-id"})
@@ -76,8 +240,25 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         self.assertEqual(patch_payload["price_confidence"], "manual")
         self.assertEqual(patch_payload["price_source"], "Manual entry")
         self.assertIsNone(patch_payload["price_url"])
+        self.assertTrue(request._patch_record.call_args.kwargs["allow_price_metadata"])
+        self.assertEqual(request._patch_record.call_args.kwargs["actor_user_id"], "user-id")
 
-    def test_snapshot_does_not_replace_a_manual_price(self):
+    def test_manual_price_endpoint_rejects_invalid_values_as_bad_request(self):
+        invalid_values = [None, [], {}, True, -0.01, float("nan"), float("inf")]
+        for value in invalid_values:
+            with self.subTest(value=repr(value)):
+                request = object.__new__(handler)
+                request._authenticate = Mock(return_value=("user-id", "access-token", {"email": "person@example.com"}))
+                request._context = Mock(return_value=("household-id", []))
+                request._patch_record = Mock()
+                request._respond = Mock()
+                request._route = Mock(return_value="/groceries/price")
+                with patch("api.index._json_body", return_value={"item_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "price": value}):
+                    request.do_POST()
+                request._respond.assert_called_once()
+                self.assertEqual(request._respond.call_args.kwargs["status"], 400)
+                request._patch_record.assert_not_called()
+
         item = {
             "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
             "name": "eggs",
@@ -109,7 +290,7 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         with patch("api.index._json_body", return_value={}):
             request._handle_post("/groceries/refresh-coles")
 
-        request._grocery_snapshot.assert_called_once_with("household-id", "access-token", refresh=True)
+        request._grocery_snapshot.assert_called_once_with("household-id", "access-token", refresh=True, actor_user_id="user-id")
         response = request._respond.call_args.args[0]
         self.assertEqual(response["auto_updated"], ["eggs"])
         self.assertEqual(response["updated"], 1)
@@ -124,9 +305,48 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         self.assertIn("recommended_retailer", javascript)
         self.assertIn("comparison_not_comparable_items", javascript)
         self.assertIn("Products compared", javascript)
+        self.assertIn("closest pack", javascript)
         self.assertIn("retailer.comparable", javascript)
+        self.assertIn("woolworths.com.au", javascript)
+        self.assertIn("aldi.com.au", javascript)
+        self.assertIn("trustedPriceURL", javascript)
+        self.assertIn("safePriceURL", javascript)
+        self.assertNotIn("source.startsWith(retailer)", javascript)
 
-    def test_retailer_quote_migration_has_household_scoped_rls(self):
+    def test_quote_refresh_uses_membership_checked_transactional_rpcs(self):
+        request = object.__new__(handler)
+        comparison = {
+            "coles": {"lines": [{"item_id": "item-id", "match": {"product_key": "eggs", "title": "Eggs", "url": "https://www.coles.com.au/product/eggs", "price": 5.70, "observed_at": "2026-08-04", "confidence": "curated", "match_basis": "exact alias", "note": "Observed"}}]},
+            "aldi": {"lines": [{"item_id": "item-id", "match": None}]},
+        }
+        with patch("api.index._supabase_request") as member_request, patch("api.index._supabase_admin_request") as admin_request:
+            request._upsert_price_quotes(comparison, "household-id", "access-token", actor_user_id="user-id")
+        self.assertEqual(admin_request.call_args_list[0].args[:2], ("POST", "/rest/v1/rpc/upsert_grocery_price_quote"))
+        self.assertEqual(admin_request.call_args_list[1].args[:2], ("POST", "/rest/v1/rpc/delete_grocery_price_quote"))
+        self.assertTrue(all(call.kwargs["payload"]["p_actor_user_id"] == "user-id" for call in admin_request.call_args_list))
+        member_request.assert_not_called()
+
+    def test_database_migration_removes_direct_grocery_price_writes(self):
+        migrations = Path(__file__).parents[1] / "supabase" / "migrations"
+        migration = (migrations / "20260804030000_harden_grocery_price_boundaries.sql").read_text()
+        self.assertIn("revoke insert, update on public.grocery_items from authenticated", migration)
+        self.assertIn("grant insert (household_id, name, quantity, unit, category, status, created_by)", migration)
+        self.assertIn("grant update (name, quantity, unit, category, status)", migration)
+        self.assertIn("revoke insert, update, delete on public.grocery_price_quotes from authenticated", migration)
+        self.assertIn("grant select on public.grocery_price_quotes to authenticated", migration)
+        self.assertIn("create or replace function public.set_grocery_manual_price", migration)
+        self.assertIn("create or replace function public.apply_grocery_automatic_price", migration)
+        self.assertIn("create or replace function public.upsert_grocery_price_quote", migration)
+        self.assertIn("create or replace function public.delete_grocery_price_quote", migration)
+        for function_name in ("set_grocery_manual_price", "apply_grocery_automatic_price", "upsert_grocery_price_quote", "delete_grocery_price_quote"):
+            self.assertIn(f"revoke all on function public.{function_name}", migration)
+            self.assertIn(f"grant execute on function public.{function_name}", migration)
+        self.assertGreaterEqual(migration.count("from public, authenticated"), 4)
+        self.assertGreaterEqual(migration.count("to service_role"), 4)
+        self.assertGreaterEqual(migration.count("for update"), 4)
+        self.assertGreaterEqual(migration.count("p_actor_user_id"), 4)
+
+
         migration = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804010000_grocery_price_quotes.sql").read_text()
         self.assertIn("create table if not exists public.grocery_price_quotes", migration)
         self.assertIn("unique (grocery_item_id, retailer)", migration)
@@ -159,17 +379,17 @@ class HostedGroceryMatchingTests(unittest.TestCase):
             "aldi": {"lines": [{"item_id": "item-id", "match": None}]},
         }
 
-        with patch("api.index._supabase_request") as supabase_request:
-            request._upsert_price_quotes(comparison, "household-id", "access-token")
+        with patch("api.index._supabase_admin_request") as admin_request:
+            request._upsert_price_quotes(comparison, "household-id", "access-token", actor_user_id="user-id")
 
-        self.assertEqual(supabase_request.call_count, 2)
-        post_call = supabase_request.call_args_list[0]
-        self.assertEqual(post_call.args[:2], ("POST", "/rest/v1/grocery_price_quotes"))
-        self.assertEqual(post_call.kwargs["payload"]["household_id"], "household-id")
-        self.assertEqual(post_call.kwargs["payload"]["grocery_item_id"], "item-id")
-        delete_call = supabase_request.call_args_list[1]
-        self.assertEqual(delete_call.args[:2], ("DELETE", "/rest/v1/grocery_price_quotes"))
-        self.assertIn(("household_id", "eq.household-id"), delete_call.kwargs["query"])
+        self.assertEqual(admin_request.call_count, 2)
+        post_call = admin_request.call_args_list[0]
+        self.assertEqual(post_call.args[:2], ("POST", "/rest/v1/rpc/upsert_grocery_price_quote"))
+        self.assertEqual(post_call.kwargs["payload"]["p_household_id"], "household-id")
+        self.assertEqual(post_call.kwargs["payload"]["p_grocery_item_id"], "item-id")
+        delete_call = admin_request.call_args_list[1]
+        self.assertEqual(delete_call.args[:2], ("POST", "/rest/v1/rpc/delete_grocery_price_quote"))
+        self.assertEqual(delete_call.kwargs["payload"]["p_household_id"], "household-id")
 
 
 if __name__ == "__main__":
