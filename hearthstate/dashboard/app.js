@@ -155,7 +155,7 @@ function renderAttention(items) {
 
 async function completeTask(taskId) {
   try {
-    const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {
+    const response = await hearthstateFetch(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     const payload = await response.json();
@@ -337,7 +337,7 @@ async function rejectInboxSuggestion() {
   els.inboxRejectSuggestion.disabled = true;
   submit.disabled = true;
   try {
-    const response = await fetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/suggestion/review`, {
+    const response = await hearthstateFetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/suggestion/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ suggestion_id: els.inboxSuggestionId.value, decision: 'reject' }),
@@ -357,7 +357,7 @@ async function rejectInboxSuggestion() {
 
 async function archiveInboxItem(itemId) {
   try {
-    const response = await fetch(`/api/inbox/${encodeURIComponent(itemId)}/archive`, {
+    const response = await hearthstateFetch(`/api/inbox/${encodeURIComponent(itemId)}/archive`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
     const payload = await response.json();
@@ -395,7 +395,7 @@ async function submitInboxConversion(event) {
   const submit = els.inboxConvertForm.querySelector('button[type="submit"]');
   submit.disabled = true;
   try {
-    const response = await fetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/suggestion/review`, {
+    const response = await hearthstateFetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/suggestion/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -424,7 +424,7 @@ async function captureInboxItem(event) {
   const submit = els.inboxCaptureForm.querySelector('button[type="submit"]');
   submit.disabled = true;
   try {
-    const response = await fetch('/api/inbox', {
+    const response = await hearthstateFetch('/api/inbox', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ original_text: originalText, source: 'dashboard' }),
     });
@@ -480,10 +480,10 @@ async function loadDashboard() {
   setLoading(true);
   try {
     const [dashboardResponse, conflictsResponse, activityResponse, choresResponse] = await Promise.all([
-      fetch('/api/dashboard', { cache: 'no-store' }),
-      fetch('/api/conflicts', { cache: 'no-store' }),
-      fetch('/api/activity?viewer=you', { cache: 'no-store' }),
-      fetch('/api/chores', { cache: 'no-store' }),
+      hearthstateFetch('/api/dashboard', { cache: 'no-store' }),
+      hearthstateFetch('/api/conflicts', { cache: 'no-store' }),
+      hearthstateFetch('/api/activity?viewer=you', { cache: 'no-store' }),
+      hearthstateFetch('/api/chores', { cache: 'no-store' }),
     ]);
     if (!dashboardResponse.ok) throw new Error(`Dashboard request failed: ${dashboardResponse.status}`);
     const intelligence = {

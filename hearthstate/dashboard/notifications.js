@@ -23,7 +23,7 @@ function setTheme(theme) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { cache: 'no-store', ...options });
+  const response = await hearthstateFetch(path, { cache: 'no-store', ...options });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
   return payload;

@@ -5,6 +5,13 @@
     });
   }
 
+  window.hearthstateFetch = (input, options = {}) => {
+    const headers = new Headers(options.headers || {});
+    const householdId = window.__HEARTHSTATE_VIEWER__?.household_id;
+    if (householdId) headers.set('X-Hearthstate-Household', householdId);
+    return fetch(input, { ...options, headers });
+  };
+
   const toggle = document.querySelector('.mobile-nav-toggle');
   const nav = document.querySelector('#primaryNav');
   const sidebar = document.querySelector('.sidebar');
@@ -66,10 +73,7 @@
     });
   }
 
-  const activeHouseholdHeaders = {};
-  const activeHouseholdId = window.__HEARTHSTATE_VIEWER__?.household_id;
-  if (activeHouseholdId) activeHouseholdHeaders['X-Hearthstate-Household'] = activeHouseholdId;
-  fetch('/api/admin', { cache: 'no-store', headers: activeHouseholdHeaders })
+  window.hearthstateFetch('/api/admin', { cache: 'no-store' })
     .then((response) => {
       if (!response.ok || document.querySelector('a[href="/admin"]')) return;
       const adminLink = document.createElement('a');

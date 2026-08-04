@@ -98,14 +98,17 @@ class HostedApiContractTests(unittest.TestCase):
 
         for route, content_type, marker in (
             ("/manifest.webmanifest", "application/manifest+json; charset=utf-8", '"display": "standalone"'),
-            ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v1"),
+            ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v2"),
+            ("/icons/icon-192.png", "image/png", None),
+            ("/icons/icon-512.png", "image/png", None),
         ):
             with self.subTest(route=route):
                 request._send_bytes.reset_mock()
                 self.assertTrue(request._handle_asset(route))
                 content, returned_type = request._send_bytes.call_args.args[:2]
                 self.assertEqual(returned_type, content_type)
-                self.assertIn(marker.encode(), content)
+                if marker:
+                    self.assertIn(marker.encode(), content)
 
     def test_setup_page_uses_cookie_backed_session_only(self):
         setup = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "hosted.html").read_text()

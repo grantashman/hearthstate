@@ -100,7 +100,7 @@ function renderTasks(items) {
 
 async function mutateTask(taskId, action) {
   try {
-    const response = await fetch(`/api/tasks/${taskId}/${action}`, {
+    const response = await hearthstateFetch(`/api/tasks/${taskId}/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     const payload = await response.json();
@@ -175,7 +175,7 @@ async function saveRecord(event) {
     created_by: 'you',
   };
   try {
-    const response = await fetch(isCalendar ? '/api/calendar' : '/api/tasks', {
+    const response = await hearthstateFetch(isCalendar ? '/api/calendar' : '/api/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const payload = await response.json();
@@ -196,7 +196,7 @@ async function loadSection() {
     const endpoint = isCalendar ? '/api/calendar' : '/api/tasks';
     const query = new URLSearchParams({ viewer: 'you' });
     if (els.assignee.value) query.set('assignee', els.assignee.value);
-    const response = await fetch(`${endpoint}?${query.toString()}`, { cache: 'no-store' });
+    const response = await hearthstateFetch(`${endpoint}?${query.toString()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
     const payload = await response.json();
     render(payload);

@@ -1,7 +1,9 @@
-const CACHE_NAME = 'hearthstate-static-v1';
+const CACHE_NAME = 'hearthstate-static-v2';
 const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/favicon.svg?v=hearthstate-pwa-1',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
   '/styles.css?v=hearthstate-pwa-1',
   '/nav.js?v=hearthstate-pwa-1',
 ];
@@ -28,6 +30,8 @@ self.addEventListener('fetch', (event) => {
   const cacheablePath = new Set([
     '/manifest.webmanifest',
     '/favicon.svg',
+    '/icons/icon-192.png',
+    '/icons/icon-512.png',
     '/styles.css',
     '/nav.js',
     '/app.js',
