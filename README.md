@@ -30,7 +30,7 @@ An authenticated member visiting `/setup` is redirected to `/`. An unprovisioned
 
 The hosted dashboard includes:
 
-- Overview with **What needs attention?**, Today, weekly planning, Inbox, activity, and grocery signals.
+- Overview with **What needs attention?**, Today, weekly planning, a universal Inbox, activity, and grocery signals. Inbox captures now create privacy-scoped, editable suggestions; accepting a suggestion is the only path from the review UI to a task, event, meal, grocery item, or resolved note.
 - Calendar and dated task projection with assignees and conflict detection.
 - Tasks with ownership, recurrence, completion, editing, deletion confirmation, and undo history.
 - Meals and recipes with cook assignment, ingredient ownership checks, planning, and grocery sync.
@@ -109,8 +109,8 @@ Completed foundation:
 
 Next priorities:
 
-1. Public hosted onboarding and owner-confirmed household export/deletion.
-2. Run the pilot using the [privacy-safe instrumentation and retention contract](docs/pilot-instrumentation.md) to measure activation, repeated capture, conversion, task completion, and weekly active households before adding expensive infrastructure.
+1. Run the pilot using the [privacy-safe instrumentation and retention contract](docs/pilot-instrumentation.md) to measure activation, repeated capture, suggestion review, conversion, task completion, and weekly active households.
+2. Close the remaining public hosted onboarding gap and dogfood the universal Inbox with multiple household members.
 3. Policy-compliant live retailer refresh behind the curated matcher fallback.
 4. External calendar sync, push delivery, provider idempotency, billing, and richer multi-action parsing.
 

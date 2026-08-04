@@ -218,6 +218,10 @@ html[data-theme="dark"] .theme-icon-sun { display: block; }
 .inbox-action:hover, .inbox-action:focus-visible { color: var(--evergreen-deep); border-color: var(--evergreen); background: var(--evergreen-wash); outline: 0; }
 .inbox-archive { color: var(--ink-faint); }
 .inbox-convert-form { display: grid; gap: 10px; margin-top: 16px; padding: 16px; border: 1px solid var(--evergreen); border-radius: var(--radius-medium); background: var(--evergreen-wash); }
+.inbox-review-note { margin: -2px 0 3px; color: var(--evergreen-deep); font-size: 10px; line-height: 1.4; }
+.inbox-review-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 3px; }
+.inbox-review-actions .primary-action { margin-top: 0; }
+.inbox-reject { min-height: 42px; }
 .inbox-convert-form label { display: grid; gap: 5px; color: var(--ink-soft); font-size: 10px; font-weight: 750; }
 .inbox-convert-heading { display: flex; align-items: center; justify-content: space-between; color: var(--ink); font-size: 12px; }
 .inbox-convert-heading .text-action { margin: 0; font-size: 10px; }

@@ -37,6 +37,7 @@ const els = {
   inboxCaptureText: document.querySelector('#inboxCaptureText'),
   inboxConvertForm: document.querySelector('#inboxConvertForm'),
   inboxConvertId: document.querySelector('#inboxConvertId'),
+  inboxSuggestionId: document.querySelector('#inboxSuggestionId'),
   inboxConvertType: document.querySelector('#inboxConvertType'),
   inboxConvertTitle: document.querySelector('#inboxConvertTitle'),
   inboxConvertName: document.querySelector('#inboxConvertName'),
@@ -44,6 +45,7 @@ const els = {
   inboxConvertMealDate: document.querySelector('#inboxConvertMealDate'),
   inboxConvertIngredients: document.querySelector('#inboxConvertIngredients'),
   inboxConvertCancel: document.querySelector('#inboxConvertCancel'),
+  inboxRejectSuggestion: document.querySelector('#inboxRejectSuggestion'),
   inboxConvertFeedback: document.querySelector('#inboxConvertFeedback'),
   inboxTitleField: document.querySelector('#inboxTitleField'),
   inboxNameField: document.querySelector('#inboxNameField'),
@@ -257,25 +259,32 @@ function renderIntelligence(intelligence) {
 
 function renderInbox(items) {
   els.inboxBadge.textContent = `${items.length} open`;
-  els.inboxList.innerHTML = items.map((item) => `
-    <li class="inbox-item">
-      <div class="inbox-item-copy">
-        <div class="inbox-original">${escapeHTML(item.original_text)}</div>
-        <div class="inbox-meta"><span>${escapeHTML(item.source || 'dashboard')}</span><span>·</span><span>${escapeHTML(item.created_by || 'household')}</span></div>
-      </div>
-      <div class="inbox-actions">
-        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="task">Task</button>
-        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="event">Event</button>
-        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="meal">Meal</button>
-        <button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}" data-inbox-type="grocery">Grocery</button>
-        <button class="inbox-action inbox-archive" type="button" data-inbox-id="${escapeHTML(item.id)}">Archive</button>
-      </div>
-    </li>
-  `).join('');
+  els.inboxList.innerHTML = items.map((item) => {
+    const suggestion = item.suggestion;
+    const suggestedType = suggestion?.suggestion_type ? `Suggested ${suggestion.suggestion_type}` : 'Needs a review';
+    const reviewAction = suggestion
+      ? `<button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}">Review · ${escapeHTML(suggestion.suggestion_type)}</button>`
+      : '<span class="inbox-meta">No suggestion available</span>';
+    return `
+      <li class="inbox-item">
+        <div class="inbox-item-copy">
+          <div class="inbox-original">${escapeHTML(item.original_text)}</div>
+          <div class="inbox-meta"><span>${escapeHTML(item.source || 'dashboard')}</span><span>·</span><span>${escapeHTML(suggestedType)}</span></div>
+        </div>
+        <div class="inbox-actions">
+          ${reviewAction}
+          <button class="inbox-action inbox-archive" type="button" data-inbox-id="${escapeHTML(item.id)}">Archive</button>
+        </div>
+      </li>
+    `;
+  }).join('');
   els.inboxList.classList.toggle('is-hidden', items.length === 0);
   els.inboxEmpty.classList.toggle('is-hidden', items.length !== 0);
-  els.inboxList.querySelectorAll('[data-inbox-type]').forEach((button) => {
-    button.addEventListener('click', () => openInboxConversion(items.find((item) => String(item.id) === String(button.dataset.inboxId)), button.dataset.inboxType));
+  els.inboxList.querySelectorAll('.inbox-action:not(.inbox-archive)').forEach((button) => {
+    button.addEventListener('click', () => {
+      const item = items.find((candidate) => String(candidate.id) === String(button.dataset.inboxId));
+      openInboxConversion(item, item?.suggestion?.suggestion_type || 'task');
+    });
   });
   els.inboxList.querySelectorAll('.inbox-archive').forEach((button) => {
     button.addEventListener('click', () => archiveInboxItem(button.dataset.inboxId));
@@ -298,17 +307,20 @@ function setInboxConversionFields() {
   els.inboxConvertDateTime.required = isEvent;
   els.inboxConvertMealDate.required = isMeal;
   els.inboxDateTimeField.firstChild.textContent = isEvent ? 'Starts date and time' : 'Due date and time';
+  els.inboxTitleField.firstChild.textContent = type === 'note' ? 'Note' : 'Title';
 }
 
 function openInboxConversion(item, type) {
-  if (!item) return;
+  if (!item || !item.suggestion) return;
+  const proposed = item.suggestion.proposed_payload || {};
   els.inboxConvertId.value = item.id;
+  els.inboxSuggestionId.value = item.suggestion.id;
   els.inboxConvertType.value = type;
-  els.inboxConvertTitle.value = item.original_text;
-  els.inboxConvertName.value = item.original_text;
-  els.inboxConvertDateTime.value = '';
-  els.inboxConvertMealDate.value = new Date().toISOString().slice(0, 10);
-  els.inboxConvertIngredients.value = '';
+  els.inboxConvertTitle.value = proposed.title || proposed.text || item.original_text;
+  els.inboxConvertName.value = proposed.name || item.original_text;
+  els.inboxConvertDateTime.value = proposed.starts_at || proposed.due_at || '';
+  els.inboxConvertMealDate.value = proposed.meal_date || new Date().toISOString().slice(0, 10);
+  els.inboxConvertIngredients.value = Array.isArray(proposed.ingredients) ? proposed.ingredients.join(', ') : '';
   els.inboxConvertFeedback.classList.add('is-hidden');
   els.inboxConvertForm.classList.remove('is-hidden');
   setInboxConversionFields();
@@ -320,10 +332,33 @@ function closeInboxConversion() {
   els.inboxConvertFeedback.classList.add('is-hidden');
 }
 
+async function rejectInboxSuggestion() {
+  const submit = els.inboxConvertForm.querySelector('button[type="submit"]');
+  els.inboxRejectSuggestion.disabled = true;
+  submit.disabled = true;
+  try {
+    const response = await fetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/suggestion/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ suggestion_id: els.inboxSuggestionId.value, decision: 'reject' }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not reject Inbox suggestion');
+    closeInboxConversion();
+    await loadDashboard();
+  } catch (error) {
+    els.inboxConvertFeedback.textContent = error.message;
+    els.inboxConvertFeedback.classList.remove('is-hidden');
+  } finally {
+    els.inboxRejectSuggestion.disabled = false;
+    submit.disabled = false;
+  }
+}
+
 async function archiveInboxItem(itemId) {
   try {
     const response = await fetch(`/api/inbox/${encodeURIComponent(itemId)}/archive`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ viewer: 'you' }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Could not archive Inbox item');
@@ -337,9 +372,12 @@ async function archiveInboxItem(itemId) {
 async function submitInboxConversion(event) {
   event.preventDefault();
   const type = els.inboxConvertType.value;
-  const payload = { type, viewer: 'you', created_by: 'you' };
+  const payload = {};
   if (type === 'grocery') {
     payload.name = els.inboxConvertName.value.trim();
+    payload.quantity = 1;
+    payload.unit = 'each';
+    payload.category = 'Inbox';
   } else if (type === 'event') {
     payload.title = els.inboxConvertTitle.value.trim();
     payload.starts_at = els.inboxConvertDateTime.value;
@@ -348,18 +386,27 @@ async function submitInboxConversion(event) {
     payload.meal_date = els.inboxConvertMealDate.value;
     payload.meal_type = 'dinner';
     payload.ingredients = els.inboxConvertIngredients.value.split(',').map((value) => value.trim()).filter(Boolean);
+  } else if (type === 'note') {
+    payload.text = els.inboxConvertTitle.value.trim();
   } else {
     payload.title = els.inboxConvertTitle.value.trim();
-    payload.due_at = els.inboxConvertDateTime.value;
+    payload.due_at = els.inboxConvertDateTime.value || null;
   }
   const submit = els.inboxConvertForm.querySelector('button[type="submit"]');
   submit.disabled = true;
   try {
-    const response = await fetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/convert`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    const response = await fetch(`/api/inbox/${encodeURIComponent(els.inboxConvertId.value)}/suggestion/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        suggestion_id: els.inboxSuggestionId.value,
+        decision: 'accept',
+        suggestion_type: type,
+        payload,
+      }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not convert Inbox item');
+    if (!response.ok) throw new Error(result.error || 'Could not confirm Inbox suggestion');
     closeInboxConversion();
     await loadDashboard();
   } catch (error) {
@@ -379,7 +426,7 @@ async function captureInboxItem(event) {
   try {
     const response = await fetch('/api/inbox', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ original_text: originalText, source: 'dashboard', created_by: 'you' }),
+      body: JSON.stringify({ original_text: originalText, source: 'dashboard' }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not capture Inbox item');
@@ -464,6 +511,7 @@ els.inboxCaptureForm.addEventListener('submit', captureInboxItem);
 els.inboxConvertForm.addEventListener('submit', submitInboxConversion);
 els.inboxConvertType.addEventListener('change', setInboxConversionFields);
 els.inboxConvertCancel.addEventListener('click', closeInboxConversion);
+els.inboxRejectSuggestion.addEventListener('click', rejectInboxSuggestion);
 syncThemeButton();
 applyViewerBootstrap();
 updateGreeting();

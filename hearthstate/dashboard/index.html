@@ -16,7 +16,7 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="/styles.css?v=hearthstate-5" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-6" />
   </head>
   <body>
     <div class="app-shell">
@@ -154,16 +154,19 @@
           </div>
           <form class="inbox-convert-form is-hidden" id="inboxConvertForm">
             <div class="inbox-convert-heading">
-              <strong>Turn this into…</strong>
+              <strong>Review suggestion</strong>
               <button class="text-action" id="inboxConvertCancel" type="button">Cancel</button>
             </div>
+            <p class="inbox-review-note">Nothing is added to the household until you confirm it.</p>
             <input id="inboxConvertId" type="hidden" />
-            <label>Type
+            <input id="inboxSuggestionId" type="hidden" />
+            <label>Suggestion type
               <select id="inboxConvertType">
                 <option value="task">Task</option>
                 <option value="event">Calendar event</option>
                 <option value="meal">Meal</option>
                 <option value="grocery">Grocery item</option>
+                <option value="note">Leave as note</option>
               </select>
             </label>
             <label id="inboxTitleField">Title
@@ -181,7 +184,10 @@
             <label class="is-hidden" id="inboxIngredientsField">Ingredients, comma separated
               <input id="inboxConvertIngredients" type="text" maxlength="1000" />
             </label>
-            <button class="primary-action" type="submit">Save and clear Inbox item <span aria-hidden="true">↗</span></button>
+            <div class="inbox-review-actions">
+              <button class="primary-action" type="submit">Confirm suggestion <span aria-hidden="true">↗</span></button>
+              <button class="quiet-action inbox-reject" id="inboxRejectSuggestion" type="button">Reject suggestion</button>
+            </div>
             <div class="form-feedback is-hidden" id="inboxConvertFeedback" role="alert"></div>
           </form>
         </section>
@@ -291,7 +297,7 @@
       </main>
     </div>
     <script src="/nav.js?v=hearthstate-4" defer></script>
-    <script src="/app.js?v=hearthstate-5" defer></script>
+    <script src="/app.js?v=hearthstate-6" defer></script>
     <script>
       window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
     </script>

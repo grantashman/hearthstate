@@ -230,6 +230,45 @@ def _sanitize_pilot_metadata(event_name: str, metadata: object) -> dict:
     return sanitized
 
 
+def _suggestion_for_capture(text: str) -> dict:
+    """Create a conservative, editable proposal without mutating household state."""
+    normalized = " ".join(str(text or "").strip().split())
+    lowered = normalized.lower()
+    grocery_prefixes = ("buy ", "get ", "pick up ", "pick-up ", "shopping: ", "add to shopping list ")
+    for prefix in grocery_prefixes:
+        if lowered.startswith(prefix):
+            name = normalized[len(prefix):].strip(" .")
+            if name:
+                return {
+                    "suggestion_type": "grocery",
+                    "proposed_payload": {"name": name, "quantity": 1, "unit": "each", "category": "Inbox"},
+                    "status": "pending",
+                }
+    if lowered.startswith("note: "):
+        return {
+            "suggestion_type": "note",
+            "proposed_payload": {"text": normalized[6:].strip()},
+            "status": "pending",
+        }
+    if lowered.startswith("meal: "):
+        return {
+            "suggestion_type": "meal",
+            "proposed_payload": {"title": normalized[6:].strip(), "meal_date": datetime.now(timezone.utc).date().isoformat(), "meal_type": "dinner", "ingredients": []},
+            "status": "pending",
+        }
+    if lowered.startswith("event: "):
+        return {
+            "suggestion_type": "event",
+            "proposed_payload": {"title": normalized[7:].strip()},
+            "status": "pending",
+        }
+    return {
+        "suggestion_type": "task",
+        "proposed_payload": {"title": normalized},
+        "status": "pending",
+    }
+
+
 def _parse_datetime(value: object) -> datetime | None:
     if not value:
         return None
@@ -428,6 +467,61 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         record["household_id"] = household_id
         record["created_by"] = user_id
         return record
+
+    def _create_inbox_capture(self, household_id: str, user_id: str, token: str, payload: dict) -> dict:
+        raw_text = payload.get("original_text")
+        if not isinstance(raw_text, str):
+            raise ValueError("original_text must be a string")
+        text = raw_text.strip()
+        if not text or len(text) > 4000:
+            raise ValueError("original_text is required and must be 4000 characters or fewer")
+        private = payload.get("private", False)
+        if not isinstance(private, bool):
+            raise ValueError("private must be a boolean")
+        raw_source = payload.get("source", "dashboard")
+        if not isinstance(raw_source, str):
+            raise ValueError("source must be a string")
+        source = raw_source.strip() or "dashboard"
+        if len(source) > 80:
+            raise ValueError("source must be 80 characters or fewer")
+        suggestion = _suggestion_for_capture(text)
+        return _supabase_request(
+            "POST",
+            "/rest/v1/rpc/create_inbox_capture",
+            token=token,
+            payload={
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_original_text": text,
+                "p_source": source,
+                "p_private": private,
+                "p_suggestion_type": suggestion["suggestion_type"],
+                "p_proposed_payload": suggestion["proposed_payload"],
+            },
+        )
+
+    def _archive_inbox_capture(self, household_id: str, user_id: str, token: str, item_id: object) -> dict:
+        return _supabase_request(
+            "POST",
+            "/rest/v1/rpc/archive_inbox_capture",
+            token=token,
+            payload={
+                "p_household_id": household_id,
+                "p_actor_user_id": user_id,
+                "p_inbox_item_id": _uuid(item_id, "inbox id"),
+            },
+        )
+
+    def _inbox_snapshot(self, household_id: str, user_id: str, token: str) -> list[dict]:
+        snapshot = _supabase_request(
+            "POST",
+            "/rest/v1/rpc/read_inbox_snapshot",
+            token=token,
+            payload={"p_household_id": household_id, "p_actor_user_id": user_id},
+        )
+        if not isinstance(snapshot, list):
+            return []
+        return [row for row in snapshot if isinstance(row, dict)]
 
     def _post_record(self, table: str, household_id: str, user_id: str, token: str, payload: dict) -> dict:
         record = self._record_payload(table, payload, user_id, household_id)
@@ -720,7 +814,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         tasks = self._enrich_rows(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), token)
         events = self._table("events", household_id, token, ("status", "eq.confirmed"), order="starts_at.asc")
         meals = self._table("meals", household_id, token, ("status", "eq.planned"), order="meal_date.asc")
-        inbox = self._table("inbox_items", household_id, token, ("status", "eq.open"), order="created_at.desc", limit=50)
+        inbox = self._inbox_snapshot(household_id, user_id, token)
         groceries = self._grocery_snapshot(household_id, token)
         profile = _first(_supabase_request("GET", "/rest/v1/profiles", token=token, query=[("select", "display_name"), ("user_id", f"eq.{user_id}")])) or {}
         attention = []
@@ -884,15 +978,28 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if action in {"state", "list_state"}:
             return self._photon_state()
         if action == "capture":
-            text = str(payload.get("text", "")).strip()
+            raw_text = payload.get("text")
+            if not isinstance(raw_text, str):
+                raise ValueError("text must be a string")
+            text = raw_text.strip()
             if not text or len(text) > 4000:
                 raise ValueError("text is required and must be 4000 characters or fewer")
             private = payload.get("private", False)
             if not isinstance(private, bool):
                 raise ValueError("private must be a boolean")
-            item = self._post_record("inbox_items", household_id, user_id, service_key, {"original_text": text, "source": "photon", "private": private})
-            self._log(household_id, user_id, service_key, "inbox.created", "inbox", item.get("id"), after=item)
-            return {"action": action, "item": item}
+            item = self._create_inbox_capture(household_id, user_id, service_key, {"original_text": text, "source": "photon", "private": private})
+            created = item.get("item") if isinstance(item, dict) else {}
+            if isinstance(created, dict) and created.get("id"):
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "capture_created",
+                    entity_type="capture",
+                    entity_id=str(created["id"]),
+                    metadata={"source": "photon", "private": private},
+                    dedupe_key=f"capture:{created['id']}",
+                )
+            return {"action": action, **item}
         if action == "create_task":
             title = str(payload.get("title", "")).strip()
             if not title:
@@ -922,8 +1029,8 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             return {"action": action, "meal": meal}
         if action == "archive_inbox":
             item_id = _uuid(payload.get("item_id"), "inbox id")
-            item = self._patch_record("inbox_items", item_id, household_id, service_key, {"status": "archived"})
-            return {"action": action, "item": item}
+            result = self._archive_inbox_capture(household_id, user_id, service_key, item_id)
+            return {"action": action, **result}
         raise ValueError("unsupported Photon action")
 
     def _handle_asset(self, route: str) -> bool:
@@ -1059,7 +1166,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             )
             self._respond({**self._dashboard(household_id, user_id, token, user), "household_id": household_id})
         elif route == "/inbox":
-            self._respond({"viewer": user_id, "items": self._table("inbox_items", household_id, token, ("status", "eq.open"), order="created_at.desc", limit=100), "generated_at": _iso_now()})
+            self._respond({"viewer": user_id, "items": self._inbox_snapshot(household_id, user_id, token), "generated_at": _iso_now()})
         elif route == "/activity":
             rows = self._table("activity_log", household_id, token, order="created_at.desc", limit=100)
             self._respond({"viewer": user_id, "activity": rows})
@@ -1186,45 +1293,74 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             return
 
         if route == "/inbox":
-            text = str(payload.get("original_text", "")).strip()
-            if not text or len(text) > 4000: raise ValueError("original_text is required and must be 4000 characters or fewer")
-            if not isinstance(payload.get("private", False), bool): raise ValueError("private must be a boolean")
-            item = self._post_record("inbox_items", household_id, user_id, token, {"original_text": text, "source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)})
-            self._log(household_id, user_id, token, "inbox.created", "inbox", item.get("id"), after=item)
-            self._record_pilot_event(
-                household_id,
-                user_id,
-                "capture_created",
-                entity_type="capture",
-                entity_id=str(item.get("id")),
-                metadata={"source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)},
-                dedupe_key=f"capture:{item.get('id')}",
-            )
-            self._respond({"item": item}, status=201)
+            result = self._create_inbox_capture(household_id, user_id, token, payload)
+            item = result.get("item") if isinstance(result, dict) else {}
+            if isinstance(item, dict) and item.get("id"):
+                self._record_pilot_event(
+                    household_id,
+                    user_id,
+                    "capture_created",
+                    entity_type="capture",
+                    entity_id=str(item.get("id")),
+                    metadata={"source": str(payload.get("source", "dashboard")), "private": payload.get("private", False)},
+                    dedupe_key=f"capture:{item.get('id')}",
+                )
+            self._respond(result, status=201)
             return
         if route.startswith("/inbox/"):
             parts = route.removeprefix("/inbox/").strip("/").split("/")
+            if len(parts) == 3 and parts[1] == "suggestion" and parts[2] == "review":
+                item_id = _uuid(parts[0], "inbox id")
+                suggestion_id = _uuid(payload.get("suggestion_id"), "suggestion id")
+                raw_decision = payload.get("decision")
+                if not isinstance(raw_decision, str):
+                    raise ValueError("decision must be a string")
+                decision = raw_decision.strip().lower()
+                if decision not in {"accept", "reject"}:
+                    raise ValueError("decision must be accept or reject")
+                suggestion_type = payload.get("suggestion_type")
+                if suggestion_type is not None:
+                    if not isinstance(suggestion_type, str):
+                        raise ValueError("suggestion type must be a string")
+                    suggestion_type = suggestion_type.strip().lower()
+                    if suggestion_type not in {"task", "event", "meal", "grocery", "note"}:
+                        raise ValueError("invalid suggestion type")
+                proposed_payload = payload.get("payload")
+                if proposed_payload is not None and not isinstance(proposed_payload, dict):
+                    raise ValueError("suggestion payload must be an object")
+                if proposed_payload is not None and len(json.dumps(proposed_payload, separators=(",", ":"))) > 16384:
+                    raise ValueError("suggestion payload is too large")
+                result = _supabase_request(
+                    "POST",
+                    "/rest/v1/rpc/review_inbox_suggestion",
+                    token=token,
+                    payload={
+                        "p_household_id": household_id,
+                        "p_actor_user_id": user_id,
+                        "p_inbox_item_id": item_id,
+                        "p_suggestion_id": suggestion_id,
+                        "p_decision": decision,
+                        "p_suggestion_type": suggestion_type,
+                        "p_proposed_payload": proposed_payload,
+                    },
+                )
+                if decision == "accept" and isinstance(result, dict) and result.get("created_type") in {"task", "event", "meal", "grocery"}:
+                    self._record_pilot_event(
+                        household_id,
+                        user_id,
+                        "capture_converted",
+                        entity_type="capture",
+                        entity_id=str(item_id),
+                        metadata={"conversion_type": result["created_type"]},
+                        dedupe_key=f"conversion:{item_id}",
+                    )
+                self._respond(result)
+                return
             if len(parts) != 2 or parts[1] not in {"archive", "convert"}: self._respond({"error": "not found"}, status=404); return
             item_id = _uuid(parts[0], "inbox id")
             if parts[1] == "archive":
-                item = self._patch_record("inbox_items", item_id, household_id, token, {"status": "archived"})
-                self._respond({"item": item}); return
-            conversion = str(payload.get("type", "")).lower().strip()
-            table_by_type = {"task": "tasks", "event": "events", "meal": "meals", "grocery": "grocery_items"}
-            table = table_by_type.get(conversion)
-            if not table: raise ValueError("unsupported conversion type")
-            created = self._post_record(table, household_id, user_id, token, payload)
-            item = self._patch_record("inbox_items", item_id, household_id, token, {"status": "converted"})
-            self._record_pilot_event(
-                household_id,
-                user_id,
-                "capture_converted",
-                entity_type="capture",
-                entity_id=str(item_id),
-                metadata={"conversion_type": conversion},
-                dedupe_key=f"conversion:{item_id}",
-            )
-            self._respond({conversion: created, "item": item}, status=201); return
+                self._respond(self._archive_inbox_capture(household_id, user_id, token, item_id)); return
+            self._respond({"error": "Inbox items must be reviewed through their suggestion before conversion"}, status=409); return
         if route == "/activity/undo":
             self._respond({"undone": None}); return
         if route == "/chores":
