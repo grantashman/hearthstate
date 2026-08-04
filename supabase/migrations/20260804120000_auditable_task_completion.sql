@@ -298,3 +298,185 @@ where (
 ) > 1;
 
 grant execute on function public.accept_invitation(text, text) to authenticated;
+
+create or replace function public.accept_invitation(raw_token text, display_name text)
+returns public.memberships
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+    invitation public.invitations;
+    created_membership public.memberships;
+    invite_email text := lower(trim(coalesce((select auth.jwt() ->> 'email'), '')));
+begin
+    if auth.uid() is null then
+        raise exception 'authentication required' using errcode = '42501';
+    end if;
+    select i.* into invitation
+    from public.invitations i
+    where i.token_hash = encode(digest(raw_token, 'sha256'), 'hex')
+      and i.revoked_at is null
+      and i.accepted_at is null
+      and i.expires_at > timezone('utc', now())
+    for update;
+    if not found then
+        raise exception 'invitation is invalid or expired' using errcode = '22023';
+    end if;
+    if lower(trim(invitation.email)) <> invite_email then
+        raise exception 'invitation email does not match sign-in email' using errcode = '42501';
+    end if;
+    insert into public.memberships (household_id, user_id, role)
+    values (invitation.household_id, auth.uid(), invitation.role)
+    on conflict (household_id, user_id) do update
+        set role = case
+            when public.memberships.role = 'owner' then public.memberships.role
+            else excluded.role
+        end
+    returning * into created_membership;
+    update public.invitations
+    set accepted_at = timezone('utc', now()), accepted_user_id = auth.uid()
+    where id = invitation.id;
+    insert into public.profiles (user_id, email, display_name)
+    values (
+        auth.uid(),
+        invite_email,
+        coalesce(nullif(trim(display_name), ''), split_part(invite_email, '@', 1))
+    )
+    on conflict (user_id) do update
+        set email = excluded.email,
+            display_name = excluded.display_name,
+            updated_at = timezone('utc', now());
+    return created_membership;
+end;
+$$;
+revoke all on function public.accept_invitation(text, text) from public, anon;
+grant execute on function public.accept_invitation(text, text) to authenticated;
+
+create or replace function public.manage_membership(
+    p_household_id uuid,
+    p_actor_user_id uuid,
+    p_member_user_id uuid,
+    p_action text,
+    p_role text default null
+)
+returns public.memberships
+language plpgsql security definer set search_path = public as $$
+declare
+    actor_membership public.memberships;
+    target_membership public.memberships;
+    owner_count integer;
+begin
+    if auth.uid() is null or p_actor_user_id <> auth.uid() then
+        raise exception 'actor mismatch' using errcode = '42501';
+    end if;
+    if p_action not in ('remove', 'role') then
+        raise exception 'invalid membership action' using errcode = '22023';
+    end if;
+    if p_action = 'role' and p_role not in ('owner', 'member', 'child', 'guest') then
+        raise exception 'invalid membership role' using errcode = '22023';
+    end if;
+
+    perform 1
+    from public.memberships
+    where household_id = p_household_id
+    order by user_id
+    for update;
+
+    select * into actor_membership
+    from public.memberships
+    where household_id = p_household_id and user_id = p_actor_user_id;
+    if not found or actor_membership.role <> 'owner' then
+        raise exception 'owner access required' using errcode = '42501';
+    end if;
+
+    select * into target_membership
+    from public.memberships
+    where household_id = p_household_id and user_id = p_member_user_id;
+    if not found then
+        raise exception 'member not found' using errcode = '22023';
+    end if;
+    if p_action = 'remove' and p_member_user_id = p_actor_user_id then
+        raise exception 'cannot remove yourself' using errcode = '42501';
+    end if;
+
+    select count(*) into owner_count
+    from public.memberships
+    where household_id = p_household_id and role = 'owner';
+    if target_membership.role = 'owner'
+       and owner_count <= 1
+       and (p_action = 'remove' or p_role <> 'owner') then
+        raise exception 'household must retain an owner' using errcode = '22023';
+    end if;
+
+    if p_action = 'remove' then
+        delete from public.memberships
+        where household_id = p_household_id and user_id = p_member_user_id;
+    else
+        update public.memberships
+        set role = p_role
+        where household_id = p_household_id and user_id = p_member_user_id
+        returning * into target_membership;
+    end if;
+    return target_membership;
+end;
+$$;
+revoke all on function public.manage_membership(uuid, uuid, uuid, text, text) from public;
+grant execute on function public.manage_membership(uuid, uuid, uuid, text, text) to authenticated;
+revoke insert, update, delete on public.memberships from authenticated;
+
+create or replace function public.delete_task(
+    p_household_id uuid,
+    p_actor_user_id uuid,
+    p_task_id uuid
+)
+returns public.tasks
+language plpgsql security definer set search_path = public as $$
+declare
+    actor_membership public.memberships;
+    task_row public.tasks;
+    deleted_task public.tasks;
+begin
+    if auth.uid() is null or p_actor_user_id <> auth.uid() then
+        raise exception 'actor mismatch' using errcode = '42501';
+    end if;
+    select * into actor_membership
+    from public.memberships
+    where household_id = p_household_id and user_id = p_actor_user_id
+    for update;
+    if not found then
+        raise exception 'household membership required' using errcode = '42501';
+    end if;
+    select * into task_row
+    from public.tasks
+    where id = p_task_id and household_id = p_household_id
+    for update;
+    if not found then
+        raise exception 'task not found' using errcode = '22023';
+    end if;
+    if task_row.private
+       and task_row.owner is distinct from p_actor_user_id
+       and task_row.created_by is distinct from p_actor_user_id then
+        raise exception 'private task access denied' using errcode = '42501';
+    end if;
+    delete from public.tasks
+    where id = task_row.id
+    returning * into deleted_task;
+    insert into public.activity_log (household_id, actor, action, entity_type, entity_id, before_json)
+    values (
+        p_household_id,
+        p_actor_user_id,
+        'task.deleted',
+        'task',
+        task_row.id,
+        jsonb_build_object(
+            'id', task_row.id,
+            'status', task_row.status,
+            'private', task_row.private,
+            'owner', task_row.owner,
+            'created_by', task_row.created_by
+        )
+    );
+    return deleted_task;
+end;
+$$;
+revoke all on function public.delete_task(uuid, uuid, uuid) from public;
+grant execute on function public.delete_task(uuid, uuid, uuid) to authenticated;
+revoke delete on public.tasks from authenticated;

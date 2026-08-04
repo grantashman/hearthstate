@@ -642,7 +642,47 @@ class HostedApiContractTests(unittest.TestCase):
             [{"id": member_id, "role": "member", "display_name": "Grant"}],
         )
 
-    def test_meal_mutation_migration_has_owner_membership_delete_policy(self):
+    @patch("api.index._supabase_request", return_value={"household_id": "household-id", "user_id": "member-id", "role": "member"})
+    @patch("api.index._json_body", return_value={})
+    def test_membership_admin_routes_use_transactional_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {"email": "owner@example.test"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._role = Mock(return_value="owner")
+        request._respond = Mock()
+        request._handle_post("/admin/members/8f8fad5b-d9cb-469f-a165-70867728951f/remove")
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/manage_membership",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "owner-id",
+                "p_member_user_id": "8f8fad5b-d9cb-469f-a165-70867728951f",
+                "p_action": "remove",
+                "p_role": None,
+            },
+        )
+
+    @patch("api.index._supabase_request", return_value={"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "status": "open"})
+    @patch("api.index._json_body", return_value={})
+    def test_task_delete_route_uses_actor_bound_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {"email": "viewer@example.test"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._respond = Mock()
+        request._handle_post("/tasks/2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47/delete")
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/delete_task",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "viewer-id",
+                "p_task_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            },
+        )
+
         migration = next((Path(__file__).parents[1] / "supabase" / "migrations").glob("*_auditable_meal_updates.sql")).read_text().lower()
         self.assertIn("create policy memberships_delete_owner", migration)
         self.assertIn("user_id <> (select auth.uid())", migration)
@@ -661,6 +701,13 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("jsonb_build_object('id', p_task_id, 'status', 'done')", migration)
         self.assertIn("grant execute on function public.complete_task(uuid, uuid, uuid) to authenticated, service_role", migration)
         self.assertIn("grant execute on function public.accept_invitation(text, text) to authenticated", migration)
+        self.assertIn("create or replace function public.manage_membership", migration)
+        self.assertIn("household must retain an owner", migration)
+        self.assertIn("revoke insert, update, delete on public.memberships from authenticated", migration)
+        self.assertIn("create or replace function public.delete_task", migration)
+        self.assertIn("private task access denied", migration)
+        self.assertIn("task.deleted", migration)
+        self.assertIn("revoke delete on public.tasks from authenticated", migration)
         self.assertIn("create or replace function public.create_task", migration)
         self.assertIn("create or replace function public.create_event", migration)
         self.assertIn("create or replace function public.create_grocery_item", migration)
