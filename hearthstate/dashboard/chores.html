@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-3" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
+    <title>Hearthstate · Chores</title>
+    <script>
+      (() => {
+        try {
+          if (localStorage.getItem('hearthstate-theme') === 'dark') document.documentElement.dataset.theme = 'dark';
+        } catch (error) {}
+      })();
+    </script>
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-7" />
+  </head>
+  <body data-section="chores">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><div><div class="brand-name">hearthstate</div><div class="brand-caption">household state</div></div></div>
+        <div class="sidebar-kicker">Household</div>
+        <button class="mobile-nav-toggle" type="button" aria-controls="primaryNav" aria-expanded="false"><span class="mobile-nav-icon" aria-hidden="true">☰</span><span>Menu</span></button>
+        <nav class="nav-list" id="primaryNav">
+          <a class="nav-item" href="/"><span class="nav-symbol">⌂</span>Overview</a>
+          <a class="nav-item" href="/calendar"><span class="nav-symbol">◷</span>Calendar</a>
+          <a class="nav-item" href="/tasks"><span class="nav-symbol">✓</span>Tasks</a>
+          <a class="nav-item is-active" href="/chores" aria-current="page"><span class="nav-symbol">↻</span>Chores</a>
+          <a class="nav-item" href="/meals"><span class="nav-symbol">♨</span>Meals</a>
+          <a class="nav-item" href="/recipes"><span class="nav-symbol">✦</span>Recipes</a>
+          <a class="nav-item" href="/groceries"><span class="nav-symbol">+</span>Groceries</a>
+          <a class="nav-item" href="/notifications"><span class="nav-symbol">⌁</span>Notifications</a>
+        </nav>
+        <div class="sidebar-spacer"></div>
+        <div class="privacy-card"><div class="privacy-icon" aria-hidden="true">✦</div><div><strong>Private by default</strong><p>Household routines stay in the household.</p></div></div>
+        <div class="sidebar-footer"><div class="avatar avatar-you" id="viewerAvatar">G</div><div class="person-copy"><strong id="viewerName">Household member</strong><span id="viewerRole">Household member</span></div><a class="more-button" href="/login" aria-label="Switch household user" title="Switch household user">↺</a></div>
+      </aside>
+      <main class="main-content section-page">
+        <header class="topbar"><div class="breadcrumb"><a href="/">Hearthstate</a><span class="slash">/</span><span>Chores</span></div><div class="topbar-actions"><span class="sync-status"><span class="sync-dot"></span><span id="syncStatus">Loading chores</span></span><button class="theme-button" id="themeToggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">☾</button><button class="refresh-button" id="refreshButton" type="button" aria-label="Refresh chores">↻</button></div></header>
+        <section class="section-hero"><div><p class="eyebrow">THE SHARED RHYTHM</p><h1>Chores</h1><p class="welcome-subtitle">Make the next person obvious, keep the rhythm fair, and leave completion history in the household record.</p></div><div class="section-hero-note"><span class="section-kicker">ROTATION</span><strong id="memberSummary">Loading household members</strong><span>Assign next advances the saved rotation.</span></div></section>
+        <section class="chore-layout">
+          <form class="records-panel chore-editor" id="choreForm">
+            <div class="records-heading"><div><p class="section-kicker">NEW ROUTINE</p><h2>Add a chore</h2></div><span class="panel-badge">shared</span></div>
+            <div class="form-field"><label for="choreTitle">Chore name</label><input id="choreTitle" name="title" type="text" maxlength="300" required placeholder="Empty the dishwasher" /></div>
+            <div class="form-grid"><label class="form-field" for="choreCadence"><span>Schedule</span><select id="choreCadence" name="cadence"><option value="weekly">Every week</option><option value="daily">Every day</option><option value="fortnightly">Every two weeks</option><option value="monthly">Every month</option><option value="yearly">Every year</option><option value="on_demand">Whenever needed</option></select></label><label class="form-field" for="choreNextDue"><span>Next due <em>optional</em></span><input id="choreNextDue" name="next_due_at" type="datetime-local" /></label></div>
+            <fieldset class="member-picker"><legend>Rotate among</legend><p class="form-help">Choose the household members who should take turns. Assign next creates a normal task for the next person.</p><div id="memberPickerOptions" class="member-picker-options"></div></fieldset>
+            <div class="chore-form-actions"><button class="primary-action" type="submit">Save chore <span>↗</span></button><button class="secondary-action is-hidden" id="cancelEdit" type="button">Cancel</button></div>
+            <div class="form-feedback is-hidden" id="choreFeedback" role="status"></div>
+          </form>
+          <section class="records-panel chore-list-panel" aria-labelledby="choreListTitle"><div class="records-heading"><div><p class="section-kicker">ACTIVE HOUSEHOLD ROUTINES</p><h2 id="choreListTitle">What turns next</h2></div><span class="date-stamp" id="updatedAt">—</span></div><div class="chore-list" id="choreList" aria-live="polite"></div><div class="empty-state is-hidden" id="choreEmpty"><div class="empty-mark quiet">↻</div><strong>No rotating chores yet.</strong><span>Add the first routine and choose who should take turns.</span></div></section>
+        </section>
+        <div class="error-banner is-hidden" id="errorBanner" role="alert"></div><footer class="page-footer"><span>hearthstate</span><span>Chores are shared household context</span></footer>
+      </main>
+    </div>
+    <script src="/nav.js?v=hearthstate-2" defer></script>
+    <script src="/chores.js?v=hearthstate-1" defer></script>
+  </body>
+</html>

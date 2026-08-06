@@ -455,6 +455,72 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if row.get("user_id")
         ]
 
+    def _chore_snapshot(self, household_id: str, token: str) -> tuple[list[dict], list[dict]]:
+        members = self._household_members(household_id, token)
+        member_map = {str(member["id"]): member for member in members if member.get("id")}
+        chores = self._table("chore_templates", household_id, token, ("active", "eq.true"), order="created_at.asc")
+        for chore in chores:
+            participants = chore.get("participants") if isinstance(chore.get("participants"), list) else []
+            participant_ids = []
+            for participant in participants:
+                participant_id = str(participant).strip()
+                if participant_id and participant_id not in participant_ids:
+                    participant_ids.append(participant_id)
+            chore["participants"] = participant_ids
+            chore["participant_labels"] = [member_map[participant_id].get("display_name") or participant_id for participant_id in participant_ids if participant_id in member_map]
+            try:
+                next_index = max(int(chore.get("next_index") or 0), 0)
+            except (TypeError, ValueError):
+                next_index = 0
+            next_assignee = participant_ids[next_index % len(participant_ids)] if participant_ids else None
+            if next_assignee not in member_map:
+                next_assignee = None
+            chore["next_assignee"] = next_assignee
+            chore["next_assignee_label"] = member_map.get(next_assignee, {}).get("display_name") if next_assignee else "Unassigned"
+        return chores, members
+
+    def _normalize_chore_input(self, payload: dict, household_id: str, token: str) -> dict:
+        if not isinstance(payload, dict):
+            raise ValueError("chore payload must be an object")
+        title = str(payload.get("title", "")).strip()
+        participants = payload.get("participants", [])
+        if not title or len(title) > 300:
+            raise ValueError("title is required and must be 300 characters or fewer")
+        if not isinstance(participants, list):
+            raise ValueError("participants must be a list")
+        if len(participants) > 20:
+            raise ValueError("participants must contain 20 or fewer members")
+        cadence = str(payload.get("cadence", "weekly")).strip().lower() or "weekly"
+        if cadence not in {"daily", "weekly", "fortnightly", "monthly", "yearly", "on_demand"}:
+            raise ValueError("invalid chore cadence")
+        member_ids = {
+            str(member.get("id"))
+            for member in self._household_members(household_id, token)
+            if member.get("id")
+        }
+        normalized_participants = []
+        for participant in participants:
+            participant_id = _uuid(participant, "chore participant")
+            if participant_id not in member_ids:
+                raise ValueError("chore participant must be a household member")
+            if participant_id not in normalized_participants:
+                normalized_participants.append(participant_id)
+        if not normalized_participants:
+            raise ValueError("at least one chore participant is required")
+        raw_next_due_at = payload.get("next_due_at")
+        next_due_at = None
+        if raw_next_due_at not in (None, ""):
+            parsed_next_due_at = _parse_datetime(raw_next_due_at)
+            if parsed_next_due_at is None:
+                raise ValueError("next_due_at must be a valid date and time")
+            next_due_at = parsed_next_due_at.isoformat()
+        return {
+            "title": title,
+            "cadence": cadence,
+            "participants": normalized_participants,
+            "next_due_at": next_due_at,
+        }
+
     def _visible_tasks(self, tasks: list[dict], user_id: str) -> list[dict]:
         return [
             task for task in tasks
@@ -520,7 +586,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "meals": {"meal_date", "meal_type", "title", "cook", "status", "ingredients"},
             "grocery_items": {"name", "quantity", "unit", "category", "status"},
             "recipes": {"source", "source_policy", "title", "source_url", "image_url", "summary", "tags", "prep_minutes", "cook_minutes", "ingredients"},
-            "chore_templates": {"title", "cadence", "participants", "next_index", "active"},
+            "chore_templates": {"title", "cadence", "participants", "next_index", "next_due_at", "active"},
         }.get(table, set())
         record = {key: value for key, value in payload.items() if key in fields}
         if table == "grocery_items":
@@ -1434,13 +1500,14 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "/calendar": ("calendar.html", "text/html; charset=utf-8", True), "/calendar/": ("calendar.html", "text/html; charset=utf-8", True),
             "/tasks": ("tasks.html", "text/html; charset=utf-8", True), "/tasks/": ("tasks.html", "text/html; charset=utf-8", True),
             "/meals": ("meals.html", "text/html; charset=utf-8", True), "/meals/": ("meals.html", "text/html; charset=utf-8", True),
+            "/chores": ("chores.html", "text/html; charset=utf-8", True), "/chores/": ("chores.html", "text/html; charset=utf-8", True),
             "/groceries": ("groceries.html", "text/html; charset=utf-8", True), "/groceries/": ("groceries.html", "text/html; charset=utf-8", True),
             "/recipes": ("recipes.html", "text/html; charset=utf-8", True), "/recipes/": ("recipes.html", "text/html; charset=utf-8", True),
             "/admin": ("admin.html", "text/html; charset=utf-8", True), "/admin/": ("admin.html", "text/html; charset=utf-8", True),
             "/notifications": ("notifications.html", "text/html; charset=utf-8", True), "/notifications/": ("notifications.html", "text/html; charset=utf-8", True),
         }
         assets = {name: (name, content_type, False) for name, content_type in {
-            "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml", "manifest.webmanifest": "application/manifest+json; charset=utf-8", "icons/icon-192.png": "image/png", "icons/icon-512.png": "image/png"}.items()}
+            "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "chores.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml", "manifest.webmanifest": "application/manifest+json; charset=utf-8", "icons/icon-192.png": "image/png", "icons/icon-512.png": "image/png"}.items()}
         if route == "/":
             if not self._token():
                 filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
@@ -1573,7 +1640,8 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                         conflicts.append({"title": f"{left.get('title')} · {right.get('title')}", "assignee": left.get("assignee") or left.get("person") or "Household"})
             self._respond({"conflicts": conflicts})
         elif route == "/chores":
-            self._respond({"chores": self._table("chore_templates", household_id, token, ("active", "eq.true"), order="created_at.asc")})
+            chores, members = self._chore_snapshot(household_id, token)
+            self._respond({"chores": chores, "members": members, "generated_at": _iso_now()})
         elif route == "/groceries":
             self._respond({**self._grocery_snapshot(household_id, token), "generated_at": _iso_now()})
         elif route == "/recipes":
@@ -1756,24 +1824,65 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if route == "/activity/undo":
             self._respond({"undone": None}); return
         if route == "/chores":
-            title = str(payload.get("title", "")).strip(); participants = payload.get("participants", [])
-            if not title: raise ValueError("title is required")
-            if not isinstance(participants, list): raise ValueError("participants must be a list")
-            chore = self._post_record("chore_templates", household_id, user_id, token, {"title": title, "cadence": str(payload.get("cadence", "weekly")), "participants": participants})
+            chore_input = self._normalize_chore_input(payload, household_id, token)
+            chore = _first(_supabase_request(
+                "POST",
+                "/rest/v1/rpc/create_chore_template",
+                token=token,
+                payload={
+                    "p_household_id": household_id,
+                    "p_actor_user_id": user_id,
+                    "p_title": chore_input["title"],
+                    "p_cadence": chore_input["cadence"],
+                    "p_participants": chore_input["participants"],
+                    "p_next_due_at": chore_input["next_due_at"],
+                },
+            ))
+            if not chore:
+                raise SupabaseHTTPError(502, "Supabase did not return the created chore")
             self._respond({"chore": chore}, status=201); return
         if route.startswith("/chores/"):
-            chore_id = _uuid(route.removeprefix("/chores/").strip("/"), "chore id")
+            chore_parts = route.removeprefix("/chores/").strip("/").split("/")
+            chore_id = _uuid(chore_parts[0], "chore id")
             chore = _first(_supabase_request("GET", "/rest/v1/chore_templates", token=token, query=[("select", "*"), ("id", f"eq.{chore_id}"), ("household_id", f"eq.{household_id}")]))
             if not chore: raise SupabaseHTTPError(404, "chore not found")
-            task = _first(_supabase_request(
+            if len(chore_parts) == 2 and chore_parts[1] == "edit":
+                chore_input = self._normalize_chore_input(payload, household_id, token)
+                updated_chore = _first(_supabase_request(
+                    "POST",
+                    "/rest/v1/rpc/update_chore_template",
+                    token=token,
+                    payload={
+                        "p_household_id": household_id,
+                        "p_actor_user_id": user_id,
+                        "p_chore_id": chore_id,
+                        "p_title": chore_input["title"],
+                        "p_cadence": chore_input["cadence"],
+                        "p_participants": chore_input["participants"],
+                        "p_next_due_at": chore_input["next_due_at"],
+                    },
+                ))
+                if not updated_chore:
+                    raise SupabaseHTTPError(502, "Supabase did not return the updated chore")
+                self._respond({"chore": updated_chore}, status=200); return
+            if len(chore_parts) != 1:
+                raise SupabaseHTTPError(404, "chore route not found")
+            raw_due_at = payload.get("due_date")
+            due_at = None
+            if raw_due_at not in (None, ""):
+                parsed_due_at = _parse_datetime(raw_due_at)
+                if parsed_due_at is None:
+                    raise ValueError("due_date must be a valid date and time")
+                due_at = parsed_due_at.isoformat()
+            assignment = _first(_supabase_request(
                 "POST",
                 "/rest/v1/rpc/create_chore_task",
                 token=token,
-                payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_chore_id": chore_id, "p_due_at": payload.get("due_date") or None},
+                payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_chore_id": chore_id, "p_due_at": due_at},
             ))
-            if not task:
-                raise SupabaseHTTPError(502, "Supabase did not return the chore task")
-            self._respond({"task": task}, status=201); return
+            if not isinstance(assignment, dict) or not assignment.get("task"):
+                raise SupabaseHTTPError(502, "Supabase did not return the created chore task")
+            self._respond(assignment, status=201); return
         if route == "/groceries/budget":
             budget = float(payload.get("budget"))
             if budget < 0: raise ValueError("budget must not be negative")
