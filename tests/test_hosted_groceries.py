@@ -6,7 +6,7 @@ from api.index import SupabaseHTTPError, handler
 
 
 class HostedGroceryMatchingTests(unittest.TestCase):
-    def test_size_qualified_existing_row_is_displayed_as_one_pack(self):
+    def test_size_qualified_existing_row_stays_unresolved_without_an_exact_supported_pack(self):
         item = {
             "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
             "name": "Coke Zero",
@@ -20,12 +20,14 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         request._table = Mock(return_value=[item])
         with patch("api.index._supabase_request", return_value=[]):
             snapshot = request._grocery_snapshot("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "access-token")
-        self.assertEqual(snapshot["items"][0]["name"], "Coke Zero 600ml")
-        self.assertEqual(snapshot["items"][0]["quantity"], 1)
-        self.assertEqual(snapshot["items"][0]["unit"], "each")
-        self.assertEqual(snapshot["comparison"]["aldi"]["total"], 3.99)
+        self.assertEqual(snapshot["items"][0]["name"], "Coke Zero")
+        self.assertEqual(snapshot["items"][0]["quantity"], 600)
+        self.assertEqual(snapshot["items"][0]["unit"], "ml")
+        self.assertEqual(set(snapshot["comparison"]), {"coles", "woolworths"})
+        self.assertEqual(snapshot["comparison"]["coles"]["total"], 0)
+        self.assertEqual(snapshot["comparison"]["woolworths"]["lines"][0]["quantity"], 1)
 
-    def test_refresh_patch_keeps_size_qualified_item_as_one_pack(self):
+    def test_refresh_does_not_apply_a_closest_pack_as_an_automatic_price(self):
         item = {
             "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
             "name": "Coke Zero",
@@ -37,11 +39,12 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         }
         request = object.__new__(handler)
         request._patch_automatic_price = Mock(return_value={**item, "price": 4.00})
-        items, updated = request._apply_catalog_matches([item], "household-id", "access-token", retailer="aldi")
-        self.assertEqual(updated, ["Coke Zero 600ml"])
-        self.assertEqual(items[0]["name"], "Coke Zero 600ml")
-        self.assertEqual(items[0]["quantity"], 1)
-        self.assertEqual(items[0]["unit"], "each")
+        items, updated = request._apply_catalog_matches([item], "household-id", "access-token")
+        self.assertEqual(updated, [])
+        request._patch_automatic_price.assert_not_called()
+        self.assertEqual(items[0]["name"], "Coke Zero")
+        self.assertEqual(items[0]["quantity"], 600)
+        self.assertEqual(items[0]["unit"], "ml")
 
     def test_grocery_record_payload_canonicalizes_size_as_one_purchase(self):
         request = object.__new__(handler)
@@ -51,9 +54,9 @@ class HostedGroceryMatchingTests(unittest.TestCase):
             "user-id",
             "household-id",
         )
-        self.assertEqual(record["name"], "Coke Zero 600ml")
-        self.assertEqual(record["quantity"], 1)
-        self.assertEqual(record["unit"], "each")
+        self.assertEqual(record["name"], "Coke Zero")
+        self.assertEqual(record["quantity"], 600)
+        self.assertEqual(record["unit"], "ml")
         self.assertNotIn("requested_size", record)
         self.assertNotIn("price", record)
         self.assertNotIn("price_source", record)
@@ -100,14 +103,14 @@ class HostedGroceryMatchingTests(unittest.TestCase):
     def test_quantity_patch_persists_canonical_existing_pack(self):
         item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
         existing = {"id": item_id, "name": "Coke Zero", "quantity": 600, "unit": "ml", "category": "Recipe"}
-        patched = {**existing, "name": "Coke Zero 600ml", "quantity": 2, "unit": "each"}
+        patched = {**existing, "quantity": 2, "unit": "ml"}
         request = object.__new__(handler)
         with patch("api.index._supabase_request", side_effect=[[existing], [patched]]) as supabase:
             result = request._patch_record("grocery_items", item_id, "household-id", "access-token", {"quantity": 2})
         payload = supabase.call_args_list[1].kwargs["payload"]
-        self.assertEqual(payload["name"], "Coke Zero 600ml")
+        self.assertEqual(payload["name"], "Coke Zero")
         self.assertEqual(payload["quantity"], 2)
-        self.assertEqual(payload["unit"], "each")
+        self.assertEqual(payload["unit"], "ml")
         self.assertNotIn("requested_size", payload)
         self.assertEqual(result["quantity"], 2)
 
@@ -152,6 +155,27 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         self.assertEqual(snapshot["priced_count"], 0)
         self.assertFalse(snapshot["comparison"]["coles"]["comparable"])
         self.assertIsNone(snapshot["recommended_retailer"])
+
+    def test_snapshot_exposes_both_store_prices_and_cart_totals(self):
+        item = {
+            "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "name": "Coke Zero",
+            "quantity": 2,
+            "unit": "each",
+            "price": None,
+            "price_confidence": None,
+            "status": "open",
+        }
+        request = object.__new__(handler)
+        request._table = Mock(return_value=[item])
+        with patch("api.index._supabase_request", return_value=[]):
+            snapshot = request._grocery_snapshot("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "access-token")
+        self.assertEqual(set(snapshot["items"][0]["retailer_prices"]), {"coles", "woolworths"})
+        self.assertEqual(snapshot["items"][0]["retailer_prices"]["coles"]["line_total"], 8.00)
+        self.assertEqual(snapshot["items"][0]["retailer_prices"]["woolworths"]["line_total"], 8.00)
+        self.assertEqual(snapshot["retailer_totals"][0]["retailer"], "coles")
+        self.assertEqual({row["retailer"] for row in snapshot["retailer_totals"]}, {"coles", "woolworths"})
+        self.assertEqual({row["total"] for row in snapshot["retailer_totals"]}, {8.00})
 
     def test_refresh_applies_curated_match_only_when_explicitly_requested(self):
         item = {
@@ -300,15 +324,18 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         javascript = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "groceries.js").read_text()
         self.assertIn('id="retailerComparison"', html)
         self.assertIn('id="comparisonNote"', html)
+        self.assertIn('id="bestDeals"', html)
         self.assertIn("/api/groceries/refresh", javascript)
         self.assertIn("retailer_totals", javascript)
+        self.assertIn("retailer-price-grid", javascript)
+        self.assertIn("best_deals", javascript)
         self.assertIn("recommended_retailer", javascript)
         self.assertIn("comparison_not_comparable_items", javascript)
         self.assertIn("Products compared", javascript)
         self.assertIn("closest pack", javascript)
         self.assertIn("retailer.comparable", javascript)
         self.assertIn("woolworths.com.au", javascript)
-        self.assertIn("aldi.com.au", javascript)
+        self.assertNotIn("aldi.com.au", javascript)
         self.assertIn("trustedPriceURL", javascript)
         self.assertIn("safePriceURL", javascript)
         self.assertNotIn("source.startsWith(retailer)", javascript)
@@ -317,7 +344,7 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         request = object.__new__(handler)
         comparison = {
             "coles": {"lines": [{"item_id": "item-id", "match": {"product_key": "eggs", "title": "Eggs", "url": "https://www.coles.com.au/product/eggs", "price": 5.70, "observed_at": "2026-08-04", "confidence": "curated", "match_basis": "exact alias", "note": "Observed"}}]},
-            "aldi": {"lines": [{"item_id": "item-id", "match": None}]},
+            "woolworths": {"lines": [{"item_id": "item-id", "match": None}]},
         }
         with patch("api.index._supabase_request") as member_request, patch("api.index._supabase_admin_request") as admin_request:
             request._upsert_price_quotes(comparison, "household-id", "access-token", actor_user_id="user-id")
@@ -355,6 +382,11 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         self.assertIn("private.is_household_member(household_id)", migration)
         self.assertIn("grant select, insert, update, delete on public.grocery_price_quotes to authenticated", migration)
         self.assertNotIn("service_role", migration)
+        live_migration = (migrations / "20260806010000_coles_woolworths_live_quotes.sql").read_text()
+        self.assertIn("delete from public.grocery_price_quotes", live_migration)
+        self.assertIn("check (retailer in ('coles', 'woolworths'))", live_migration)
+        self.assertIn("comparison_key", live_migration)
+        self.assertIn("drop function if exists public.upsert_grocery_price_quote", live_migration)
         rls_migration = (Path(__file__).parents[1] / "supabase" / "migrations" / "20260804020000_grocery_price_quote_delete_rls.sql").read_text()
         self.assertIn("grocery_price_quotes_member_delete", rls_migration)
         self.assertIn("item.household_id = grocery_price_quotes.household_id", rls_migration)
@@ -376,7 +408,7 @@ class HostedGroceryMatchingTests(unittest.TestCase):
                     },
                 }],
             },
-            "aldi": {"lines": [{"item_id": "item-id", "match": None}]},
+            "woolworths": {"lines": [{"item_id": "item-id", "match": None}]},
         }
 
         with patch("api.index._supabase_admin_request") as admin_request:

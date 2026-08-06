@@ -21,21 +21,15 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertEqual(match["size_match"], "closest")
         self.assertEqual(match["requested_size"], "600ml")
 
-    def test_aldi_coke_zero_uses_brand_name_and_exact_size(self):
-        match = match_item("Coke Zero 600ml", "aldi")
-        self.assertIsNotNone(match)
-        self.assertEqual(match["title"], "Coke Coca Cola Zero Sugar 600ml")
-        self.assertEqual(match["price"], 3.99)
-        self.assertEqual(match["url"], "https://www.aldi.com.au/product/coca-cola-coke-coca-cola-zero-sugar-600ml-000000000000366926")
-
-    def test_aldi_generic_coke_zero_fails_closed_when_pack_sizes_are_ambiguous(self):
-        self.assertIsNone(match_item("Coke Zero", "aldi"))
+    def test_only_coles_and_woolworths_are_supported(self):
+        with self.assertRaises(ValueError):
+            match_item("Coke Zero", "aldi")
 
     def test_size_quantity_becomes_one_purchase_when_it_matches_a_packaged_product(self):
         item = normalize_grocery_item({"name": "Coke Zero", "quantity": 600, "unit": "ml"})
-        self.assertEqual(item["name"], "Coke Zero 600ml")
-        self.assertEqual(item["quantity"], 1)
-        self.assertEqual(item["unit"], "each")
+        self.assertEqual(item["name"], "Coke Zero")
+        self.assertEqual(item["quantity"], 600)
+        self.assertEqual(item["unit"], "ml")
 
     def test_loose_weighted_product_does_not_become_one_pack(self):
         item = normalize_grocery_item({"name": "bananas", "quantity": 170, "unit": "g"})
@@ -63,11 +57,8 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertTrue(match["url"].startswith("https://www.coles.com.au/product/"))
         self.assertEqual(match["confidence"], "curated")
 
-    def test_each_non_coles_catalog_has_traceable_common_products(self):
-        aldi_bread = match_item("bread", "aldi")
+    def test_woolworths_catalog_has_traceable_common_products(self):
         woolworths_butter = match_item("butter", "woolworths")
-        self.assertEqual(aldi_bread["price"], 2.59)
-        self.assertIn("aldi.com.au/product/", aldi_bread["url"])
         self.assertEqual(woolworths_butter["price"], 4.50)
         self.assertIn("woolworths.com.au/shop/productdetails/", woolworths_butter["url"])
 
@@ -76,7 +67,7 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertIsNone(match_item("600mL Coke Zero", "coles"))
 
     def test_invalid_signed_size_fails_closed(self):
-        self.assertIsNone(match_item("Coke Zero -600ml", "aldi"))
+        self.assertIsNone(match_item("Coke Zero -600ml", "coles"))
 
     def test_zero_size_comparison_fails_closed_instead_of_crashing(self):
         comparison = compare_cart([{"name": "Coke Zero 0ml", "quantity": 1, "unit": "each"}])
@@ -133,7 +124,7 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertEqual(catalog_updates([item]), [])
 
     def test_unknown_item_is_not_guessed(self):
-        self.assertIsNone(match_item("mystery pantry item", "aldi"))
+        self.assertIsNone(match_item("mystery pantry item", "woolworths"))
 
     def test_generic_coke_zero_is_equivalent_across_matching_2l_catalogs(self):
         comparison = compare_cart([{"name": "Coke Zero", "quantity": 1}], retailers=("coles", "woolworths"))
@@ -144,11 +135,10 @@ class RetailerMatcherTests(unittest.TestCase):
             comparison["woolworths"]["lines"][0]["match"]["comparison_key"],
         )
 
-    def test_size_qualified_coke_zero_comparison_uses_one_pack(self):
+    def test_size_qualified_coke_zero_does_not_use_a_different_pack(self):
         comparison = compare_cart([{"name": "Coke Zero", "quantity": 600, "unit": "ml"}])
-        self.assertEqual(comparison["aldi"]["total"], 3.99)
-        self.assertEqual(comparison["aldi"]["lines"][0]["quantity"], 1)
-        self.assertEqual(comparison["aldi"]["lines"][0]["name"], "Coke Zero 600ml")
+        self.assertEqual(comparison["coles"]["total"], 0)
+        self.assertIsNone(comparison["coles"]["lines"][0]["match"])
         self.assertEqual(comparison["woolworths"]["lines"][0]["match"]["size_match"], "closest")
         self.assertFalse(comparison["woolworths"]["comparable"])
 
@@ -170,15 +160,42 @@ class RetailerMatcherTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(set(comparison), {"coles", "aldi", "woolworths"})
+        self.assertEqual(set(comparison), {"coles", "woolworths"})
         self.assertEqual(comparison["coles"]["total"], 7.36)
-        self.assertEqual(comparison["aldi"]["total"], 6.91)
         self.assertEqual(comparison["woolworths"]["total"], 8.32)
         for retailer in comparison:
             self.assertEqual(comparison[retailer]["priced_count"], 2)
             self.assertEqual(comparison[retailer]["unknown_count"], 1)
             self.assertFalse(comparison[retailer]["complete"])
-        self.assertEqual(comparison["aldi"]["total_status"], "partial")
+        self.assertEqual(comparison["woolworths"]["total_status"], "partial")
+
+    def test_live_matches_drive_both_store_totals_and_best_item_savings(self):
+        live_matches = {
+            "coles": {
+                "item-1": {
+                    "retailer": "coles", "retailer_label": "Coles", "item_id": "item-1",
+                    "product_key": "coles-eggs", "comparison_key": "eggs-700g", "title": "Coles Eggs",
+                    "price": 5.70, "url": "https://www.coles.com.au/product/eggs", "confidence": "live",
+                    "observed_at": "2026-08-04T00:00:00+00:00", "match_basis": "provider", "note": "",
+                    "size_match": "exact", "size_quantity_safe": True,
+                },
+            },
+            "woolworths": {
+                "item-1": {
+                    "retailer": "woolworths", "retailer_label": "Woolworths", "item_id": "item-1",
+                    "product_key": "woolworths-eggs", "comparison_key": "eggs-700g", "title": "Woolworths Eggs",
+                    "price": 6.50, "url": "https://www.woolworths.com.au/shop/productdetails/eggs", "confidence": "live",
+                    "observed_at": "2026-08-04T00:00:00+00:00", "match_basis": "provider", "note": "",
+                    "size_match": "exact", "size_quantity_safe": True,
+                },
+            },
+        }
+        comparison = compare_cart([{"id": "item-1", "name": "eggs", "quantity": 2}], live_matches=live_matches)
+        self.assertEqual(comparison["coles"]["total"], 11.40)
+        self.assertEqual(comparison["woolworths"]["total"], 13.00)
+        self.assertEqual(comparison["coles"]["live_count"], 1)
+        self.assertEqual(comparison["coles"]["best_deals"][0]["retailer"], "coles")
+        self.assertEqual(comparison["coles"]["best_deals"][0]["savings"], 1.60)
 
 
 if __name__ == "__main__":

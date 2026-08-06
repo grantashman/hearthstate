@@ -16,8 +16,10 @@ from uuid import UUID
 
 try:
     from .pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
+    from .retailer_refresh import LiveRefreshResult, cached_live_match, live_refresh_configured, refresh_live_retailers
 except ImportError:  # Vercel may load api/index.py as a standalone function module.
     from pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
+    from retailer_refresh import LiveRefreshResult, cached_live_match, live_refresh_configured, refresh_live_retailers
 
 
 # The publishable key is safe to expose to the browser. Production should still
@@ -899,6 +901,83 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             updated.append(str(item.get("name") or ""))
         return items, updated
 
+    def _cached_live_matches(self, items: list[dict], household_id: str, token: str) -> dict[str, dict[str, dict]]:
+        """Read the latest safe live observations without exposing quote writes to clients."""
+        item_ids = []
+        for item in items:
+            try:
+                item_ids.append(_uuid(item.get("id"), "grocery item id"))
+            except ValueError:
+                continue
+        if not item_ids:
+            return {}
+        fields = "grocery_item_id,retailer,product_key,product_title,product_url,price,observed_at,confidence,match_basis,note,comparison_key,requested_size,product_size,size_match,size_quantity_safe"
+        try:
+            rows = _rows(_supabase_request(
+                "GET",
+                "/rest/v1/grocery_price_quotes",
+                token=token,
+                query=[
+                    ("select", fields),
+                    ("household_id", f"eq.{household_id}"),
+                    ("grocery_item_id", f"in.({','.join(item_ids)})"),
+                ],
+            ))
+        except SupabaseHTTPError as exc:
+            # Keep code and migrations deployable in either order. Older quote
+            # rows remain useful as curated fallback until the new metadata is live.
+            if exc.status not in {400, 404}:
+                raise
+            rows = _rows(_supabase_request(
+                "GET",
+                "/rest/v1/grocery_price_quotes",
+                token=token,
+                query=[
+                    ("select", "grocery_item_id,retailer,product_key,product_title,product_url,price,observed_at,confidence,match_basis,note"),
+                    ("household_id", f"eq.{household_id}"),
+                    ("grocery_item_id", f"in.({','.join(item_ids)})"),
+                ],
+            ))
+        expected_ids = set(item_ids)
+        matches: dict[str, dict[str, dict]] = {}
+        for row in rows:
+            item_id = str(row.get("grocery_item_id") or "")
+            match = cached_live_match(row, expected_item_ids=expected_ids)
+            if match:
+                matches.setdefault(match["retailer"], {})[item_id] = match
+        return matches
+
+    def _apply_live_matches(self, items: list[dict], live_matches: dict[str, dict[str, dict]], household_id: str, token: str, *, actor_user_id: str | None = None) -> list[str]:
+        """Make live Coles prices the primary item price, preserving manual prices."""
+        updated: list[str] = []
+        for item in items:
+            match = live_matches.get("coles", {}).get(str(item.get("id")))
+            if not match or match.get("size_match") != "exact":
+                continue
+            patched = self._patch_automatic_price(
+                item.get("id"),
+                household_id,
+                token,
+                {
+                    "price": match["price"],
+                    "price_source": match["title"],
+                    "price_url": match["url"],
+                    "price_confidence": match["confidence"],
+                    "price_checked_at": match["observed_at"],
+                    "price_note": match["note"],
+                },
+                expected_item=item,
+                actor_user_id=actor_user_id,
+            )
+            if patched is None:
+                continue
+            for index, current in enumerate(items):
+                if str(current.get("id")) == str(item.get("id")):
+                    items[index] = normalize_grocery_item(patched)
+                    break
+            updated.append(str(item.get("name") or ""))
+        return updated
+
     def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str, *, actor_user_id: str | None = None) -> None:
         """Persist the explicit refresh result as household-scoped retailer observations."""
         if not actor_user_id:
@@ -921,31 +1000,82 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                         },
                     )
                     continue
-                _supabase_admin_request(
-                    "POST",
-                    "/rest/v1/rpc/upsert_grocery_price_quote",
-                    payload={
-                        "p_actor_user_id": actor_user_id,
-                        "p_household_id": household_id,
-                        "p_grocery_item_id": item_id,
-                        "p_retailer": retailer,
-                        "p_product_key": match["product_key"],
-                        "p_product_title": match["title"],
-                        "p_product_url": match["url"],
-                        "p_price": match["price"],
-                        "p_observed_at": match["observed_at"],
-                        "p_confidence": match["confidence"],
-                        "p_match_basis": match["match_basis"],
-                        "p_note": match["note"],
-                    },
-                )
+                payload = {
+                    "p_actor_user_id": actor_user_id,
+                    "p_household_id": household_id,
+                    "p_grocery_item_id": item_id,
+                    "p_retailer": retailer,
+                    "p_product_key": match["product_key"],
+                    "p_product_title": match["title"],
+                    "p_product_url": match["url"],
+                    "p_price": match["price"],
+                    "p_observed_at": match["observed_at"],
+                    "p_confidence": match["confidence"],
+                    "p_match_basis": match["match_basis"],
+                    "p_note": match["note"],
+                    "p_comparison_key": match.get("comparison_key"),
+                    "p_requested_size": match.get("requested_size"),
+                    "p_product_size": match.get("product_size"),
+                    "p_size_match": match.get("size_match", "exact"),
+                    "p_size_quantity_safe": bool(match.get("size_quantity_safe")),
+                }
+                try:
+                    _supabase_admin_request("POST", "/rest/v1/rpc/upsert_grocery_price_quote", payload=payload)
+                except SupabaseHTTPError as exc:
+                    if exc.status not in {400, 404}:
+                        raise
+                    _supabase_admin_request(
+                        "POST",
+                        "/rest/v1/rpc/upsert_grocery_price_quote",
+                        payload={key: value for key, value in payload.items() if not key.startswith("p_comparison") and not key.startswith("p_requested") and not key.startswith("p_product_size") and not key.startswith("p_size_")},
+                    )
 
     def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False, actor_user_id: str | None = None) -> dict:
         items = [normalize_grocery_item(item) for item in self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")]
+        live_result = LiveRefreshResult(False, {}, {})
+        live_matches = self._cached_live_matches(items, household_id, token)
         auto_updated: list[str] = []
         if refresh:
-            items, auto_updated = self._apply_catalog_matches(items, household_id, token, actor_user_id=actor_user_id)
-        comparison = compare_cart(items)
+            live_result = refresh_live_retailers(items, rate_key=household_id)
+            for retailer, matches in live_result.matches.items():
+                live_matches.setdefault(retailer, {}).update(matches)
+            items, curated_updated = self._apply_catalog_matches(items, household_id, token, actor_user_id=actor_user_id)
+            auto_updated.extend(curated_updated)
+            live_updated = self._apply_live_matches(items, live_matches, household_id, token, actor_user_id=actor_user_id)
+            auto_updated.extend(name for name in live_updated if name not in auto_updated)
+        comparison = compare_cart(items, live_matches=live_matches)
+        for index, item in enumerate(items):
+            retailer_prices = {}
+            for retailer, result in comparison.items():
+                line = result["lines"][index]
+                match = line.get("match")
+                retailer_prices[retailer] = {
+                    "retailer": retailer,
+                    "retailer_label": result["retailer_label"],
+                    "price": match.get("price") if match else None,
+                    "line_total": line.get("line_total"),
+                    "title": match.get("title") if match else None,
+                    "url": match.get("url") if match else None,
+                    "confidence": match.get("confidence") if match else None,
+                    "observed_at": match.get("observed_at") if match else None,
+                    "size_match": match.get("size_match") if match else None,
+                    "stale": bool(match.get("stale")) if match else False,
+                    "matched": match is not None,
+                }
+            priced = [value for value in retailer_prices.values() if value["line_total"] is not None and value["size_match"] == "exact"]
+            comparable = len(priced) == len(retailer_prices) and len({comparison[retailer]["lines"][index]["match"].get("comparison_key") for retailer in retailer_prices}) == 1
+            item["retailer_prices"] = retailer_prices
+            item["retailer_prices_comparable"] = comparable
+            if comparable and priced:
+                cheapest = min(priced, key=lambda value: value["line_total"])
+                most_expensive = max(priced, key=lambda value: value["line_total"])
+                item["cheapest_retailer"] = cheapest["retailer"]
+                item["cheapest_retailer_label"] = cheapest["retailer_label"]
+                item["retailer_savings"] = round(most_expensive["line_total"] - cheapest["line_total"], 2)
+            else:
+                item["cheapest_retailer"] = None
+                item["cheapest_retailer_label"] = None
+                item["retailer_savings"] = None
         settings = _first(_supabase_request("GET", "/rest/v1/planner_settings", token=token, query=[("select", "weekly_budget,updated_at"), ("household_id", f"eq.{household_id}")])) or {}
         budget = settings.get("weekly_budget")
         total = round(sum(float(item.get("price") or 0) * float(item.get("quantity") or 1) for item in items), 2)
@@ -968,14 +1098,23 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 "comparable": value["comparable"],
                 "comparison_status": value["comparison_status"],
                 "not_comparable_items": value["not_comparable_items"],
+                "live_count": value.get("live_count", 0),
+                "stale_count": value.get("stale_count", 0),
             }
             for key, value in comparison.items()
         ]
         ranked = sorted(retailer_totals, key=lambda value: (not value["complete"], value["total"]))
-        recommended = next((value for value in ranked if value["complete"] and value["comparable"]), None) if items else None
-        best_known = next((value for value in ranked if value["comparable"]), None) if items else None
-        comparison_comparable = bool(items) and all(value["comparable"] for value in retailer_totals)
+        recommended = next((value for value in ranked if value["complete"] and value["comparable"] and value["stale_count"] == 0), None) if items else None
+        best_known = next((value for value in ranked if value["comparable"] and value["stale_count"] == 0), None) if items else None
+        comparison_comparable = bool(items) and all(value["comparable"] and value["stale_count"] == 0 for value in retailer_totals)
         comparison_not_comparable_items = next((value["not_comparable_items"] for value in retailer_totals if value["not_comparable_items"]), [])
+        refresh_status = dict(live_result.statuses)
+        for retailer in ("coles", "woolworths"):
+            if retailer in live_matches and live_matches[retailer]:
+                refresh_status.setdefault(retailer, "cached-live-stale" if all(match.get("stale") for match in live_matches[retailer].values()) else "cached-live")
+            else:
+                refresh_status.setdefault(retailer, "curated")
+        best_deals = next(iter(comparison.values()), {}).get("best_deals", [])
         return {
             "items": items,
             "total_count": len(items),
@@ -995,7 +1134,16 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "best_known_retailer": best_known["retailer"] if best_known else None,
             "comparison_comparable": comparison_comparable,
             "comparison_not_comparable_items": comparison_not_comparable_items,
-            "comparison_note": "Only a complete cart with equivalent product sizes and variants can be recommended; partial or non-equivalent totals are shown for planning only.",
+            "best_deals": best_deals,
+            "refresh": {
+                "requested": refresh,
+                "enabled": live_refresh_configured(),
+                "statuses": refresh_status,
+                "live_retailers": [retailer for retailer, status in refresh_status.items() if status == "live"],
+                "checked_at": live_result.checked_at,
+                "error": live_result.error,
+            },
+            "comparison_note": "Both stores are shown for planning. A recommendation requires complete, equivalent, non-stale product matches; manual prices are never overwritten.",
         }
 
     def _calendar_items(self, household_id: str, user_id: str, token: str, now: datetime) -> list[dict]:
