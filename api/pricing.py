@@ -302,80 +302,6 @@ def apply_known_coles_prices(store: PlannerStore, checked_at: str | None = None)
 
 
 
-ALDI_PRICE_CATALOG = {
-    "milk": {
-        "price": 3.55,
-        "source": "Farmdale Full Cream Milk 2L",
-        "url": "https://www.aldi.com.au/product/farmdale-full-cream-milk-2l-000000000000398689",
-        "aliases": ("milk", "full cream milk", "2l milk", "farmdale milk"),
-        "note": "ALDI Farmdale full-cream 2L milk; price is location-sensitive and may vary by store.",
-        "observed_at": "2026-08-04",
-    },
-    "eggs": {
-        "price": 5.29,
-        "source": "Lodge Farms Barn Laid Eggs 700g",
-        "url": "https://www.aldi.com.au/product/lodge-farms-barn-laid-eggs-700g-000000000000405620",
-        "aliases": ("eggs", "egg", "barn laid eggs"),
-        "note": "ALDI Lodge Farms barn-laid eggs 700g; price is location-sensitive and may vary by store.",
-        "observed_at": "2026-08-04",
-    },
-    "bananas": {
-        "price": 0.81,
-        "source": "Cavendish Bananas Loose approx. 180g",
-        "url": "https://www.aldi.com.au/product/no-brand-cavendish-bananas-loose-000000000000380234",
-        "aliases": ("bananas", "banana", "cavendish bananas"),
-        "note": "ALDI loose Cavendish banana; final price is weight-based and location-sensitive.",
-        "observed_at": "2026-08-04",
-    },
-    "bread": {
-        "price": 2.59,
-        "source": "Bakers Life White Toast Sliced Bread 650g",
-        "url": "https://www.aldi.com.au/product/bakers-life-white-toast-sliced-bread-650g-000000000000398872",
-        "aliases": ("bread", "white bread", "white toast", "toast bread"),
-        "note": "ALDI Bakers Life white toast 650g; price is location-sensitive and may vary by store.",
-        "observed_at": "2026-08-04",
-    },
-    "butter": {
-        "price": 6.99,
-        "source": "Pure Valley Salted Butter 500g",
-        "url": "https://www.aldi.com.au/product/pure-valley-salted-butter-500g-000000000000399267",
-        "aliases": ("butter", "salted butter"),
-        "note": "ALDI Pure Valley salted butter 500g; price is location-sensitive and may vary by store.",
-        "observed_at": "2026-08-04",
-    },
-    "potatoes": {
-        "price": 0.63,
-        "source": "Washed Potatoes Loose approx. 140g",
-        "url": "https://www.aldi.com.au/product/no-brand-washed-potatoes-loose-000000000000380354",
-        "aliases": ("potatoes", "potato", "washed potatoes"),
-        "note": "ALDI loose washed potato estimate; final price is based on weight at the register.",
-        "observed_at": "2026-08-04",
-    },
-    "coke zero 600ml": {
-        "price": 3.99,
-        "source": "Coke Coca Cola Zero Sugar 600ml",
-        "url": "https://www.aldi.com.au/product/coca-cola-coke-coca-cola-zero-sugar-600ml-000000000000366926",
-        "aliases": ("coke zero 600ml", "coke zero sugar 600ml", "coca cola zero sugar 600ml", "coke coca cola zero sugar 600ml"),
-        "comparison_family": "coke zero",
-        "size_quantity_safe": True,
-        "note": "ALDI Coca-Cola Zero Sugar 600mL bottle; product information and price are location-sensitive and may vary by store.",
-        "size_flexible": True,
-        "observed_at": "2026-08-04",
-    },
-    "coke zero 30x375ml": {
-        "price": 31.99,
-        "source": "Coke Zero Sugar 30x375ml",
-        "url": "https://www.aldi.com.au/product/coca-cola-coke-zero-sugar-30x375ml-000000000000526489",
-        "aliases": ("coke zero 30x375ml", "coke zero sugar 30x375ml", "coca cola zero sugar 30x375ml"),
-        "comparison_family": "coke zero",
-        "size_quantity_safe": True,
-        "note": "ALDI Coca-Cola Zero Sugar 30 x 375mL multipack; product information and price are location-sensitive and may vary by store.",
-        "size_flexible": True,
-        "observed_at": "2026-08-04",
-    },
-}
-
-
 WOOLWORTHS_PRICE_CATALOG = {
     "milk": {
         "price": 1.85,
@@ -432,12 +358,10 @@ WOOLWORTHS_PRICE_CATALOG = {
 
 RETAILER_LABELS = {
     "coles": "Coles",
-    "aldi": "ALDI",
     "woolworths": "Woolworths",
 }
 RETAILER_CATALOGS = {
     "coles": COLES_PRICE_CATALOG,
-    "aldi": ALDI_PRICE_CATALOG,
     "woolworths": WOOLWORTHS_PRICE_CATALOG,
 }
 RETAILERS = tuple(RETAILER_CATALOGS)
@@ -694,7 +618,53 @@ def normalize_grocery_item(item: dict) -> dict:
     return normalized
 
 
-def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> dict[str, dict]:
+def _live_match_for_item(item: dict, retailer: str, live_matches: dict[str, dict[str, dict]] | None) -> dict | None:
+    if not live_matches or not item.get("id"):
+        return None
+    match = live_matches.get(retailer, {}).get(str(item["id"]))
+    return dict(match) if isinstance(match, dict) else None
+
+
+def _best_deals(comparison: dict[str, dict], items: list[dict]) -> list[dict]:
+    """Return safe per-item savings only when stores match the same product."""
+    deals: list[dict] = []
+    for index, item in enumerate(items):
+        candidates = []
+        for retailer, result in comparison.items():
+            line = result["lines"][index]
+            match = line.get("match")
+            if not match or match.get("size_match") != "exact" or not match.get("comparison_key"):
+                continue
+            candidates.append((retailer, line, match))
+        if len(candidates) < 2:
+            continue
+        if len({candidate[2].get("comparison_key") for candidate in candidates}) != 1:
+            continue
+        cheapest = min(candidates, key=lambda candidate: candidate[1].get("line_total") if candidate[1].get("line_total") is not None else math.inf)
+        highest = max(candidates, key=lambda candidate: candidate[1].get("line_total") if candidate[1].get("line_total") is not None else -math.inf)
+        if cheapest[1].get("line_total") is None or highest[1].get("line_total") is None:
+            continue
+        savings = round(float(highest[1]["line_total"]) - float(cheapest[1]["line_total"]), 2)
+        if savings <= 0:
+            continue
+        deals.append({
+            "item_id": item.get("id"),
+            "name": item.get("name"),
+            "retailer": cheapest[0],
+            "retailer_label": cheapest[2].get("retailer_label", cheapest[0].title()),
+            "price": cheapest[2]["price"],
+            "savings": savings,
+            "comparison_key": cheapest[2]["comparison_key"],
+            "stale": any(bool(match.get("stale")) for _, _, match in candidates),
+        })
+    return sorted(deals, key=lambda deal: (-deal["savings"], str(deal.get("name") or "")))
+
+
+def compare_cart(
+    items: list[dict],
+    retailers: tuple[str, ...] = RETAILERS,
+    live_matches: dict[str, dict[str, dict]] | None = None,
+) -> dict[str, dict]:
     comparison: dict[str, dict] = {}
     for retailer in retailers:
         lines = []
@@ -707,13 +677,22 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
             except (TypeError, ValueError):
                 quantity = 1.0
             quantity = quantity if quantity > 0 else 1.0
-            match = match_item(item.get("name", ""), retailer, item.get("unit", "each"))
-            line_total = round(match["price"] * quantity, 2) if match else None
+            match = _live_match_for_item(item, retailer, live_matches)
+            if match is None:
+                item_unit = item.get("unit", "each")
+                query_name = item.get("name", "")
+                query_unit = item_unit
+                if not _count_unit(item_unit):
+                    query_name = f"{query_name} {quantity:g}{item_unit}"
+                    query_unit = "each"
+                match = match_item(query_name, retailer, query_unit)
+            purchase_quantity = 1.0 if match and match.get("size_match") == "closest" else quantity
+            line_total = round(match["price"] * purchase_quantity, 2) if match else None
             if line_total is None:
                 unknown.append(str(item.get("name") or ""))
             else:
                 total += line_total
-            lines.append({"item_id": item.get("id"), "name": item.get("name"), "quantity": quantity, "line_total": line_total, "match": match})
+            lines.append({"item_id": item.get("id"), "name": item.get("name"), "quantity": purchase_quantity, "line_total": line_total, "match": match})
         comparison[retailer] = {
             "retailer": retailer,
             "retailer_label": RETAILER_LABELS.get(retailer, retailer.title()),
@@ -724,6 +703,8 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
             "complete": not unknown,
             "total_status": "complete" if not unknown else "partial" if lines else "unavailable",
             "lines": lines,
+            "live_count": sum(1 for line in lines if (line.get("match") or {}).get("confidence") == "live"),
+            "stale_count": sum(1 for line in lines if (line.get("match") or {}).get("stale")),
         }
     item_names = [str(item.get("name") or "") for item in items]
     not_comparable_indexes: set[int] = set()
@@ -742,6 +723,8 @@ def compare_cart(items: list[dict], retailers: tuple[str, ...] = RETAILERS) -> d
         result["comparable"] = comparable
         result["not_comparable_items"] = not_comparable_items
         result["comparison_status"] = "comparable" if comparable else "non_equivalent" if not_comparable_items and all(result["complete"] for result in comparison.values()) else "partial"
+    for result in comparison.values():
+        result["best_deals"] = _best_deals(comparison, items)
     return comparison
 
 

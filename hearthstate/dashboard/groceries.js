@@ -6,7 +6,7 @@ const els = {
   budgetTotal: document.querySelector('#budgetTotal'), unknownCount: document.querySelector('#unknownCount'), remainingTotal: document.querySelector('#remainingTotal'),
   budgetStatus: document.querySelector('#budgetStatus'), remainingStatus: document.querySelector('#remainingStatus'), budgetSignal: document.querySelector('#budgetSignal'),
   budgetSignalNote: document.querySelector('#budgetSignalNote'), updatedAt: document.querySelector('#updatedAt'),
-  comparison: document.querySelector('#retailerComparison'), comparisonNote: document.querySelector('#comparisonNote'),
+  comparison: document.querySelector('#retailerComparison'), comparisonNote: document.querySelector('#comparisonNote'), bestDeals: document.querySelector('#bestDeals'),
 };
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const money = (value) => value == null ? '—' : new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -42,7 +42,7 @@ function trustedPriceURL(value) {
     if (url.protocol !== 'https:' || url.username || url.password || url.port) return '';
     const host = url.hostname.toLowerCase();
     const belongsTo = (domain) => host === domain || host.endsWith(`.${domain}`);
-    if (belongsTo('coles.com.au') || belongsTo('aldi.com.au') || belongsTo('woolworths.com.au')) return url.href;
+    if (belongsTo('coles.com.au') || belongsTo('woolworths.com.au')) return url.href;
   } catch (error) {}
   return '';
 }
@@ -57,51 +57,82 @@ function retailerFromPrice(item) {
     const host = new URL(safeURL).hostname.toLowerCase();
     const belongsTo = (domain) => host === domain || host.endsWith(`.${domain}`);
     if (belongsTo('coles.com.au')) return 'Coles';
-    if (belongsTo('aldi.com.au')) return 'ALDI';
     if (belongsTo('woolworths.com.au')) return 'Woolworths';
   } catch (error) {}
   return null;
+}
+
+function confidenceLabel(price, retailer) {
+  if (price?.confidence === 'live') return 'Live';
+  if (price?.confidence === 'curated') return 'Curated';
+  return retailer || 'Unknown';
+}
+
+function renderRetailerPrices(item) {
+  const prices = item.retailer_prices || {};
+  return `<div class="retailer-price-grid" aria-label="Store prices">${['coles', 'woolworths'].map((retailer) => {
+    const price = prices[retailer] || {};
+    const safeURL = trustedPriceURL(price.url);
+    const label = price.retailer_label || (retailer === 'coles' ? 'Coles' : 'Woolworths');
+    const value = price.line_total != null ? money(price.line_total) : 'Unknown';
+    const detail = price.price != null ? `${money(price.price)} each${price.size_match === 'closest' ? ' · closest pack' : ''}` : 'No safe match';
+    const source = safeURL ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noreferrer">${escapeHTML(price.title || 'View product')}</a>` : `<span>${escapeHTML(price.title || 'No safe match')}</span>`;
+    const freshness = price.stale ? ' · stale' : price.observed_at ? ` · ${escapeHTML(checkedLabel(price.observed_at))}` : '';
+    return `<div class="retailer-price ${price.matched ? '' : 'is-unknown'} ${price.stale ? 'is-stale' : ''}"><div><strong>${escapeHTML(label)}</strong><span class="price-badge ${price.confidence === 'live' ? 'is-live' : price.confidence === 'curated' ? 'is-curated' : 'is-unknown'}">${escapeHTML(confidenceLabel(price, label))}</span></div><strong>${value}</strong><small>${escapeHTML(detail)}${freshness}</small><small>${source}</small></div>`;
+  }).join('')}</div>${item.retailer_savings > 0 ? `<div class="retailer-savings">Save ${money(item.retailer_savings)} at ${escapeHTML(item.cheapest_retailer_label)} for this item</div>` : ''}`;
 }
 
 function renderItem(item) {
   const priced = item.price != null;
   const source = item.price_source || '';
   const observedRetailer = retailerFromPrice(item);
+  const confidence = String(item.price_confidence || '').trim().toLowerCase();
   const safePriceURL = trustedPriceURL(item.price_url);
   const priceDetail = priced
     ? `<div class="grocery-price"><strong>${money(item.line_total)}</strong><span>${item.quantity === 1 ? money(item.price) : `${money(item.price)} each`}</span></div>`
     : `<div class="grocery-price unknown-price"><strong>Unknown</strong><span>Not counted</span></div>`;
   const provenance = priced
-    ? `<div class="price-provenance"><span class="price-badge ${observedRetailer ? 'is-coles' : 'is-manual'}">${observedRetailer || 'Manual'}</span>${safePriceURL ? `<a href="${escapeHTML(safePriceURL)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
+    ? `<div class="price-provenance"><span class="price-badge ${confidence === 'live' ? 'is-live' : confidence === 'curated' ? 'is-curated' : 'is-manual'}">${confidence === 'live' ? 'Live' : observedRetailer || 'Manual'}</span>${safePriceURL ? `<a href="${escapeHTML(safePriceURL)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
     : `<form class="quick-price-form" data-item-id="${item.id}"><label>Set a price</label><div><span>$</span><input name="price" type="number" min="0" step="0.01" placeholder="0.00" required /><button type="submit">Save</button></div></form>`;
-  return `<article class="grocery-record"><div class="grocery-check" aria-hidden="true"></div><div class="grocery-record-main"><div class="grocery-name-line"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(unitLabel(item))}</span></div>${provenance}</div>${renderQuantityEditor(item)}${priceDetail}</article>`;
+  return `<article class="grocery-record"><div class="grocery-check" aria-hidden="true"></div><div class="grocery-record-main"><div class="grocery-name-line"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(unitLabel(item))}</span></div>${renderRetailerPrices(item)}${provenance}</div>${renderQuantityEditor(item)}${priceDetail}</article>`;
 }
 
 function renderComparison(payload) {
   if (!els.comparison || !els.comparisonNote) return;
   const totals = payload.retailer_totals || [];
+  const refresh = payload.refresh || {};
+  const statuses = refresh.statuses || {};
+  const statusText = Object.entries(statuses).map(([retailer, status]) => `${retailer === 'coles' ? 'Coles' : 'Woolworths'}: ${String(status).replaceAll('-', ' ')}`).join(' · ');
   if (!payload.total_count || !totals.length) {
     els.comparisonNote.textContent = 'Add an open grocery item to compare retailer totals.';
     els.comparison.innerHTML = '';
+    if (els.bestDeals) els.bestDeals.innerHTML = '<p class="muted-copy">Add items to see store-by-store savings.</p>';
     return;
   }
-  els.comparisonNote.textContent = payload.recommended_retailer_label
+  const comparisonSummary = payload.recommended_retailer_label
     ? `${payload.recommended_retailer_label} is lowest for the fully matched, equivalent cart.`
     : payload.comparison_not_comparable_items?.length
       ? `Totals are shown for planning, but product sizes or variants differ for: ${payload.comparison_not_comparable_items.join(', ')}.`
       : 'No retailer has a complete match for every item yet.';
+  els.comparisonNote.textContent = `${comparisonSummary}${statusText ? ` ${statusText}.` : ''}${refresh.error ? ' Live refresh fell back safely to curated data.' : ''}`;
   els.comparison.innerHTML = totals.map((retailer) => {
     const lines = payload.comparison?.[retailer.retailer]?.lines || [];
     const status = retailer.complete
       ? retailer.comparable
-        ? `${retailer.priced_count} of ${payload.total_count} equivalent items matched`
+        ? `${retailer.priced_count} of ${payload.total_count} equivalent items matched${retailer.live_count ? ` · ${retailer.live_count} live` : ''}${retailer.stale_count ? ` · ${retailer.stale_count} stale` : ''}`
         : 'Complete prices · products are not equivalent'
       : `Partial · ${retailer.unknown_count} item${retailer.unknown_count === 1 ? '' : 's'} not matched`;
     const unknown = retailer.unknown_items?.length ? `<small class="retailer-unknown">Missing: ${retailer.unknown_items.map(escapeHTML).join(', ')}</small>` : '';
-    const products = lines.length ? `<details class="retailer-products"><summary>Products compared</summary><ul>${lines.map((line) => `<li><span>${escapeHTML(line.name || '')}</span><small>${line.match ? `${escapeHTML(line.match.title)} · ${money(line.match.price)} each${line.match.size_match === 'closest' ? ` · closest pack${line.match.requested_size ? ` for ${escapeHTML(line.match.requested_size)}` : ''}` : ''}` : 'No safe match'}</small></li>`).join('')}</ul></details>` : '';
+    const products = lines.length ? `<details class="retailer-products"><summary>Products compared</summary><ul>${lines.map((line) => `<li><span>${escapeHTML(line.name || '')} · ${money(line.line_total)}</span><small>${line.match ? `${escapeHTML(line.match.title)} · ${money(line.match.price)} each · ${line.match.confidence === 'live' ? 'live' : 'curated'}${line.match.stale ? ' · stale' : ''}${line.match.size_match === 'closest' ? ` · closest pack${line.match.requested_size ? ` for ${escapeHTML(line.match.requested_size)}` : ''}` : ''}` : 'No safe match'}</small></li>`).join('')}</ul></details>` : '';
     const recommended = retailer.retailer === payload.recommended_retailer && retailer.comparable;
     return `<div class="retailer-total${recommended ? ' is-recommended' : ''}"><div><strong>${escapeHTML(retailer.retailer_label)}</strong><span>${escapeHTML(status)}</span>${unknown}${products}</div><strong>${money(retailer.total)}</strong></div>`;
   }).join('');
+  if (els.bestDeals) {
+    const deals = payload.best_deals || [];
+    els.bestDeals.innerHTML = deals.length
+      ? `<ul>${deals.slice(0, 6).map((deal) => `<li><strong>${escapeHTML(deal.name || '')}</strong><span>Save ${money(deal.savings)} at ${escapeHTML(deal.retailer_label)}${deal.stale ? ' · last known price' : ''}</span></li>`).join('')}</ul>`
+      : '<p class="muted-copy">No safe per-item savings yet. Equivalent sizes are required.</p>';
+  }
 }
 
 function render(payload) {
@@ -126,7 +157,7 @@ function render(payload) {
 
 async function load() {
   els.sync.textContent = 'Loading grocery list'; els.refresh.classList.add('is-loading');
-  try { const response = await hearthstateFetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); render(await response.json()); els.error.classList.add('is-hidden'); els.sync.textContent = 'Live · refresh for prices'; }
+  try { const response = await hearthstateFetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); const payload = await response.json(); render(payload); els.error.classList.add('is-hidden'); els.sync.textContent = payload.refresh?.enabled ? 'Live provider configured · cached prices shown' : 'Curated prices · refresh provider not configured'; }
   catch (error) { els.error.textContent = 'Could not load the grocery budget.'; els.error.classList.remove('is-hidden'); els.sync.textContent = 'Offline'; console.error(error); }
   finally { els.refresh.classList.remove('is-loading'); }
 }
@@ -154,8 +185,10 @@ els.refreshColes.addEventListener('click', async () => {
   try {
     const response = await hearthstateFetch('/api/groceries/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
-    render(await response.json());
-    els.sync.textContent = 'Live · retailers compared';
+    const payload = await response.json();
+    render(payload);
+    const statuses = Object.values(payload.refresh?.statuses || {});
+    els.sync.textContent = statuses.includes('live') ? 'Live · Coles + Woolworths compared' : 'Curated fallback · Coles + Woolworths compared';
     els.error.classList.add('is-hidden');
   } catch (error) {
     els.error.textContent = 'Could not refresh supermarket prices.';
@@ -163,7 +196,7 @@ els.refreshColes.addEventListener('click', async () => {
     console.error(error);
   } finally {
     els.refreshColes.disabled = false;
-    els.refreshColes.textContent = 'Refresh supermarket prices';
+    els.refreshColes.textContent = 'Refresh Coles + Woolworths';
   }
 });
 els.theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')); els.refresh.addEventListener('click', load); syncTheme(); load(); window.setInterval(load, 60000);

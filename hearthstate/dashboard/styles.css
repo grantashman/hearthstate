@@ -518,12 +518,25 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 .grocery-price strong { color: var(--ink); font-size: 15px; font-variant-numeric: tabular-nums; }
 .grocery-price span { color: var(--ink-faint); font-size: 9px; }
 .unknown-price strong { color: var(--ember-deep); font-size: 11px; }
+.retailer-price-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.retailer-price { display: grid; gap: 3px; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper-soft); }
+.retailer-price > div { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+.retailer-price > div > strong { color: var(--ink); font-size: 10px; }
+.retailer-price > strong { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.retailer-price small { overflow: hidden; color: var(--ink-faint); font-size: 8px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.retailer-price small a, .retailer-price small span { overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; }
+.retailer-price.is-unknown { border-style: dashed; background: transparent; }
+.retailer-price.is-stale { border-color: var(--gold); }
+.retailer-savings { color: var(--evergreen); font-size: 9px; font-weight: 750; }
 .price-provenance { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 7px; align-items: center; min-width: 0; }
 .price-provenance a, .price-provenance > span:not(.price-badge) { overflow: hidden; color: var(--ink-soft); font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .price-provenance small { grid-column: 2; overflow: hidden; color: var(--ink-faint); font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
 .price-badge { display: inline-flex; align-items: center; min-height: 19px; padding: 0 6px; border-radius: 5px; font-size: 8px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .price-badge.is-coles { color: #426b78; background: var(--blue-pale); }
+.price-badge.is-live { color: #356d57; background: #d9eee2; }
+.price-badge.is-curated { color: #426b78; background: var(--blue-pale); }
 .price-badge.is-manual { color: #7e6429; background: var(--gold-wash); }
+.price-badge.is-unknown { color: var(--ember-deep); background: #f6e3dc; }
 .quick-price-form { display: grid; gap: 4px; }
 .quick-price-form label { color: var(--ember-deep); font-size: 9px; font-weight: 750; }
 .quick-price-form > div { display: flex; align-items: center; overflow: hidden; min-height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper-soft); }
@@ -548,6 +561,11 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 .retailer-total.is-recommended { margin: 0 -10px; padding: 11px 10px; border: 1px solid #d0ded5; border-radius: 7px; background: var(--evergreen-wash); }
 .retailer-total.is-recommended > strong { color: var(--evergreen); }
 .retailer-unknown { overflow: hidden; color: var(--ember-deep); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.best-deals ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.best-deals li { display: grid; gap: 3px; padding: 9px 0; border-bottom: 1px solid var(--paper-deep); }
+.best-deals li:last-child { border-bottom: 0; }
+.best-deals li strong { color: var(--ink); font-size: 11px; }
+.best-deals li span, .muted-copy { color: var(--ink-faint); font-size: 10px; line-height: 1.4; }
 .price-legend { display: grid; gap: 15px; margin-top: 20px; }
 .price-legend > div { display: flex; gap: 10px; align-items: start; }
 .price-legend span:last-child { display: grid; gap: 4px; }
@@ -555,6 +573,8 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 .price-legend small { color: var(--ink-faint); font-size: 10px; line-height: 1.4; }
 .legend-dot { width: 9px; height: 9px; margin-top: 3px; border-radius: 50%; }
 .legend-dot.is-coles { background: #6a9ba8; }
+.legend-dot.is-live { background: #62a984; }
+.legend-dot.is-curated { background: #6a9ba8; }
 .legend-dot.is-manual { background: var(--gold); }
 .legend-dot.is-unknown { background: var(--ember); }
 .grocery-note { background: var(--evergreen-wash); }
@@ -562,6 +582,8 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 html[data-theme="dark"] .budget-metric-accent { border-color: #3b5e50; }
 html[data-theme="dark"] .grocery-record { border-color: var(--paper-deep); }
 html[data-theme="dark"] .price-badge.is-coles { color: #a5d1da; }
+html[data-theme="dark"] .price-badge.is-live { color: #a5d9bb; }
+html[data-theme="dark"] .price-badge.is-curated { color: #a5d1da; }
 
 @media (max-width: 1120px) {
   .grocery-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
