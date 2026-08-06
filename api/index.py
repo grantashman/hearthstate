@@ -1800,6 +1800,15 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if route == "/groceries/item":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
             self._respond({"item": self._patch_record("grocery_items", item_id, household_id, token, {key: payload[key] for key in ("quantity", "unit", "category") if key in payload})}); return
+        if route == "/groceries":
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                raise ValueError("name is required")
+            if len(name) > 200:
+                raise ValueError("name must be 200 characters or fewer")
+            item = self._post_record("grocery_items", household_id, user_id, token, {"name": name, "category": "Quick add"})
+            self._respond({"item": item}, status=201)
+            return
         if route in {"/groceries/refresh", "/groceries/refresh-coles"}:
             snapshot = self._grocery_snapshot(household_id, token, refresh=True, actor_user_id=user_id)
             self._upsert_price_quotes(snapshot.get("comparison", {}), household_id, token, actor_user_id=user_id)
