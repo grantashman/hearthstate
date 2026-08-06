@@ -65,6 +65,141 @@ class HostedApiContractTests(unittest.TestCase):
         request._respond.assert_called_once()
         self.assertEqual(request._respond.call_args.args[0]["tasks"], [])
 
+    def test_chores_snapshot_includes_members_and_next_rotating_assignee(self):
+        request = object.__new__(handler)
+        member_id = "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._table = Mock(return_value=[{
+            "id": "chore-id",
+            "title": "Take out bins",
+            "cadence": "weekly",
+            "participants": [member_id],
+            "next_index": 0,
+            "next_due_at": "2026-08-10T07:00:00+00:00",
+        }])
+        request._household_members = Mock(return_value=[{"id": member_id, "display_name": "Billie", "role": "member"}])
+        request._respond = Mock()
+        request.path = "/api/index.py?route=/api/chores"
+
+        request._handle_get("/chores")
+
+        payload = request._respond.call_args.args[0]
+        self.assertEqual(payload["members"][0]["display_name"], "Billie")
+        self.assertEqual(payload["chores"][0]["next_assignee"], member_id)
+        self.assertEqual(payload["chores"][0]["next_assignee_label"], "Billie")
+
+    @patch("api.index._supabase_request", return_value=[{"id": "chore-id", "title": "Take out bins"}])
+    @patch("api.index._json_body", return_value={
+        "title": "Take out bins",
+        "cadence": "weekly",
+        "next_due_at": "2026-08-10T07:00",
+        "participants": ["3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"],
+    })
+    def test_chore_creation_validates_members_and_persists_schedule(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        member_id = "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._household_members = Mock(return_value=[{"id": member_id, "display_name": "Billie", "role": "member"}])
+        request._respond = Mock()
+
+        request._handle_post("/chores")
+
+        supabase_request.assert_called_once_with(
+            "POST",
+            "/rest/v1/rpc/create_chore_template",
+            token="session-token",
+            payload={
+                "p_household_id": "household-id",
+                "p_actor_user_id": "owner-id",
+                "p_title": "Take out bins",
+                "p_cadence": "weekly",
+                "p_participants": [member_id],
+                "p_next_due_at": "2026-08-10T07:00:00+00:00",
+            },
+        )
+        request._respond.assert_called_once_with({"chore": {"id": "chore-id", "title": "Take out bins"}}, status=201)
+
+    @patch("api.index._json_body", return_value={
+        "title": "Take out bins",
+        "cadence": "weekly",
+        "participants": ["3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49"],
+    })
+    def test_chore_creation_rejects_a_participant_outside_the_household(self, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._household_members = Mock(return_value=[{"id": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48", "display_name": "Billie"}])
+        request._post_record = Mock()
+        request._respond = Mock()
+
+        with self.assertRaisesRegex(ValueError, "household member"):
+            request._handle_post("/chores")
+        request._post_record.assert_not_called()
+
+    @patch("api.index._supabase_request", side_effect=[
+        {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "title": "Take out bins"},
+        {
+            "task": {"id": "task-id", "title": "Take out bins", "assignee": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"},
+            "chore": {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "next_index": 1},
+        },
+    ])
+    @patch("api.index._json_body", return_value={"due_date": "2026-08-10T07:00"})
+    def test_assigning_next_chore_uses_schedule_aware_actor_bound_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._respond = Mock()
+
+        request._handle_post("/chores/2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47")
+
+        self.assertEqual(supabase_request.call_args_list[1].args[:2], ("POST", "/rest/v1/rpc/create_chore_task"))
+        self.assertEqual(supabase_request.call_args_list[1].kwargs["payload"], {
+            "p_household_id": "household-id",
+            "p_actor_user_id": "owner-id",
+            "p_chore_id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "p_due_at": "2026-08-10T07:00:00+00:00",
+        })
+        self.assertEqual(request._respond.call_args.kwargs, {"status": 201})
+        self.assertEqual(request._respond.call_args.args[0]["chore"]["next_index"], 1)
+        self.assertEqual(supabase_request.call_count, 2)
+
+    @patch("api.index._supabase_request", side_effect=[
+        {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "title": "Take out bins"},
+        {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "title": "Put out bins", "cadence": "fortnightly"},
+    ])
+    @patch("api.index._json_body", return_value={
+        "title": "Put out bins",
+        "cadence": "fortnightly",
+        "participants": ["3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"],
+    })
+    def test_editing_chore_uses_actor_bound_template_update_rpc(self, _json_body, supabase_request):
+        request = object.__new__(handler)
+        member_id = "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"
+        chore_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+        request._authenticate = Mock(return_value=("owner-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._household_members = Mock(return_value=[{"id": member_id, "display_name": "Billie"}])
+        request._respond = Mock()
+
+        request._handle_post(f"/chores/{chore_id}/edit")
+
+        self.assertEqual(supabase_request.call_args_list[1].args[:2], ("POST", "/rest/v1/rpc/update_chore_template"))
+        self.assertEqual(supabase_request.call_args_list[1].kwargs["payload"]["p_chore_id"], chore_id)
+        self.assertEqual(supabase_request.call_args_list[1].kwargs["payload"]["p_participants"], [member_id])
+        request._respond.assert_called_once_with({"chore": {"id": chore_id, "title": "Put out bins", "cadence": "fortnightly"}}, status=200)
+
+    def test_browser_chores_page_and_asset_routes_use_html_asset_dispatch(self):
+        for route in ("/chores", "/chores.js"):
+            request = object.__new__(handler)
+            request.path = f"/api/index.py?route={route}"
+            request._handle_asset = Mock(return_value=True)
+
+            request._handle_get(route)
+
+            request._handle_asset.assert_called_once_with(route)
+
     def test_browser_tasks_route_still_uses_html_asset_dispatch(self):
         request = object.__new__(handler)
         request.path = "/api/index.py?route=/tasks"
@@ -101,7 +236,7 @@ class HostedApiContractTests(unittest.TestCase):
 
         for route, content_type, marker in (
             ("/manifest.webmanifest", "application/manifest+json; charset=utf-8", '"display": "standalone"'),
-            ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v2"),
+            ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v"),
             ("/icons/icon-192.png", "image/png", None),
             ("/icons/icon-512.png", "image/png", None),
         ):
@@ -741,6 +876,7 @@ class HostedApiContractTests(unittest.TestCase):
         archive_sql = inbox_migration[archive_start:]
         self.assertIn("from public.memberships", archive_sql)
         self.assertIn("for update", archive_sql)
+
 
     def test_meal_dashboard_payload_contract_includes_household_members(self):
         request = object.__new__(handler)

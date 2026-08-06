@@ -936,3 +936,55 @@ html[data-theme="dark"] .login-card { background: rgba(40, 35, 33, .92); }
   .notification-actions { align-items: stretch; flex-direction: column; }
   .notification-save-note { margin-right: 0; }
 }
+
+/* Rotating chores */
+.chore-layout { display: grid; grid-template-columns: minmax(280px, .78fr) minmax(0, 1.22fr); gap: 16px; align-items: start; }
+.chore-editor { display: grid; gap: 16px; min-height: 0; }
+.chore-editor .records-heading { margin-bottom: 2px; }
+.chore-editor .primary-action { width: 100%; }
+.chore-form-actions { display: flex; align-items: center; gap: 8px; }
+.chore-form-actions .primary-action { flex: 1; }
+.chore-editor .form-field { display: grid; gap: 6px; color: var(--ink-soft); font-size: 10px; font-weight: 750; }
+.chore-editor .form-field input, .chore-editor .form-field select { width: 100%; min-height: 39px; padding: 8px 10px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; outline: 0; background: var(--paper-soft); font-size: 12px; }
+.chore-editor .form-field input:focus-visible, .chore-editor .form-field select:focus-visible { border-color: var(--evergreen); box-shadow: 0 0 0 3px var(--evergreen-wash); }
+.chore-editor .form-field em { color: var(--ink-faint); font-size: 9px; font-style: normal; font-weight: 500; }
+.member-picker { display: grid; gap: 10px; margin: 0; padding: 14px; border: 1px solid var(--paper-deep); border-radius: 10px; background: var(--paper-soft); }
+.member-picker legend { padding: 0 4px; color: var(--ink); font-size: 11px; font-weight: 750; }
+.member-picker .form-help { margin: -2px 0 2px; }
+.member-picker-options { display: grid; gap: 7px; }
+.member-option { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 7px 9px; border: 1px solid transparent; border-radius: 8px; background: var(--paper); cursor: pointer; }
+.member-option:hover { border-color: var(--evergreen); }
+.member-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.member-option-mark { display: grid; place-items: center; width: 20px; height: 20px; color: transparent; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); font-size: 12px; font-weight: 800; }
+.member-option input:checked + .member-option-mark { color: var(--paper); border-color: var(--evergreen); background: var(--evergreen); }
+.member-option input:focus-visible + .member-option-mark { box-shadow: 0 0 0 3px var(--evergreen-wash); }
+.member-option span:last-child { display: grid; gap: 2px; }
+.member-option strong { color: var(--ink); font-size: 11px; }
+.member-option small { color: var(--ink-faint); font-size: 9px; }
+.chore-list-panel { min-height: 0; }
+.chore-list { display: grid; gap: 10px; padding-top: 16px; }
+.chore-card { display: grid; gap: 14px; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-soft); }
+.chore-card-top, .chore-card-footer { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.chore-card-top h3 { margin: 5px 0 0; color: var(--ink); font-size: 18px; letter-spacing: -.04em; }
+.rotation-mark { display: grid; place-items: center; width: 31px; height: 31px; color: var(--evergreen); border-radius: 50%; background: var(--evergreen-wash); font-size: 19px; }
+.chore-card-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 11px 0; border-top: 1px solid var(--paper-deep); border-bottom: 1px solid var(--paper-deep); }
+.chore-card-meta span { display: grid; gap: 4px; color: var(--ink-soft); font-size: 11px; }
+.chore-card-meta strong { color: var(--ink-faint); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.participant-line { align-self: center; overflow: hidden; color: var(--ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.chore-card-actions { display: flex; flex: 0 0 auto; gap: 7px; }
+.assign-next { flex: 0 0 auto; }
+.assign-next span { font-size: 14px; }
+.assign-next:disabled, .primary-action:disabled { cursor: wait; opacity: .55; }
+html[data-theme="dark"] .member-option, html[data-theme="dark"] .chore-card { background: var(--paper-soft); }
+
+@media (max-width: 900px) {
+  .chore-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .chore-card-meta { grid-template-columns: 1fr; }
+  .chore-card-footer { align-items: stretch; flex-direction: column; }
+  .participant-line { white-space: normal; }
+  .chore-card-actions { width: 100%; }
+  .chore-card-actions .secondary-action { flex: 1; }
+}
