@@ -319,13 +319,51 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         self.assertEqual(response["auto_updated"], ["eggs"])
         self.assertEqual(response["updated"], 1)
         self.assertEqual(response["updated_items"], ["eggs"])
+
+    def test_quick_add_grocery_uses_authenticated_household_context(self):
+        request = object.__new__(handler)
+        request.headers = {"X-Hearthstate-Household": "household-id"}
+        request._authenticate = Mock(return_value=("user-id", "access-token", {"email": "person@example.com"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._post_record = Mock(return_value={"id": "item-id", "name": "Milk", "status": "open"})
+        request._respond = Mock()
+
+        with patch("api.index._json_body", return_value={"name": "  Milk  "}):
+            request._handle_post("/groceries")
+
+        request._post_record.assert_called_once_with(
+            "grocery_items",
+            "household-id",
+            "user-id",
+            "access-token",
+            {"name": "Milk", "category": "Quick add"},
+        )
+        self.assertEqual(request._respond.call_args.args[0]["item"]["id"], "item-id")
+        self.assertEqual(request._respond.call_args.kwargs["status"], 201)
+
+    def test_quick_add_grocery_rejects_blank_name(self):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("user-id", "access-token", {"email": "person@example.com"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._post_record = Mock()
+
+        with patch("api.index._json_body", return_value={"name": "  "}):
+            with self.assertRaises(ValueError):
+                request._handle_post("/groceries")
+
+        request._post_record.assert_not_called()
+
     def test_grocery_dashboard_exposes_multi_retailer_contract(self):
         html = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "groceries.html").read_text()
         javascript = (Path(__file__).parents[1] / "hearthstate" / "dashboard" / "groceries.js").read_text()
         self.assertIn('id="retailerComparison"', html)
         self.assertIn('id="comparisonNote"', html)
         self.assertIn('id="bestDeals"', html)
+        self.assertIn('id="quickGroceryForm"', html)
+        self.assertIn('id="quickGroceryName"', html)
         self.assertIn("/api/groceries/refresh", javascript)
+        self.assertIn("/api/groceries", javascript)
+        self.assertIn("quickGroceryForm", javascript)
         self.assertIn("retailer_totals", javascript)
         self.assertIn("retailer-price-grid", javascript)
         self.assertIn("best_deals", javascript)

@@ -1,7 +1,7 @@
 const els = {
   list: document.querySelector('#groceryList'), empty: document.querySelector('#emptyState'), error: document.querySelector('#errorBanner'),
   theme: document.querySelector('#themeToggle'), refresh: document.querySelector('#refreshButton'), refreshColes: document.querySelector('#refreshColes'),
-  budgetForm: document.querySelector('#budgetForm'), budgetInput: document.querySelector('#budgetInput'),
+  budgetForm: document.querySelector('#budgetForm'), budgetInput: document.querySelector('#budgetInput'), quickAddForm: document.querySelector('#quickGroceryForm'), quickAddInput: document.querySelector('#quickGroceryName'),
   sync: document.querySelector('#syncStatus'), itemCount: document.querySelector('#itemCount'), pricedTotal: document.querySelector('#pricedTotal'),
   budgetTotal: document.querySelector('#budgetTotal'), unknownCount: document.querySelector('#unknownCount'), remainingTotal: document.querySelector('#remainingTotal'),
   budgetStatus: document.querySelector('#budgetStatus'), remainingStatus: document.querySelector('#remainingStatus'), budgetSignal: document.querySelector('#budgetSignal'),
@@ -178,6 +178,28 @@ async function saveQuantity(event) {
   if (!response.ok) { els.error.textContent = 'Could not update that quantity.'; els.error.classList.remove('is-hidden'); return; }
   await load();
 }
+async function quickAddGrocery(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const name = String(new FormData(form).get('name') || '').trim();
+  if (!name) return;
+  const button = form.querySelector('button[type="submit"]');
+  if (button) { button.disabled = true; button.textContent = 'Adding…'; }
+  try {
+    const response = await hearthstateFetch('/api/groceries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    form.reset();
+    await load();
+    els.quickAddInput.focus();
+  } catch (error) {
+    els.error.textContent = 'Could not add that grocery item.';
+    els.error.classList.remove('is-hidden');
+    console.error(error);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Add item'; }
+  }
+}
+els.quickAddForm.addEventListener('submit', quickAddGrocery);
 els.budgetForm.addEventListener('submit', async (event) => { event.preventDefault(); const budget = Number(new FormData(els.budgetForm).get('budget')); if (!Number.isFinite(budget) || budget < 0) return; const response = await hearthstateFetch('/api/groceries/budget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ budget, updated_by: 'grant' }) }); if (!response.ok) { els.error.textContent = 'Could not save the weekly budget.'; els.error.classList.remove('is-hidden'); return; } render(await response.json()); });
 els.refreshColes.addEventListener('click', async () => {
   els.refreshColes.disabled = true;
