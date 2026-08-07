@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Hearthstate</title>
+  <desc id="desc">A two-tone home mark with a shared hearth and gold ember.</desc>
+  <path d="M8 30.5 32 9l24 21.5" fill="none" stroke="#c6573d" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M32 9 56 30.5" fill="none" stroke="#385e4f" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="13" y="28" width="13" height="26" rx="3" fill="#c6573d"/>
+  <rect x="38" y="28" width="13" height="26" rx="3" fill="#385e4f"/>
+  <path d="M26 54V41a6 6 0 0 1 12 0v13" fill="#fffaf3" stroke="#385e4f" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 51c-3-3 0-5 1-8 3 2 4 5 2 7-1 1-2 2-3 1Z" fill="#cc9a38"/>
+</svg>

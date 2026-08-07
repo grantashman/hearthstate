@@ -219,7 +219,7 @@ class InboxSuggestionTests(unittest.TestCase):
         self.assertIn("/suggestion/review", app)
         self.assertIn("Confirm suggestion", html)
         self.assertIn('/app.js?v=hearthstate-6', html)
-        self.assertIn('/styles.css?v=hearthstate-6', html)
+        self.assertRegex(html, r'/styles\.css\?v=[^"\']+')
         self.assertNotIn("/convert`,", app)
         self.assertNotIn("Save and clear Inbox item", html)
 

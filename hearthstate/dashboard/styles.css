@@ -78,12 +78,11 @@ button { cursor: pointer; }
 }
 
 .brand-lockup { display: flex; align-items: center; gap: 12px; padding: 0 10px; }
-.brand-mark { position: relative; display: block; flex: 0 0 31px; width: 31px; height: 31px; padding: 0; overflow: hidden; background: var(--ember); border-radius: 10px 10px 10px 3px; transform: rotate(-4deg); box-shadow: 0 5px 12px rgba(142, 57, 43, .18); }
-.brand-mark::before { content: ""; position: absolute; right: 6px; bottom: 5px; left: 6px; height: 12px; border: 2px solid #fff6e9; border-top: 0; border-radius: 0 0 3px 3px; }
-.brand-mark::after { content: ""; position: absolute; right: 11px; bottom: 9px; width: 8px; height: 11px; background: var(--gold); clip-path: polygon(50% 0, 100% 46%, 82% 100%, 18% 100%, 0 46%); }
+.brand-mark { display: block; flex: 0 0 36px; width: 36px; height: 36px; padding: 0; background: url("/brand-mark.svg?v=hearthstate-brand-1") center / contain no-repeat; filter: drop-shadow(0 5px 8px rgba(142, 57, 43, .15)); }
+.brand-mark::before, .brand-mark::after { content: none; }
 .brand-mark span { display: none; }
 .brand-name { font-size: 18px; font-weight: 780; letter-spacing: -.045em; line-height: 1; }
-.brand-caption { margin-top: 5px; color: var(--ink-faint); font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
+.brand-caption { margin-top: 5px; color: var(--ink-faint); font-size: 10px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
 
 .sidebar-kicker { margin: 58px 12px 12px; color: var(--ink-faint); font-size: 10px; font-weight: 750; letter-spacing: .15em; text-transform: uppercase; }
 .mobile-nav-toggle { display: none; }
