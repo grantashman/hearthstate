@@ -91,10 +91,13 @@ class HostedApiContractTests(unittest.TestCase):
         selector = (dashboard / "household-select.html").read_text()
         invite_js = (dashboard / "invite.js").read_text()
         api_source = (Path(__file__).parents[1] / "api" / "index.py").read_text()
+        vercel = (Path(__file__).parents[1] / "vercel.json").read_text()
         self.assertIn('id="householdList"', selector)
         self.assertIn("/households/select", (dashboard / "household-select.js").read_text())
         self.assertIn("/select-household", invite_js)
         self.assertIn('"household-select.html"', api_source)
+        self.assertIn("/select-household", vercel)
+        self.assertIn("/household-select.js", vercel)
 
     def test_root_redirects_to_selection_when_a_multi_household_session_has_no_choice(self):
         request = object.__new__(handler)
