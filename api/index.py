@@ -197,8 +197,24 @@ def _notification_email(delivery: dict) -> str:
     sender = os.environ.get("HEARTHSTATE_NOTIFICATION_FROM", "").strip()
     if not api_key or not sender:
         raise NotificationProviderUnavailable("email provider is not configured")
+    provider_url = os.environ.get("RESEND_API_URL", "https://api.resend.com/emails").strip()
+    parsed_url = urlparse(provider_url)
+    if (
+        parsed_url.scheme != "https"
+        or parsed_url.hostname != "api.resend.com"
+        or parsed_url.path != "/emails"
+        or parsed_url.params
+        or parsed_url.query
+        or parsed_url.fragment
+        or parsed_url.username
+        or parsed_url.password
+    ):
+        raise NotificationProviderUnavailable("email provider endpoint is invalid")
+    idempotency_key = str(delivery.get("idempotency_key") or delivery.get("id") or "").strip()
+    if not idempotency_key:
+        raise RuntimeError("notification delivery idempotency key is required")
     request = Request(
-        os.environ.get("RESEND_API_URL", "https://api.resend.com/emails"),
+        provider_url,
         data=json.dumps({
             "from": sender,
             "to": [delivery["recipient_email"]],
@@ -209,12 +225,15 @@ def _notification_email(delivery: dict) -> str:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "Idempotency-Key": str(delivery.get("idempotency_key") or delivery.get("id") or "").strip(),
+            "Idempotency-Key": idempotency_key,
         },
     )
     try:
         with urlopen(request, timeout=10) as response:
-            payload = json.loads(response.read() or b"{}")
+            response_body = response.read(64 * 1024 + 1)
+            if len(response_body) > 64 * 1024:
+                raise RuntimeError("email provider response was too large")
+            payload = json.loads(response_body or b"{}")
     except (HTTPError, URLError, json.JSONDecodeError) as exc:
         raise RuntimeError("email provider request failed") from exc
     if not isinstance(payload, dict) or not str(payload.get("id") or "").strip():
@@ -352,7 +371,12 @@ def _normalize_clock_time(value: object, field_name: str) -> str:
 
 
 def _notification_delivery_date(value: object) -> str:
-    raw = str(value or datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney")).date().isoformat()).strip()
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raw = datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney")).date().isoformat()
+    elif isinstance(value, bool) or not isinstance(value, str):
+        raise ValueError("delivery_date must use YYYY-MM-DD")
+    else:
+        raw = value.strip()
     try:
         parsed = datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError as exc:

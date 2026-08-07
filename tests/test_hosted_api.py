@@ -186,7 +186,8 @@ class HostedApiContractTests(unittest.TestCase):
         app_js = (dashboard / "app.js").read_text()
         notifications_html = (dashboard / "notifications.html").read_text()
         notifications_js = (dashboard / "notifications.js").read_text()
-        migration = "".join(path.read_text() for path in (root / "supabase" / "migrations").glob("*notification_delivery*.sql"))
+        migration = "".join(path.read_text() for path in (root / "supabase" / "migrations").glob("*notification*.sql"))
+        followup_migration = (root / "supabase" / "migrations" / "20260808103000_notification_and_inbox_followup_hardening.sql").read_text()
         vercel = (root / "vercel.json").read_text()
         dispatch_workflow = (root / ".github" / "workflows" / "notification-dispatch.yml").read_text()
         self.assertIn("data-quick-action=", index_html)
@@ -202,6 +203,11 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("p.channel = 'email'", migration)
         self.assertIn("quiet_start", migration)
         self.assertIn("for update", migration)
+        self.assertIn("pg_temp", migration)
+        self.assertIn("for key share of p, m", migration)
+        self.assertIn("jsonb_typeof(capture_input->'original_text') is distinct from 'string'", migration)
+        self.assertIn("delivery_row.status = 'cancelled'", followup_migration)
+        self.assertNotIn("delivery_row.status in ('cancelled', 'failed', 'no_provider')", followup_migration)
         self.assertNotIn('"crons"', vercel)
         self.assertIn('cron: "*/15 * * * *"', dispatch_workflow)
         self.assertIn("HEARTHSTATE_CRON_SECRET", dispatch_workflow)
@@ -248,9 +254,22 @@ class HostedApiContractTests(unittest.TestCase):
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
         response.read.return_value = b"{}"
-        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>"}, clear=False), patch("api.index.urlopen", return_value=response):
+        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>", "RESEND_API_URL": "https://api.resend.com/emails"}, clear=False), patch("api.index.urlopen", return_value=response) as urlopen_mock:
             with self.assertRaisesRegex(RuntimeError, "provider response"):
-                hosted_api._send_notification_email({"recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
+                hosted_api._send_notification_email({"id": "delivery-id", "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
+        request = urlopen_mock.call_args.args[0]
+        self.assertEqual(request.get_header("Idempotency-key"), "delivery-id")
+
+    def test_notification_provider_rejects_unapproved_endpoint(self):
+        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>", "RESEND_API_URL": "http://attacker.example/emails"}, clear=False):
+            with self.assertRaisesRegex(hosted_api.NotificationProviderUnavailable, "endpoint is invalid"):
+                hosted_api._send_notification_email({"id": "delivery-id", "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
+
+    def test_notification_delivery_date_rejects_non_string_values(self):
+        for value in (False, True, 0, 1, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "YYYY-MM-DD"):
+                    hosted_api._notification_delivery_date(value)
 
     def test_notification_dispatch_skips_malformed_preferences_without_aborting(self):
         request = object.__new__(handler)
