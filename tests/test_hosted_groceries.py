@@ -370,6 +370,7 @@ class HostedGroceryMatchingTests(unittest.TestCase):
             {"name": "Milk", "category": "Quick add"},
         )
         self.assertEqual(request._respond.call_args.args[0]["item"]["id"], "item-id")
+        self.assertEqual(request._respond.call_args.args[0]["search"], {"status": "pending", "item_id": "item-id"})
         self.assertEqual(request._respond.call_args.kwargs["status"], 201)
 
     def test_quick_add_grocery_rejects_blank_name(self):

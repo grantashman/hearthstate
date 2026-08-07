@@ -10,6 +10,7 @@ const els = {
 };
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
 const money = (value) => value == null ? '—' : new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
+const liveSearches = new Set();
 
 function syncTheme() {
   const dark = document.documentElement.dataset.theme === 'dark';
@@ -70,12 +71,13 @@ function confidenceLabel(price, retailer) {
 
 function renderRetailerPrices(item) {
   const prices = item.retailer_prices || {};
+  const searchingLive = Boolean(item.searching_live);
   return `<div class="retailer-price-grid" aria-label="Store prices">${['coles', 'woolworths'].map((retailer) => {
     const price = prices[retailer] || {};
     const safeURL = trustedPriceURL(price.url);
     const label = price.retailer_label || (retailer === 'coles' ? 'Coles' : 'Woolworths');
-    const value = price.line_total != null ? money(price.line_total) : 'Unknown';
-    const detail = price.price != null ? `${money(price.price)} each${price.size_match === 'closest' ? ' · closest pack' : ''}` : 'No safe match';
+    const value = searchingLive ? 'Checking…' : price.line_total != null ? money(price.line_total) : 'Unknown';
+    const detail = searchingLive ? 'Searching live prices…' : price.price != null ? `${money(price.price)} each${price.size_match === 'closest' ? ' · closest pack' : ''}` : 'No safe match';
     const source = safeURL ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noreferrer">${escapeHTML(price.title || 'View product')}</a>` : `<span>${escapeHTML(price.title || 'No safe match')}</span>`;
     const freshness = price.stale ? ' · stale' : price.observed_at ? ` · ${escapeHTML(checkedLabel(price.observed_at))}` : '';
     return `<div class="retailer-price ${price.matched ? '' : 'is-unknown'} ${price.stale ? 'is-stale' : ''}"><div><strong>${escapeHTML(label)}</strong><span class="price-badge ${price.confidence === 'live' ? 'is-live' : price.confidence === 'curated' ? 'is-curated' : 'is-unknown'}">${escapeHTML(confidenceLabel(price, label))}</span></div><strong>${value}</strong><small>${escapeHTML(detail)}${freshness}</small><small>${source}</small></div>`;
@@ -84,6 +86,7 @@ function renderRetailerPrices(item) {
 
 function renderItem(item) {
   const priced = item.price != null;
+  const searchingLive = Boolean(item.searching_live);
   const source = item.price_source || '';
   const observedRetailer = retailerFromPrice(item);
   const confidence = String(item.price_confidence || '').trim().toLowerCase();
@@ -93,7 +96,7 @@ function renderItem(item) {
     : `<div class="grocery-price unknown-price"><strong>Unknown</strong><span>Not counted</span></div>`;
   const provenance = priced
     ? `<div class="price-provenance"><span class="price-badge ${confidence === 'live' ? 'is-live' : confidence === 'curated' ? 'is-curated' : 'is-manual'}">${confidence === 'live' ? 'Live' : observedRetailer || 'Manual'}</span>${safePriceURL ? `<a href="${escapeHTML(safePriceURL)}" target="_blank" rel="noreferrer">${escapeHTML(source)}</a>` : `<span>${escapeHTML(source)}</span>`}<small>${escapeHTML(checkedLabel(item.price_checked_at))}${item.price_note ? ` · ${escapeHTML(item.price_note)}` : ''}</small></div>`
-    : `<form class="quick-price-form" data-item-id="${item.id}"><label>Set a price</label><div><span>$</span><input name="price" type="number" min="0" step="0.01" placeholder="0.00" required /><button type="submit">Save</button></div></form>`;
+    : searchingLive ? '<div class="price-provenance"><span class="price-badge is-live">Searching live</span><small>Checking Coles and Woolworths before asking for a manual price.</small></div>' : `<form class="quick-price-form" data-item-id="${item.id}"><label>Set a price</label><div><span>$</span><input name="price" type="number" min="0" step="0.01" placeholder="0.00" required /><button type="submit">Save</button></div></form>`;
   return `<article class="grocery-record"><div class="grocery-check" aria-hidden="true"></div><div class="grocery-record-main"><div class="grocery-name-line"><strong>${escapeHTML(item.name)}</strong><span>${escapeHTML(unitLabel(item))}</span></div>${renderRetailerPrices(item)}${provenance}</div>${renderQuantityEditor(item)}${priceDetail}</article>`;
 }
 
@@ -147,7 +150,7 @@ function render(payload) {
   els.budgetSignal.textContent = payload.budget == null ? 'Set a weekly target' : (payload.over_budget ? `${money(Math.abs(payload.remaining))} over known budget` : `${money(payload.remaining)} left on known prices`);
   els.budgetSignalNote.textContent = payload.unknown_price_count ? `${payload.unknown_price_count} item${payload.unknown_price_count === 1 ? '' : 's'} still need a price.` : 'Every open item has a price.';
   if (payload.budget != null) els.budgetInput.value = payload.budget.toFixed(2);
-  els.list.innerHTML = items.map(renderItem).join('');
+  els.list.innerHTML = items.map((item) => liveSearches.has(String(item.id)) ? { ...item, searching_live: true } : item).map(renderItem).join('');
   els.list.classList.toggle('is-hidden', items.length === 0); els.empty.classList.toggle('is-hidden', items.length !== 0);
   els.updatedAt.textContent = `UPDATED ${new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(payload.generated_at || Date.now())).toUpperCase()}`;
   renderComparison(payload);
@@ -155,11 +158,36 @@ function render(payload) {
   els.list.querySelectorAll('.quantity-form').forEach((form) => form.addEventListener('submit', saveQuantity));
 }
 
+function setSyncStatus(payload) {
+  if (liveSearches.size) {
+    const count = liveSearches.size;
+    els.sync.textContent = `Searching live prices for ${count} item${count === 1 ? '' : 's'}…`;
+    return;
+  }
+  els.sync.textContent = payload.refresh?.enabled ? 'Live provider configured · cached prices shown' : 'Curated prices · refresh provider not configured';
+}
+
 async function load() {
   els.sync.textContent = 'Loading grocery list'; els.refresh.classList.add('is-loading');
-  try { const response = await hearthstateFetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); const payload = await response.json(); render(payload); els.error.classList.add('is-hidden'); els.sync.textContent = payload.refresh?.enabled ? 'Live provider configured · cached prices shown' : 'Curated prices · refresh provider not configured'; }
+  try { const response = await hearthstateFetch('/api/groceries', { cache: 'no-store' }); if (!response.ok) throw new Error(`Request failed: ${response.status}`); const payload = await response.json(); render(payload); els.error.classList.add('is-hidden'); setSyncStatus(payload); }
   catch (error) { els.error.textContent = 'Could not load the grocery budget.'; els.error.classList.remove('is-hidden'); els.sync.textContent = 'Offline'; console.error(error); }
   finally { els.refresh.classList.remove('is-loading'); }
+}
+async function searchGroceryItem(itemId) {
+  const id = String(itemId);
+  try {
+    const response = await hearthstateFetch('/api/groceries/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: id }) });
+    if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    const payload = await response.json();
+    liveSearches.delete(id);
+    render(payload);
+    setSyncStatus(payload);
+  } catch (error) {
+    liveSearches.delete(id);
+    console.error(error);
+    await load();
+    els.sync.textContent = 'Live search unavailable · curated prices shown';
+  }
 }
 async function saveManualPrice(event) {
   event.preventDefault(); const form = event.currentTarget; const response = await hearthstateFetch('/api/groceries/price', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: form.dataset.itemId, price: Number(new FormData(form).get('price')), source: 'Manual entry', confidence: 'manual', note: 'Entered by household' }) });
@@ -191,15 +219,10 @@ async function quickAddGrocery(event) {
     const created = await response.json();
     form.reset();
     if (created.item?.id) {
-      if (button) button.textContent = 'Searching…';
-      try {
-        const searchResponse = await hearthstateFetch('/api/groceries/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: created.item.id }) });
-        if (searchResponse.ok) render(await searchResponse.json());
-        else await load();
-      } catch (searchError) {
-        console.error(searchError);
-        await load();
-      }
+      const itemId = String(created.item.id);
+      liveSearches.add(itemId);
+      await load();
+      void searchGroceryItem(itemId);
     } else {
       await load();
     }

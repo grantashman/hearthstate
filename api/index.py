@@ -1968,7 +1968,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if len(name) > 200:
                 raise ValueError("name must be 200 characters or fewer")
             item = self._post_record("grocery_items", household_id, user_id, token, {"name": name, "category": "Quick add"})
-            self._respond({"item": item}, status=201)
+            self._respond({"item": item, "search": {"status": "pending", "item_id": item.get("id")}}, status=201)
             return
         if route == "/groceries/search":
             item_id = _uuid(payload.get("item_id"), "grocery item id")
