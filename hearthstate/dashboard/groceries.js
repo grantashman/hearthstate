@@ -188,8 +188,21 @@ async function quickAddGrocery(event) {
   try {
     const response = await hearthstateFetch('/api/groceries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+    const created = await response.json();
     form.reset();
-    await load();
+    if (created.item?.id) {
+      if (button) button.textContent = 'Searching…';
+      try {
+        const searchResponse = await hearthstateFetch('/api/groceries/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item_id: created.item.id }) });
+        if (searchResponse.ok) render(await searchResponse.json());
+        else await load();
+      } catch (searchError) {
+        console.error(searchError);
+        await load();
+      }
+    } else {
+      await load();
+    }
     els.quickAddInput.focus();
   } catch (error) {
     els.error.textContent = 'Could not add that grocery item.';

@@ -964,11 +964,13 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         ))
         return rows[0] if rows else None
 
-    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles", *, actor_user_id: str | None = None) -> tuple[list[dict], list[str]]:
+    def _apply_catalog_matches(self, items: list[dict], household_id: str, token: str, retailer: str = "coles", *, actor_user_id: str | None = None, item_ids: set[str] | None = None) -> tuple[list[dict], list[str]]:
         """Persist safe curated matches without replacing household-entered prices."""
         updated: list[str] = []
         for update in catalog_updates(items, retailer):
             item = update["item"]
+            if item_ids is not None and str(item.get("id")) not in item_ids:
+                continue
             match = update["match"]
             patched = self._patch_automatic_price(
                 item.get("id"),
@@ -1071,7 +1073,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             updated.append(str(item.get("name") or ""))
         return updated
 
-    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str, *, actor_user_id: str | None = None) -> None:
+    def _upsert_price_quotes(self, comparison: dict, household_id: str, token: str, *, actor_user_id: str | None = None, item_ids: set[str] | None = None) -> None:
         """Persist the explicit refresh result as household-scoped retailer observations."""
         if not actor_user_id:
             raise SupabaseHTTPError(500, "protected grocery mutation requires an actor")
@@ -1079,6 +1081,8 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             for line in result.get("lines", []):
                 item_id = line.get("item_id")
                 if not item_id:
+                    continue
+                if item_ids is not None and str(item_id) not in item_ids:
                     continue
                 match = line.get("match")
                 if match is None:
@@ -1123,16 +1127,23 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                         payload={key: value for key, value in payload.items() if not key.startswith("p_comparison") and not key.startswith("p_requested") and not key.startswith("p_product_size") and not key.startswith("p_size_")},
                     )
 
-    def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False, actor_user_id: str | None = None) -> dict:
+    def _grocery_snapshot(self, household_id: str, token: str, *, refresh: bool = False, actor_user_id: str | None = None, refresh_item_ids: set[str] | None = None, live_rate_key: str | None = None) -> dict:
         items = [normalize_grocery_item(item) for item in self._table("grocery_items", household_id, token, ("status", "eq.open"), order="category.asc,name.asc")]
         live_result = LiveRefreshResult(False, {}, {})
         live_matches = self._cached_live_matches(items, household_id, token)
         auto_updated: list[str] = []
         if refresh:
-            live_result = refresh_live_retailers(items, rate_key=household_id)
+            if refresh_item_ids is not None:
+                available_item_ids = {str(item.get("id")) for item in items}
+                if not refresh_item_ids.issubset(available_item_ids):
+                    raise SupabaseHTTPError(404, "grocery item not found")
+                refresh_items = [item for item in items if str(item.get("id")) in refresh_item_ids]
+            else:
+                refresh_items = items
+            live_result = refresh_live_retailers(refresh_items, rate_key=live_rate_key or household_id)
             for retailer, matches in live_result.matches.items():
                 live_matches.setdefault(retailer, {}).update(matches)
-            items, curated_updated = self._apply_catalog_matches(items, household_id, token, actor_user_id=actor_user_id)
+            items, curated_updated = self._apply_catalog_matches(items, household_id, token, actor_user_id=actor_user_id, item_ids=refresh_item_ids)
             auto_updated.extend(curated_updated)
             live_updated = self._apply_live_matches(items, live_matches, household_id, token, actor_user_id=actor_user_id)
             auto_updated.extend(name for name in live_updated if name not in auto_updated)
@@ -1958,6 +1969,26 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 raise ValueError("name must be 200 characters or fewer")
             item = self._post_record("grocery_items", household_id, user_id, token, {"name": name, "category": "Quick add"})
             self._respond({"item": item}, status=201)
+            return
+        if route == "/groceries/search":
+            item_id = _uuid(payload.get("item_id"), "grocery item id")
+            item_ids = {item_id}
+            snapshot = self._grocery_snapshot(
+                household_id,
+                token,
+                refresh=True,
+                actor_user_id=user_id,
+                refresh_item_ids=item_ids,
+                live_rate_key=f"{household_id}:item:{item_id}",
+            )
+            self._upsert_price_quotes(
+                snapshot.get("comparison", {}),
+                household_id,
+                token,
+                actor_user_id=user_id,
+                item_ids=item_ids,
+            )
+            self._respond({**snapshot, "searched_item_id": item_id})
             return
         if route in {"/groceries/refresh", "/groceries/refresh-coles"}:
             snapshot = self._grocery_snapshot(household_id, token, refresh=True, actor_user_id=user_id)

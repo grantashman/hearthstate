@@ -85,7 +85,37 @@ COLES_PRICE_CATALOG = {
         "source": "Coles Simply Hot Dog Rolls 450g",
         "url": "https://www.coles.com.au/product/coles-simply-hot-dog-rolls-450g-5696762",
         "aliases": ("hotdog buns", "hot dog buns", "hot dog rolls", "hotdog rolls"),
+        "comparison_family": "hotdog buns",
+        "comparison_sizes": ("6pack", "450g"),
         "note": "Coles Simply Hot Dog Rolls selected: 450g, six rolls; price and availability are location-sensitive.",
+    },
+    "chai latte powder": {
+        "price": 3.50,
+        "source": "Coles Chai Latte 10 Pack 250g",
+        "url": "https://www.coles.com.au/product/coles-chai-latte-10-pack-250g-3640687",
+        "aliases": ("chai latte powder", "chai latte", "chai mix"),
+        "comparison_family": "chai latte powder",
+        "note": "Coles Chai Latte 10-pack, 250g; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
+    },
+    "cheese block": {
+        "price": 10.50,
+        "source": "Coles Dairy Cheese Tasty 1kg",
+        "url": "https://www.coles.com.au/product/coles-dairy-cheese-tasty-1kg-287609",
+        "aliases": ("cheese block", "1kg cheese block", "tasty cheese block"),
+        "comparison_family": "cheese block",
+        "note": "Coles Dairy tasty cheese block, 1kg; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
+    },
+    "beef pies": {
+        "price": 10.50,
+        "source": "Four'N Twenty Frozen Meat Pies 4 Pack | 700g",
+        "url": "https://www.coles.com.au/product/four'n-twenty-frozen-meat-pies-4-pack-700g-5112318",
+        "aliases": ("beef pies", "beef pie", "meat pies", "meat pie"),
+        "comparison_family": "beef pies",
+        "comparison_sizes": ("4pack", "700g"),
+        "note": "Four'N Twenty frozen meat pies, 4-pack, 700g; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
     },
     "tortillas": {
         "price": 3.75,
@@ -305,17 +335,19 @@ def apply_known_coles_prices(store: PlannerStore, checked_at: str | None = None)
 WOOLWORTHS_PRICE_CATALOG = {
     "milk": {
         "price": 1.85,
-        "source": "Woolworths Full Cream Milk 1L",
-        "url": "https://www.woolworths.com.au/shop/productdetails/50923/woolworths-full-cream-milk",
-        "aliases": ("milk", "full cream milk", "1l milk", "woolworths milk"),
-        "note": "Woolworths full-cream 1L milk; price is location-sensitive and availability may vary.",
-        "observed_at": "2026-08-04",
+        "source": "Woolworths Full Cream Long Life Milk UHT 1L",
+        "url": "https://www.woolworths.com.au/shop/productdetails/748595/woolworths-full-cream-long-life-milk-uht",
+        "aliases": ("milk", "full cream milk", "long life milk", "full cream long life milk", "1l milk", "woolworths milk"),
+        "note": "Woolworths full-cream long-life UHT milk, 1L; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
     },
     "eggs": {
         "price": 6.50,
         "source": "Woolworths 12 X-Large Free Range Eggs 700g",
         "url": "https://www.woolworths.com.au/shop/productdetails/224763/woolworths-12-x-large-free-range-eggs",
-        "aliases": ("eggs", "egg", "free range eggs", "12 eggs"),
+        "aliases": ("eggs", "egg", "free range eggs", "12 eggs", "12 pack eggs", "12 x large eggs"),
+        "comparison_family": "eggs",
+        "comparison_sizes": ("12pack", "700g"),
         "note": "Woolworths 12 extra-large free-range eggs 700g; price is location-sensitive and availability may vary.",
         "observed_at": "2026-08-04",
     },
@@ -345,6 +377,53 @@ WOOLWORTHS_PRICE_CATALOG = {
         "note": "Woolworths Coca-Cola Zero Sugar 2L bottle; price is location-sensitive and availability may vary.",
         "size_flexible": True,
         "observed_at": "2026-08-04",
+    },
+    "hotdog buns": {
+        "price": 2.60,
+        "source": "Woolworths Hot Dog Rolls 6 pack",
+        "url": "https://www.woolworths.com.au/shop/productdetails/6016644/woolworths-hot-dog-rolls",
+        "aliases": ("hotdog buns", "hot dog buns", "hot dog rolls", "hotdog rolls"),
+        "comparison_family": "hotdog buns",
+        "comparison_sizes": ("6pack", "450g"),
+        "note": "Woolworths Hot Dog Rolls, 6-pack; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
+    },
+    "hotdogs": {
+        "price": 3.00,
+        "source": "Woolworths Hotdogs 500g",
+        "url": "https://www.woolworths.com.au/shop/productdetails/625348/woolworths-hotdogs",
+        "aliases": ("hotdogs", "hot dogs", "frankfurts", "franks", "hot dog sausages"),
+        "comparison_family": "hotdogs",
+        "note": "Woolworths plain hotdogs, 500g; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
+    },
+    "chai latte powder": {
+        "price": 7.00,
+        "source": "Origin Tea Natural Chai Latte Powder 200g",
+        "url": "https://www.woolworths.com.au/shop/productdetails/228342/origin-tea-natural-chai-latte-powder",
+        "aliases": ("chai latte powder", "chai latte", "chai mix"),
+        "comparison_family": "chai latte powder",
+        "note": "Origin Tea Natural Chai Latte Powder, 200g; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
+    },
+    "cheese block": {
+        "price": 10.50,
+        "source": "Woolworths Tasty Cheese Block 1kg",
+        "url": "https://www.woolworths.com.au/shop/productdetails/891325/woolworths-tasty-cheese-block",
+        "aliases": ("cheese block", "1kg cheese block", "tasty cheese block"),
+        "comparison_family": "cheese block",
+        "note": "Woolworths tasty cheese block, 1kg; online price observed and location-sensitive.",
+        "observed_at": "2026-08-07",
+    },
+    "beef pies": {
+        "price": 6.70,
+        "source": "Four'N Twenty Pies Meat 4 pack",
+        "url": "https://www.woolworths.com.au/shop/productdetails/24940/four-n-twenty-pies-meat",
+        "aliases": ("beef pies", "beef pie", "meat pies", "meat pie"),
+        "comparison_family": "beef pies",
+        "comparison_sizes": ("4pack", "700g"),
+        "note": "Four'N Twenty meat pies, 4-pack; the product page lists the equivalent 700g pack; price is location-sensitive.",
+        "observed_at": "2026-08-07",
     },
     "chickpeas": {
         "price": 0.95,
@@ -423,6 +502,14 @@ def _size_tokens(value: object) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def _product_size_tokens(product: dict) -> tuple[str, ...]:
+    """Use explicit pack metadata when the retailer title omits a size detail."""
+    comparison_sizes = product.get("comparison_sizes")
+    if comparison_sizes:
+        return _size_tokens(" ".join(str(value) for value in comparison_sizes))
+    return _size_tokens(product.get("source", ""))
+
+
 def _variant_tokens(value: object) -> set[str]:
     normalized = normalize_name(value)
     return {phrase for phrase in _VARIANT_PHRASES if phrase in normalized}
@@ -471,7 +558,7 @@ def _safe_alias_match(query: object, alias: object) -> int:
 
 def _compatible_constraints(query: object, product: dict) -> bool:
     query_sizes = set(_size_tokens(query))
-    product_sizes = set(_size_tokens(product.get("source", "")))
+    product_sizes = set(_product_size_tokens(product))
     if query_sizes and (not product_sizes or not query_sizes.issubset(product_sizes)):
         return False
     query_variants = _variant_tokens(query)
@@ -481,7 +568,7 @@ def _compatible_constraints(query: object, product: dict) -> bool:
 
 def _comparison_key(key: str, product: dict) -> str:
     family = normalize_name(product.get("comparison_family") or key)
-    sizes = ",".join(_size_tokens(product.get("source", ""))) or "unspecified"
+    sizes = ",".join(_product_size_tokens(product)) or "unspecified"
     variants = ",".join(sorted(_variant_tokens(product.get("source", "")))) or "default"
     return f"{family}|sizes={sizes}|variants={variants}"
 
@@ -512,7 +599,7 @@ def _size_magnitude(token: str) -> tuple[str, float] | None:
 
 def _closest_size_score(query: object, product: dict) -> tuple[int, str, str] | None:
     query_sizes = _size_tokens(query)
-    product_sizes = _size_tokens(product.get("source", ""))
+    product_sizes = _product_size_tokens(product)
     if len(query_sizes) != 1 or len(product_sizes) != 1:
         return None
     query_magnitude = _size_magnitude(query_sizes[0])
@@ -538,7 +625,7 @@ def _materialize(retailer: str, key: str, product: dict, basis: str, *, requeste
         "note": product["note"],
         "match_basis": basis,
         "requested_size": requested_size,
-        "product_size": (_size_tokens(product.get("source", "")) or [None])[0],
+        "product_size": (_product_size_tokens(product) or [None])[0],
         "size_match": size_match,
         "size_quantity_safe": bool(product.get("size_quantity_safe")),
     }

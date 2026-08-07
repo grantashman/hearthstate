@@ -28,6 +28,13 @@ _MAX_MATCHES = 300
 _MIN_REFRESH_INTERVAL_SECONDS = 30
 _RATE_LOCK = threading.Lock()
 _LAST_REFRESH_BY_KEY: dict[str, float] = {}
+LIVE_SEARCH_POLICY = {
+    "mode": "live",
+    "preserve_user_query": True,
+    "preserve_explicit_constraints": True,
+    "prefer_retailer_own_brand_when_generic": True,
+    "retailer_brands": {"coles": ["Coles"], "woolworths": ["Woolworths"]},
+}
 
 
 class LiveRetailerRefreshError(Exception):
@@ -181,10 +188,12 @@ def _request_payload(items: list[dict]) -> dict:
     return {
         "version": 1,
         "retailers": list(LIVE_RETAILERS),
+        "search_policy": LIVE_SEARCH_POLICY,
         "items": [
             {
                 "item_id": str(item.get("id") or ""),
                 "name": str(item.get("name") or "").strip(),
+                "query": str(item.get("name") or "").strip(),
                 "quantity": item.get("quantity") or 1,
                 "unit": str(item.get("unit") or "each"),
             }

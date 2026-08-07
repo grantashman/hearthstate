@@ -73,6 +73,23 @@ class LiveRetailerRefreshTests(unittest.TestCase):
         self.assertEqual(request_payload["retailers"], ["coles", "woolworths"])
         self.assertEqual(request_payload["items"][0]["item_id"], "item-1")
 
+    def test_request_payload_preserves_user_query_and_own_brand_policy(self):
+        payload = retailer_refresh._request_payload([{
+            "id": "item-1",
+            "name": "Coles 1L full-cream long-life milk",
+            "quantity": 1,
+            "unit": "each",
+        }])
+
+        self.assertEqual(payload["items"][0]["query"], "Coles 1L full-cream long-life milk")
+        self.assertEqual(payload["search_policy"], {
+            "mode": "live",
+            "preserve_user_query": True,
+            "preserve_explicit_constraints": True,
+            "prefer_retailer_own_brand_when_generic": True,
+            "retailer_brands": {"coles": ["Coles"], "woolworths": ["Woolworths"]},
+        })
+
     def test_invalid_provider_data_fails_closed_to_curated(self):
         payload = self._payload()
         payload["retailers"]["woolworths"]["matches"][0]["url"] = "https://malicious.example.test/eggs"

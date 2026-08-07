@@ -14,12 +14,26 @@ The provider receives a POST request like:
 ```json
 {
   "version": 1,
+  "search_policy": {
+    "mode": "live",
+    "preserve_user_query": true,
+    "preserve_explicit_constraints": true,
+    "prefer_retailer_own_brand_when_generic": true,
+    "retailer_brands": {"coles": ["Coles"], "woolworths": ["Woolworths"]}
+  },
   "retailers": ["coles", "woolworths"],
   "items": [
-    {"item_id": "<household grocery UUID>", "name": "eggs", "quantity": 1, "unit": "each"}
+    {"item_id": "<household grocery UUID>", "name": "eggs", "query": "eggs", "quantity": 1, "unit": "each"}
   ]
 }
 ```
+
+`query` is the stored user entry, after only the API's surrounding-whitespace
+trim. The provider must search that text as entered rather than replacing it
+with a small alias list. It must preserve explicit size, pack, brand, dietary,
+and variant constraints. For a generic query, it should rank the retailer's
+own brand first (`Coles` for Coles and `Woolworths` for Woolworths), then fall
+back to the best safe comparable product if no own-brand item exists.
 
 It must return the same two retailers and zero or more safe matches:
 
@@ -53,13 +67,22 @@ It must return the same two retailers and zero or more safe matches:
 ## Safety and freshness behavior
 
 - Live refresh is explicit: an ordinary grocery GET never calls the provider.
-- Refreshes are rate-limited to one provider request per household per 30 seconds per warm API process.
+- Adding an item in the dashboard performs an item-scoped live search immediately after the item is persisted through `POST /api/groceries/search`; a failed or unconfigured provider falls back to curated matching without losing the item.
+- The full **Refresh Coles + Woolworths** action searches the complete open list.
+- Full-list refreshes are rate-limited to one provider request per household per 30 seconds per warm API process. Item searches use an item-scoped bucket so adding a second distinct item does not suppress the first search; the provider must still enforce its own account-level quota.
 - Successful observations are persisted through the service-role-only quote RPC and read back as household-scoped cached quotes.
 - Cached live quotes remain visible for planning, but are marked stale after 48 hours and cannot drive a retailer recommendation.
 - Curated catalog matching remains the fallback when the provider is absent, unavailable, malformed, rate-limited, or missing an item.
 - Manual prices are never overwritten by curated or live observations.
 - A live closest-pack result may be displayed as planning information but cannot become an automatic item price or equivalent comparison.
 - Provider failures return a generic safe fallback status; provider response bodies, credentials, and household data are not sent to the browser.
+
+The repository intentionally does not scrape Coles or Woolworths pages from the
+Vercel function. The configured provider is the place to implement approved
+retailer search adapters (or connect a permitted retailer-search service),
+including product extraction, own-brand ranking, unit/pack normalization, and
+comparison-key generation. Without that provider configuration, Hearthstate
+can only provide its deterministic curated fallback.
 
 ## Deployment order
 

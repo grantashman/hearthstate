@@ -320,6 +320,37 @@ class HostedGroceryMatchingTests(unittest.TestCase):
         self.assertEqual(response["updated"], 1)
         self.assertEqual(response["updated_items"], ["eggs"])
 
+    def test_single_grocery_search_refreshes_only_the_requested_item(self):
+        request = object.__new__(handler)
+        request.headers = {"X-Hearthstate-Household": "household-id"}
+        request._authenticate = Mock(return_value=("user-id", "access-token", {"email": "person@example.com"}))
+        request._context = Mock(return_value=("household-id", []))
+        request._grocery_snapshot = Mock(return_value={"comparison": {}, "auto_updated": []})
+        request._upsert_price_quotes = Mock()
+        request._respond = Mock()
+        item_id = "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"
+
+        with patch("api.index._json_body", return_value={"item_id": item_id}):
+            request._handle_post("/groceries/search")
+
+        requested_ids = {item_id}
+        request._grocery_snapshot.assert_called_once_with(
+            "household-id",
+            "access-token",
+            refresh=True,
+            actor_user_id="user-id",
+            refresh_item_ids=requested_ids,
+            live_rate_key=f"household-id:item:{item_id}",
+        )
+        request._upsert_price_quotes.assert_called_once_with(
+            {},
+            "household-id",
+            "access-token",
+            actor_user_id="user-id",
+            item_ids=requested_ids,
+        )
+        self.assertEqual(request._respond.call_args.args[0]["searched_item_id"], item_id)
+
     def test_quick_add_grocery_uses_authenticated_household_context(self):
         request = object.__new__(handler)
         request.headers = {"X-Hearthstate-Household": "household-id"}

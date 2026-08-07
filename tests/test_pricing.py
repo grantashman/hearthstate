@@ -62,6 +62,55 @@ class RetailerMatcherTests(unittest.TestCase):
         self.assertEqual(woolworths_butter["price"], 4.50)
         self.assertIn("woolworths.com.au/shop/productdetails/", woolworths_butter["url"])
 
+    def test_screenshot_groceries_match_both_curated_retailer_catalogs(self):
+        expected_matches = [
+            ("Hot Dog Buns", "coles", "Coles Simply Hot Dog Rolls 450g", 2.60),
+            ("Hot Dog Buns", "woolworths", "Woolworths Hot Dog Rolls 6 pack", 2.60),
+            ("Coke Zero 2l", "coles", "Coca-Cola Zero Sugar Soft Drink Bottle 2L", 4.00),
+            ("Coke Zero 2l", "woolworths", "Coca-Cola Zero Sugar Soft Drink Bottle 2L", 4.00),
+            ("Chai Latte Powder", "coles", "Coles Chai Latte 10 Pack 250g", 3.50),
+            ("Chai Latte Powder", "woolworths", "Origin Tea Natural Chai Latte Powder 200g", 7.00),
+            ("Hot Dogs", "coles", "The Deli Thin Frankfurts 500g", 5.00),
+            ("Hot Dogs", "woolworths", "Woolworths Hotdogs 500g", 3.00),
+            ("12 pack eggs", "coles", "Coles Cage Free Eggs 12 Pack 700g", 5.70),
+            ("12 pack eggs", "woolworths", "Woolworths 12 X-Large Free Range Eggs 700g", 6.50),
+            ("1KG Cheese Block", "coles", "Coles Dairy Cheese Tasty 1kg", 10.50),
+            ("1KG Cheese Block", "woolworths", "Woolworths Tasty Cheese Block 1kg", 10.50),
+            ("1L Long Life Milk", "coles", "Coles Australian Full Cream Long Life Milk 1L", 1.85),
+            ("1L Long Life Milk", "woolworths", "Woolworths Full Cream Long Life Milk UHT 1L", 1.85),
+            ("Beef pies 4 pack", "coles", "Four'N Twenty Frozen Meat Pies 4 Pack | 700g", 10.50),
+            ("Beef pies 4 pack", "woolworths", "Four'N Twenty Pies Meat 4 pack", 6.70),
+        ]
+        for name, retailer, title, price in expected_matches:
+            with self.subTest(name=name, retailer=retailer):
+                match = match_item(name, retailer)
+                self.assertIsNotNone(match)
+                self.assertEqual(match["title"], title)
+                self.assertEqual(match["price"], price)
+                self.assertEqual(match["confidence"], "curated")
+                self.assertTrue(match["url"].startswith(f"https://www.{retailer}.com.au/"))
+
+    def test_screenshot_groceries_have_no_unknown_retailer_lines(self):
+        items = [
+            {"name": name, "quantity": 1, "unit": "each"}
+            for name in (
+                "Hot Dog Buns",
+                "Coke Zero 2l",
+                "Chai Latte Powder",
+                "Hot Dogs",
+                "12 pack eggs",
+                "1KG Cheese Block",
+                "1L Long Life Milk",
+                "Beef pies 4 pack",
+            )
+        ]
+        comparison = compare_cart(items)
+        for retailer, result in comparison.items():
+            with self.subTest(retailer=retailer):
+                self.assertEqual(result["unknown_count"], 0)
+                self.assertEqual(result["unknown_items"], [])
+                self.assertTrue(result["complete"])
+
     def test_explicit_size_does_not_match_a_different_pack(self):
         self.assertIsNotNone(match_item("2L Coke Zero", "coles"))
         self.assertIsNone(match_item("600mL Coke Zero", "coles"))
