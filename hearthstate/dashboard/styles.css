@@ -1267,3 +1267,255 @@ html[data-theme="dark"] .app-shell {
   outline: 0;
 }
 .invite-form button:disabled { cursor: wait; opacity: .6; }
+
+/* Hearthstate board direction: the household has a front door, a hearth, and a
+   clear place to put today's work. This is intentionally a stronger visual
+   system than the original paper-on-paper dashboard. */
+.app-shell {
+  --board-forest: #1e493c;
+  --board-forest-deep: #15372f;
+  --board-forest-soft: #dce9df;
+  --board-canvas: #f1ebe1;
+  --board-paper: #fffdf8;
+  --board-paper-warm: #f8f0e5;
+  --board-gold: #e4b455;
+  --board-gold-soft: #f4e2b6;
+  --board-shadow: 0 18px 40px rgba(62, 45, 31, .09), 0 2px 5px rgba(62, 45, 31, .05);
+  background: var(--board-canvas);
+}
+
+html[data-theme="dark"] .app-shell {
+  --board-forest: #16372f;
+  --board-forest-deep: #0f2822;
+  --board-forest-soft: #28463b;
+  --board-canvas: #171514;
+  --board-paper: #24201d;
+  --board-paper-warm: #2c2621;
+  --board-gold: #e0af53;
+  --board-gold-soft: #4b3c22;
+  --board-shadow: 0 18px 40px rgba(0, 0, 0, .22);
+}
+
+.app-shell .sidebar {
+  position: sticky;
+  flex-basis: 236px;
+  padding: 24px 15px 18px;
+  color: #f7f2e9;
+  border-right: 0;
+  background: var(--board-forest);
+}
+.app-shell .brand-lockup { gap: 11px; padding: 2px 10px; }
+.app-shell .brand-mark {
+  flex-basis: 40px;
+  width: 40px;
+  height: 40px;
+  padding: 7px;
+  border-radius: 13px;
+  background-color: #fffaf3;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .18);
+}
+.app-shell .brand-name { color: #fffaf3; font-size: 18px; }
+.app-shell .brand-caption { color: rgba(255, 250, 243, .58); }
+.app-shell .sidebar-kicker { margin: 46px 11px 11px; color: rgba(255, 250, 243, .5); }
+.app-shell .nav-list { gap: 3px; }
+.app-shell .nav-item {
+  min-height: 43px;
+  color: rgba(255, 250, 243, .7);
+  border-radius: 11px;
+}
+.app-shell .nav-item:hover { color: #fffaf3; background: rgba(255, 250, 243, .09); }
+.app-shell .nav-item.is-active {
+  color: var(--board-forest-deep);
+  background: var(--board-gold);
+  box-shadow: none;
+}
+.app-shell .nav-item.is-active svg,
+.app-shell .nav-item.is-active .nav-symbol { color: var(--board-forest-deep); }
+.app-shell .sidebar-spacer { min-height: 28px; }
+.app-shell .privacy-card {
+  margin: 0 3px;
+  border: 1px solid rgba(255, 250, 243, .14);
+  background: rgba(255, 250, 243, .07);
+}
+.app-shell .privacy-card strong { color: #fffaf3; }
+.app-shell .privacy-card p { color: rgba(255, 250, 243, .55); }
+.app-shell .privacy-icon { color: var(--board-forest-deep); background: var(--board-gold); }
+.app-shell .sidebar-footer { margin: 15px 3px 0; border-top-color: rgba(255, 250, 243, .14); }
+.app-shell .person-copy strong { color: #fffaf3; }
+.app-shell .person-copy span,
+.app-shell .more-button { color: rgba(255, 250, 243, .52); }
+.app-shell .avatar-you { color: var(--board-forest-deep); background: var(--board-gold); }
+
+.app-shell .main-content {
+  width: min(100%, 1500px);
+  padding: 0 54px 46px;
+  background: var(--board-canvas);
+}
+.app-shell .topbar {
+  min-height: 74px;
+  border-bottom: 1px solid rgba(201, 185, 165, .7);
+}
+.app-shell .breadcrumb { color: var(--ink-faint); }
+.app-shell .topbar-actions { gap: 9px; }
+.app-shell .sync-status {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: var(--board-paper);
+}
+.app-shell .theme-button,
+.app-shell .refresh-button { background: var(--board-paper); }
+
+.app-shell .welcome-row {
+  position: relative;
+  align-items: stretch;
+  gap: 28px;
+  min-height: 282px;
+  margin-top: 30px;
+  padding: 34px;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--board-forest);
+  box-shadow: var(--board-shadow);
+}
+.app-shell .welcome-row::after {
+  content: "";
+  position: absolute;
+  right: -100px;
+  bottom: -150px;
+  width: 430px;
+  height: 430px;
+  border: 1px solid rgba(255, 250, 243, .14);
+  border-radius: 50%;
+  box-shadow: 0 0 0 28px rgba(255, 250, 243, .025), 0 0 0 56px rgba(255, 250, 243, .025);
+  pointer-events: none;
+}
+.app-shell .welcome-copy { position: relative; z-index: 1; align-self: center; }
+.app-shell .welcome-copy .eyebrow { color: var(--board-gold); }
+.app-shell .welcome-copy h1 {
+  max-width: 650px;
+  color: #fffaf3;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(42px, 5vw, 70px);
+  font-weight: 500;
+  letter-spacing: -.065em;
+  line-height: .93;
+}
+.app-shell .welcome-subtitle { max-width: 470px; color: rgba(255, 250, 243, .7); }
+.app-shell .welcome-utility { position: relative; z-index: 1; min-width: min(100%, 510px); align-self: stretch; }
+.app-shell .state-card {
+  align-self: stretch;
+  border: 0;
+  border-radius: 18px;
+  background: var(--board-gold);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .12);
+}
+.app-shell .state-card::before { border-color: var(--board-forest); opacity: .25; }
+.app-shell .state-card-label { color: var(--board-forest-deep); }
+.app-shell .state-card-title { color: var(--board-forest-deep); font-family: Georgia, "Times New Roman", serif; font-size: 25px; }
+.app-shell .state-card p { color: rgba(21, 55, 47, .72); }
+.app-shell .state-card p strong { color: var(--board-forest-deep); }
+.app-shell .state-rule { background: rgba(21, 55, 47, .18); }
+.app-shell .state-rule span { background: var(--board-forest); }
+.app-shell .welcome-note-panel {
+  align-self: stretch;
+  border: 1px solid rgba(255, 250, 243, .13);
+  border-radius: 18px;
+  background: rgba(255, 250, 243, .1);
+}
+.app-shell .welcome-note-panel .section-kicker { color: var(--board-gold); }
+.app-shell .welcome-note-panel .note-copy { color: #fffaf3; font-family: Georgia, "Times New Roman", serif; }
+.app-shell .welcome-note-panel .note-signoff { color: rgba(255, 250, 243, .56); }
+
+.app-shell .metric-strip { gap: 14px; margin: 18px 0 0; }
+.app-shell .metric-card {
+  position: relative;
+  min-height: 94px;
+  padding: 17px 18px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 17px;
+  background: var(--board-paper);
+  box-shadow: var(--board-shadow);
+}
+.app-shell .metric-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--ember); }
+.app-shell .metric-calendar::before { background: var(--evergreen); }
+.app-shell .metric-grocery::before { background: var(--board-gold); }
+.app-shell .metric-icon { border-radius: 10px; }
+.app-shell .metric-card strong { font-size: 27px; }
+
+.app-shell .panel,
+.app-shell .records-panel {
+  border: 0;
+  border-radius: 20px;
+  background: var(--board-paper);
+  box-shadow: var(--board-shadow);
+}
+.app-shell .panel-heading h2,
+.app-shell .records-heading h2,
+.app-shell .section-hero h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+  letter-spacing: -.055em;
+}
+.app-shell .panel-heading h2 { font-size: 25px; }
+.app-shell .panel-intro { max-width: 360px; color: var(--ink-soft); }
+.app-shell .inbox-panel,
+.app-shell .planning-panel,
+.app-shell .intelligence-panel { margin-top: 20px; }
+.app-shell .inbox-panel { border-top: 4px solid var(--ember); }
+.app-shell .planning-panel { border-top: 4px solid var(--board-gold); }
+.app-shell .intelligence-panel { border-top: 4px solid var(--evergreen); }
+.app-shell .planning-day { background: var(--board-paper-warm); }
+.app-shell .planning-day.is-today { background: var(--board-gold-soft); }
+.app-shell .intelligence-grid > div { background: var(--board-paper-warm); }
+.app-shell .attention-panel { border-top: 4px solid var(--ember); }
+.app-shell .day-panel { border-top: 4px solid var(--evergreen); }
+.app-shell .grocery-panel { border-top: 4px solid var(--board-gold); }
+.app-shell .timeline-card,
+.app-shell .record-row:hover { background: var(--board-paper-warm); }
+.app-shell .primary-action { box-shadow: 0 6px 12px rgba(142, 57, 43, .14); }
+
+.app-shell .section-hero {
+  position: relative;
+  min-height: 216px;
+  margin-top: 30px;
+  padding: 34px;
+  overflow: hidden;
+  border-radius: 26px;
+  background: var(--board-forest);
+  box-shadow: var(--board-shadow);
+}
+.app-shell .section-hero::after { content: ""; position: absolute; right: -80px; bottom: -160px; width: 390px; height: 390px; border: 1px solid rgba(255, 250, 243, .13); border-radius: 50%; box-shadow: 0 0 0 26px rgba(255, 250, 243, .025); }
+.app-shell .section-hero > div { position: relative; z-index: 1; }
+.app-shell .section-hero .eyebrow { color: var(--board-gold); }
+.app-shell .section-hero h1 { color: #fffaf3; font-size: clamp(44px, 5vw, 72px); }
+.app-shell .section-hero .welcome-subtitle { color: rgba(255, 250, 243, .7); }
+.app-shell .section-hero-note { border: 1px solid rgba(255, 250, 243, .15); border-left: 3px solid var(--board-gold); background: rgba(255, 250, 243, .09); }
+.app-shell .section-hero-note .section-kicker { color: var(--board-gold); }
+.app-shell .section-hero-note strong,
+.app-shell .section-hero-note span:last-child { color: #fffaf3; }
+
+@media (max-width: 780px) {
+  .app-shell .main-content { padding: 0 18px 34px; }
+  .app-shell .welcome-row { min-height: 0; margin-top: 18px; padding: 24px 20px; border-radius: 20px; }
+  .app-shell .welcome-copy h1 { font-size: clamp(42px, 13vw, 62px); }
+  .app-shell .welcome-utility { min-width: 0; }
+  .app-shell .state-card,
+  .app-shell .welcome-note-panel { min-height: 170px; }
+  .app-shell .section-hero { min-height: 0; margin-top: 18px; padding: 24px 20px; border-radius: 20px; }
+  .app-shell .section-hero h1 { font-size: clamp(44px, 13vw, 64px); }
+  .app-shell .metric-card { min-height: 82px; }
+}
+
+@media (max-width: 480px) {
+  .app-shell .welcome-row { padding: 22px 16px; }
+  .app-shell .welcome-utility { display: grid; }
+  .app-shell .state-card,
+  .app-shell .welcome-note-panel { min-height: 0; }
+  .app-shell .metric-strip { gap: 8px; }
+  .app-shell .metric-card { padding: 13px 12px; }
+  .app-shell .metric-card strong { font-size: 22px; }
+  .app-shell .metric-note { display: none; }
+}

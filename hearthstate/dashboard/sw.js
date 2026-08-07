@@ -5,7 +5,7 @@ const PRECACHE_URLS = [
   '/brand-mark.svg?v=hearthstate-brand-1',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/styles.css?v=hearthstate-ui-1',
+  '/styles.css?v=hearthstate-ui-2',
   '/nav.js?v=hearthstate-pwa-3',
 ];
 
