@@ -51,6 +51,16 @@ SUPABASE_PUBLISHABLE_KEY
 SUPABASE_SERVICE_ROLE_KEY   # server-only; never expose or commit
 ```
 
+For scheduled email briefings, Vercel Production also needs `CRON_SECRET`,
+`RESEND_API_KEY`, and `HEARTHSTATE_NOTIFICATION_FROM`. The cron route is
+`/api/notifications/dispatch`; it creates at-most-one delivery per member and
+Sydney household date, claims rows atomically with expiring leases, retries
+provider failures, and records recoverable `no_provider` state when email
+configuration is absent. Authenticated delivery history is read-only;
+queueing and cancellation use household/member-checked security-definer RPCs,
+and recipients come from verified Supabase Auth identities rather than editable
+profile fields.
+
 GitHub Actions' `production` environment needs:
 
 ```text

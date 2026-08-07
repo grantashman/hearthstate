@@ -14,6 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 try:
     from .pricing import _is_manual_price, catalog_updates, compare_cart, normalize_grocery_item
@@ -187,6 +188,39 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat()
 
 
+class NotificationProviderUnavailable(RuntimeError):
+    pass
+
+
+def _notification_email(delivery: dict) -> str:
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
+    sender = os.environ.get("HEARTHSTATE_NOTIFICATION_FROM", "").strip()
+    if not api_key or not sender:
+        raise NotificationProviderUnavailable("email provider is not configured")
+    request = Request(
+        os.environ.get("RESEND_API_URL", "https://api.resend.com/emails"),
+        data=json.dumps({
+            "from": sender,
+            "to": [delivery["recipient_email"]],
+            "subject": delivery["subject"],
+            "text": delivery["body"],
+        }).encode("utf-8"),
+        method="POST",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read() or b"{}")
+    except (HTTPError, URLError, json.JSONDecodeError) as exc:
+        raise RuntimeError("email provider request failed") from exc
+    if not isinstance(payload, dict) or not str(payload.get("id") or "").strip():
+        raise RuntimeError("email provider response did not include a message id")
+    return str(payload["id"]).strip()
+
+
+_send_notification_email = _notification_email
+
+
 _PILOT_EVENT_METADATA_FIELDS = {
     "household_created": {"source"},
     "member_invited": {"role"},
@@ -311,6 +345,18 @@ def _normalize_clock_time(value: object, field_name: str) -> str:
     if parsed.strftime("%H:%M") != text:
         raise ValueError(f"{field_name} must use HH:MM time")
     return text
+
+
+def _notification_delivery_date(value: object) -> str:
+    raw = str(value or datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney")).date().isoformat()).strip()
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ValueError("delivery_date must use YYYY-MM-DD") from exc
+    today = datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney")).date()
+    if parsed < today or (parsed - today).days > 7:
+        raise ValueError("delivery_date must be within the next 7 days")
+    return parsed.isoformat()
 
 
 def _format_time(value: object) -> str:
@@ -674,6 +720,36 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 "p_suggestion_type": suggestion["suggestion_type"],
                 "p_proposed_payload": suggestion["proposed_payload"],
             },
+        )
+
+    def _create_inbox_captures_batch(self, household_id: str, user_id: str, token: str, payloads: list[dict]) -> dict:
+        prepared: list[dict] = []
+        for payload in payloads:
+            raw_text = payload.get("original_text")
+            if not isinstance(raw_text, str) or not raw_text.strip() or len(raw_text.strip()) > 4000:
+                raise ValueError("original_text is required and must be 4000 characters or fewer")
+            private = payload.get("private", False)
+            if not isinstance(private, bool):
+                raise ValueError("private must be a boolean")
+            raw_source = payload.get("source", "dashboard")
+            if not isinstance(raw_source, str):
+                raise ValueError("source must be a string")
+            source = raw_source.strip() or "dashboard"
+            if len(source) > 80:
+                raise ValueError("source must be 80 characters or fewer")
+            suggestion = _suggestion_for_capture(raw_text.strip())
+            prepared.append({
+                "original_text": raw_text.strip(),
+                "source": source,
+                "private": private,
+                "suggestion_type": suggestion["suggestion_type"],
+                "proposed_payload": suggestion["proposed_payload"],
+            })
+        return _supabase_request(
+            "POST",
+            "/rest/v1/rpc/create_inbox_captures_batch",
+            token=token,
+            payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_captures": prepared},
         )
 
     def _archive_inbox_capture(self, household_id: str, user_id: str, token: str, item_id: object) -> dict:
@@ -1632,10 +1708,20 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if protected and not self._token():
             self._redirect("/login")
             return True
-        if route == "/admin" and self._token():
+        if protected:
             try:
                 user_id, token, _ = self._authenticate()
-                self._context(user_id, token)
+                memberships = self._memberships(user_id, token)
+                request_headers = getattr(self, "headers", {})
+                cookies = SimpleCookie(request_headers.get("Cookie", ""))
+                selected = request_headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0] or (cookies.get(_HOUSEHOLD_COOKIE).value if cookies.get(_HOUSEHOLD_COOKIE) else "")
+                household_ids = {str(item.get("id")) for item in memberships if item.get("id")}
+                if not memberships:
+                    self._redirect("/setup")
+                    return True
+                if (selected and selected not in household_ids) or (len(memberships) > 1 and not selected):
+                    self._redirect("/select-household")
+                    return True
             except SupabaseHTTPError:
                 self._redirect("/login")
                 return True
@@ -1672,6 +1758,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             household = _first(_supabase_admin_request("GET", "/rest/v1/households", query=[("select", "name"), ("id", f"eq.{invitation['household_id']}")])) or {}
             invitation["household_name"] = household.get("name")
             self._respond({"invitation": invitation})
+            return
+        if route == "/notifications/dispatch":
+            self._dispatch_notifications()
             return
         user_id, token, user = self._authenticate()
         if route == "/me":
@@ -1755,6 +1844,10 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 raise ValueError("unsupported briefing type")
             preferences = _first(_supabase_request("GET", "/rest/v1/notification_preferences", token=token, query=[("select", "*"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}"), ("briefing_type", f"eq.{briefing_type}")])) or {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": True, "preferred_time": "07:00", "quiet_start": "21:00", "quiet_end": "07:00", "channel": "email"}
             self._respond({"preferences": preferences})
+        elif route == "/notifications/delivery":
+            delivery_date = _notification_delivery_date(self._query().get("delivery_date", [""])[0] or None)
+            delivery = _first(_supabase_request("GET", "/rest/v1/notification_deliveries", token=token, query=[("select", "*"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}"), ("briefing_type", "eq.morning"), ("delivery_date", f"eq.{delivery_date}")]))
+            self._respond({"delivery": delivery, "delivery_date": delivery_date})
         elif route == "/admin":
             is_owner = self._role(household_id, user_id, token) == "owner"
             if is_owner:
@@ -1765,6 +1858,98 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             self._respond(payload)
         else:
             self._respond({"error": "not found"}, status=404)
+
+    def _cron_authorized(self) -> bool:
+        expected = os.environ.get("HEARTHSTATE_CRON_SECRET", os.environ.get("CRON_SECRET", "")).strip()
+        supplied = str(getattr(self, "headers", {}).get("Authorization", ""))
+        return bool(expected) and secrets.compare_digest(supplied, f"Bearer {expected}")
+
+    def _dispatch_notifications(self) -> None:
+        if not self._cron_authorized():
+            raise SupabaseHTTPError(401, "notification dispatch authentication required")
+        now = datetime.now(timezone.utc)
+        local_now = now.astimezone(ZoneInfo("Australia/Sydney"))
+        prepared = 0
+        preferences = _rows(_supabase_admin_request("GET", "/rest/v1/notification_preferences", query=[("select", "household_id,user_id,preferred_time,quiet_start,quiet_end,enabled,channel"), ("briefing_type", "eq.morning"), ("enabled", "eq.true")]))
+        active_memberships = set()
+        if preferences:
+            active_memberships = {
+                (str(row.get("household_id") or ""), str(row.get("user_id") or ""))
+                for row in _rows(_supabase_admin_request("GET", "/rest/v1/memberships", query=[("select", "household_id,user_id")]))
+            }
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        for preference in preferences:
+            household_id = str(preference.get("household_id") or "")
+            user_id = str(preference.get("user_id") or "")
+            if preference.get("channel") == "none" or (household_id, user_id) not in active_memberships:
+                continue
+            try:
+                quiet_start = _normalize_clock_time(preference.get("quiet_start", "21:00"), "quiet_start")
+                quiet_end = _normalize_clock_time(preference.get("quiet_end", "07:00"), "quiet_end")
+                preferred_time = _normalize_clock_time(preference.get("preferred_time", "07:00"), "preferred_time")
+            except (TypeError, ValueError):
+                continue
+            current_time = local_now.strftime("%H:%M")
+            in_quiet = (quiet_start <= current_time < quiet_end) if quiet_start < quiet_end else (current_time >= quiet_start or current_time < quiet_end)
+            if in_quiet:
+                continue
+            scheduled_local = datetime.combine(local_now.date(), datetime.strptime(preferred_time, "%H:%M").time(), tzinfo=ZoneInfo("Australia/Sydney"))
+            if scheduled_local.astimezone(timezone.utc) > now:
+                continue
+            if not service_key:
+                raise SupabaseHTTPError(503, "Supabase service role environment is not configured")
+            try:
+                auth_user = _supabase_request("GET", f"/auth/v1/admin/users/{user_id}", token=service_key, api_key=service_key)
+            except SupabaseHTTPError as exc:
+                if exc.status == 404:
+                    continue
+                raise
+            if not isinstance(auth_user, dict) or not auth_user.get("email_confirmed_at"):
+                continue
+            recipient_email = str(auth_user.get("email") or "").strip().lower()
+            if not recipient_email:
+                continue
+            delivery_date = local_now.date().isoformat()
+            idempotency_key = f"morning:{household_id}:{user_id}:{delivery_date}"
+            public_url = os.environ.get("HEARTHSTATE_PUBLIC_URL", "https://hearthstate.vercel.app").strip().rstrip("/")
+            _supabase_admin_request(
+                "POST",
+                "/rest/v1/notification_deliveries",
+                query=[("on_conflict", "idempotency_key")],
+                prefer="return=representation,resolution=ignore-duplicates",
+                payload={
+                    "household_id": household_id,
+                    "user_id": user_id,
+                    "briefing_type": "morning",
+                    "delivery_date": delivery_date,
+                    "idempotency_key": idempotency_key,
+                    "channel": "email",
+                    "recipient_email": recipient_email,
+                    "subject": "Your Hearthstate morning briefing",
+                    "body": f"Your Hearthstate morning briefing is ready.\n\nOpen your household dashboard: {public_url}/",
+                    "status": "queued",
+                    "scheduled_for": scheduled_local.astimezone(timezone.utc).isoformat(),
+                },
+            )
+            prepared += 1
+
+        claimed = _rows(_supabase_admin_request("POST", "/rest/v1/rpc/claim_notification_deliveries", payload={"p_limit": 25}))
+        sent = failed = no_provider = 0
+        for delivery in claimed:
+            delivery_id = str(delivery.get("id") or "")
+            claim_token = str(delivery.get("claim_token") or "")
+            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}")] if delivery_id and claim_token else [("id", f"eq.{delivery_id}")]
+            try:
+                provider_id = _send_notification_email(delivery)
+                _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "sent", "provider_message_id": provider_id, "sent_at": _iso_now(), "lease_expires_at": None, "claim_token": None, "last_error": None})
+                sent += 1
+            except NotificationProviderUnavailable as exc:
+                _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "no_provider", "next_attempt_at": (now + timedelta(hours=1)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": str(exc)[:200]})
+                no_provider += 1
+            except Exception:
+                _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "failed", "next_attempt_at": (now + timedelta(minutes=15)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": "provider delivery failed"})
+                failed += 1
+        self._respond({"prepared": prepared, "claimed": len(claimed), "sent": sent, "failed": failed, "no_provider": no_provider})
 
     def _handle_post(self, route: str) -> None:
         payload = _json_body(self)
@@ -1816,6 +2001,9 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 )
             self._respond({"household": household}, status=201)
             return
+        if route == "/notifications/dispatch":
+            self._dispatch_notifications()
+            return
         user_id, token, user = self._authenticate()
         if route == "/households/select":
             household_id = _uuid(payload.get("household_id"), "household id")
@@ -1835,6 +2023,28 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         context = self._context(user_id, token)
         assert context is not None
         household_id, _ = context
+
+        if route == "/notifications/queue":
+            briefing_type = str(payload.get("briefing_type", "morning")).strip().lower() or "morning"
+            if briefing_type != "morning":
+                raise ValueError("unsupported briefing type")
+            delivery_date = _notification_delivery_date(payload.get("delivery_date"))
+            preference = _first(_supabase_request("GET", "/rest/v1/notification_preferences", token=token, query=[("select", "enabled,channel"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}"), ("briefing_type", "eq.morning")])) or {"enabled": True, "channel": "email"}
+            if not preference.get("enabled", True) or preference.get("channel") == "none":
+                self._respond({"queued": False, "delivery": None, "reason": "notifications disabled"})
+                return
+            queued = _supabase_request(
+                "POST",
+                "/rest/v1/rpc/queue_notification_delivery",
+                token=token,
+                payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_delivery_date": delivery_date},
+            )
+            if isinstance(queued, list):
+                queued = _first(queued) or {}
+            if not isinstance(queued, dict):
+                raise SupabaseHTTPError(502, "Supabase returned an invalid notification delivery")
+            self._respond(queued)
+            return
 
         if route == "/pilot/events":
             event_name = str(payload.get("event_name", "")).strip().lower()
@@ -1882,17 +2092,25 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             items = [item.strip() for item in items if item.strip()]
             if not items or len(items) > 8:
                 raise ValueError("Inbox batch must contain between 1 and 8 items")
+            if any(len(item) > 4000 for item in items):
+                raise ValueError("each Inbox item must be 4000 characters or fewer")
+            if sum(len(item) for item in items) > 24000:
+                raise ValueError("Inbox batch is too large")
             source = payload.get("source", "dashboard")
             private = payload.get("private", False)
-            captures = [
-                self._create_inbox_capture(
-                    household_id,
-                    user_id,
-                    token,
-                    {"original_text": item, "source": source, "private": private},
-                )
-                for item in items
-            ]
+            if not isinstance(source, str):
+                raise ValueError("source must be a string")
+            if not isinstance(private, bool):
+                raise ValueError("private must be a boolean")
+            batch_result = self._create_inbox_captures_batch(
+                household_id,
+                user_id,
+                token,
+                [{"original_text": item, "source": source, "private": private} for item in items],
+            )
+            captures = batch_result.get("captures", []) if isinstance(batch_result, dict) else []
+            if not isinstance(captures, list) or len(captures) != len(items):
+                raise SupabaseHTTPError(502, "Supabase returned an invalid Inbox batch")
             for result in captures:
                 item = result.get("item") if isinstance(result, dict) else {}
                 if isinstance(item, dict) and item.get("id"):
@@ -2190,6 +2408,8 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             before = _first(_supabase_request("GET", "/rest/v1/notification_preferences", token=token, query=[("select", "household_id,user_id,briefing_type,enabled,preferred_time,quiet_start,quiet_end,channel"), *preference_query]))
             preference = {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": enabled, "preferred_time": preferred_time, "quiet_start": quiet_start, "quiet_end": quiet_end, "channel": "email", "updated_at": _iso_now()}
             row = _first(_supabase_request("POST", "/rest/v1/notification_preferences", token=token, query=[("on_conflict", "household_id,user_id,briefing_type")], payload=preference, prefer="return=representation,resolution=merge-duplicates")) or preference
+            if not enabled:
+                _supabase_request("POST", "/rest/v1/rpc/cancel_notification_deliveries", token=token, payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_briefing_type": briefing_type})
             self._log(household_id, user_id, token, "notification_preferences_updated", "notification_preferences", entity_id=f"{user_id}:{briefing_type}", before=before, after={key: row.get(key) for key in ("household_id", "user_id", "briefing_type", "enabled", "preferred_time", "quiet_start", "quiet_end", "channel") if isinstance(row, dict)})
             self._respond({"preferences": row}); return
         if route == "/admin/household":

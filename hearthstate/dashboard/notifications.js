@@ -2,6 +2,8 @@ const form = document.querySelector('#notificationForm');
 const feedback = document.querySelector('#notificationFeedback');
 const syncStatus = document.querySelector('#notificationSyncStatus');
 const saveButton = document.querySelector('#saveNotifications');
+const queueButton = document.querySelector('#queueBriefing');
+const deliveryStatus = document.querySelector('#deliveryStatus');
 const themeToggle = document.querySelector('#themeToggle');
 const fields = {
   enabled: document.querySelector('#enabled'),
@@ -37,6 +39,15 @@ function renderPreferences(preferences) {
   document.querySelector('#channelBadge').textContent = preferences.channel === 'email' ? 'Email' : preferences.channel;
 }
 
+function renderDelivery(delivery) {
+  if (!delivery) {
+    deliveryStatus.textContent = 'No briefing queued today.';
+    return;
+  }
+  const labels = { queued: 'Queued for delivery.', sending: 'Delivery is in progress.', sent: 'Delivered.', failed: 'Delivery will retry.', no_provider: 'Queued, but no email provider is configured.', cancelled: 'Cancelled because notifications are off.' };
+  deliveryStatus.textContent = labels[delivery.status] || `Delivery status: ${delivery.status}.`;
+}
+
 async function loadPreferences() {
   syncStatus.textContent = 'Refreshing';
   try {
@@ -47,6 +58,33 @@ async function loadPreferences() {
   } catch (error) {
     syncStatus.textContent = 'Unavailable';
     showFeedback(error.message, 'error');
+  }
+}
+
+async function loadDelivery() {
+  try {
+    const payload = await api('/api/notifications/delivery?briefing_type=morning');
+    renderDelivery(payload.delivery);
+  } catch (error) {
+    deliveryStatus.textContent = 'Delivery status unavailable.';
+  }
+}
+
+async function queueBriefing() {
+  queueButton.disabled = true;
+  try {
+    const payload = await api('/api/notifications/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ briefing_type: 'morning' }),
+    });
+    if (!payload.queued) throw new Error(payload.reason || 'Briefing is disabled.');
+    renderDelivery(payload.delivery);
+    showFeedback('Today’s briefing is queued once.');
+  } catch (error) {
+    showFeedback(error.message, 'error');
+  } finally {
+    queueButton.disabled = false;
   }
 }
 
@@ -81,4 +119,6 @@ themeToggle.addEventListener('click', () => {
   setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 });
 themeToggle.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
+queueButton.addEventListener('click', queueBriefing);
 loadPreferences();
+loadDelivery();

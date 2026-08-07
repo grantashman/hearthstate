@@ -135,6 +135,14 @@
           </article>
         </section>
 
+        <section class="quick-actions" aria-label="Quick actions">
+          <span class="quick-actions-label">QUICK CAPTURE</span>
+          <button class="quick-action" type="button" data-quick-action="capture"><span aria-hidden="true">✦</span><span>Capture</span></button>
+          <button class="quick-action" type="button" data-quick-action="task"><span aria-hidden="true">✓</span><span>Task</span></button>
+          <button class="quick-action" type="button" data-quick-action="grocery"><span aria-hidden="true">+</span><span>Grocery</span></button>
+          <button class="quick-action" type="button" data-quick-action="event"><span aria-hidden="true">◷</span><span>Event</span></button>
+        </section>
+
         <section class="panel inbox-panel" id="inboxPanel" aria-labelledby="inboxTitle">
           <div class="panel-heading">
             <div>
@@ -241,7 +249,7 @@
                 <p class="section-kicker">THE NEXT FEW THINGS</p>
                 <h2>Needs attention</h2>
               </div>
-              <span class="panel-badge" id="attentionBadge">0 open</span>
+              <div class="panel-heading-actions"><button class="text-action" id="completeAttentionButton" type="button" disabled>Complete visible</button><span class="panel-badge" id="attentionBadge">0 open</span></div>
             </div>
             <p class="panel-intro">Tasks, meal gaps, and shopping loose threads worth pulling first.</p>
             <ol class="attention-list" id="attentionList" aria-live="polite"></ol>

@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/notifications/dispatch", "schedule": "*/15 * * * *" }
+  ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index.py?route=/api/:path*" },
     { "source": "/", "destination": "/api/index.py?route=/" },

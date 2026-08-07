@@ -14,6 +14,7 @@ const els = {
   stateTitle: document.querySelector('#stateTitle'),
   stateRuleFill: document.querySelector('#stateRuleFill'),
   attentionBadge: document.querySelector('#attentionBadge'),
+  completeAttentionButton: document.querySelector('#completeAttentionButton'),
   attentionList: document.querySelector('#attentionList'),
   attentionEmpty: document.querySelector('#attentionEmpty'),
   todayTimeline: document.querySelector('#todayTimeline'),
@@ -131,6 +132,11 @@ function setLoading(isLoading) {
 }
 
 function renderAttention(items) {
+  const actionableItems = items.filter((item) => item.action_type === 'complete' && item.source_id);
+  if (els.completeAttentionButton) {
+    els.completeAttentionButton.disabled = actionableItems.length === 0;
+    els.completeAttentionButton.textContent = actionableItems.length ? `Complete visible (${actionableItems.length})` : 'Complete visible';
+  }
   els.attentionList.innerHTML = items.map((item) => {
     const editLink = item.href && item.action_type === 'complete'
       ? `<a class="attention-link" href="${escapeHTML(item.href)}">Edit</a>`
@@ -173,6 +179,40 @@ async function completeTask(taskId) {
     els.error.textContent = error.message;
     els.error.classList.remove('is-hidden');
   }
+}
+
+async function completeVisibleAttention() {
+  const buttons = [...els.attentionList.querySelectorAll('.attention-complete')];
+  const taskIds = buttons.map((button) => button.dataset.taskId).filter(Boolean);
+  if (!taskIds.length) return;
+  if (!window.confirm(`Complete ${taskIds.length} visible task${taskIds.length === 1 ? '' : 's'}?`)) return;
+  els.completeAttentionButton.disabled = true;
+  const failures = [];
+  for (const taskId of taskIds) {
+    try {
+      const response = await hearthstateFetch(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Could not complete task');
+    } catch (error) {
+      failures.push(error.message);
+    }
+  }
+  if (failures.length) {
+    els.error.textContent = `${failures.length} task${failures.length === 1 ? '' : 's'} could not be completed.`;
+    els.error.classList.remove('is-hidden');
+  }
+  await loadDashboard();
+}
+
+function focusQuickAction(action) {
+  const prefixes = { grocery: 'Buy ', event: 'event: ', meal: 'meal: ' };
+  const placeholders = { capture: 'Capture a loose thread…', task: 'What needs doing?', grocery: 'What should be on the shopping list?', event: 'What is happening?', meal: 'What should we make?' };
+  els.inboxCaptureText.placeholder = placeholders[action] || placeholders.capture;
+  if (!els.inboxCaptureText.value.trim() && prefixes[action]) els.inboxCaptureText.value = prefixes[action];
+  document.querySelector('#inboxPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  els.inboxCaptureText.focus();
 }
 
 function itemHref(item) {
@@ -523,8 +563,14 @@ els.inboxConvertForm.addEventListener('submit', submitInboxConversion);
 els.inboxConvertType.addEventListener('change', setInboxConversionFields);
 els.inboxConvertCancel.addEventListener('click', closeInboxConversion);
 els.inboxRejectSuggestion.addEventListener('click', rejectInboxSuggestion);
+if (els.completeAttentionButton) els.completeAttentionButton.addEventListener('click', completeVisibleAttention);
+document.querySelectorAll('[data-quick-action]').forEach((button) => {
+  button.addEventListener('click', () => focusQuickAction(button.dataset.quickAction));
+});
 syncThemeButton();
 applyViewerBootstrap();
 updateGreeting();
 window.setInterval(updateGreeting, 60_000);
+const quickAction = new URLSearchParams(window.location.search).get('quick');
+if (quickAction) window.setTimeout(() => focusQuickAction(quickAction), 0);
 loadDashboard();

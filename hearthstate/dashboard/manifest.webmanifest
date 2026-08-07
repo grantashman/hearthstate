@@ -9,6 +9,10 @@
   "theme_color": "#c6573d",
   "description": "A calm, private home for the things your household needs to remember.",
   "categories": ["productivity", "lifestyle"],
+  "shortcuts": [
+    { "name": "Capture", "short_name": "Capture", "url": "/?quick=capture", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Add grocery", "short_name": "Grocery", "url": "/?quick=grocery", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ],
   "icons": [
     {
       "src": "/icons/icon-192.png",

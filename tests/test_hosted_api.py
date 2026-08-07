@@ -25,18 +25,34 @@ class HostedApiContractTests(unittest.TestCase):
         request = object.__new__(handler)
         request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
         request._context = Mock(return_value=("household-id", {}))
-        request._create_inbox_capture = Mock(side_effect=[
-            {"item": {"id": "item-1"}, "suggestion": {"suggestion_type": "grocery"}},
-            {"item": {"id": "item-2"}, "suggestion": {"suggestion_type": "task"}},
-        ])
+        request._create_inbox_captures_batch = Mock(return_value={
+            "captures": [
+                {"item": {"id": "item-1"}, "suggestion": {"suggestion_type": "grocery"}},
+                {"item": {"id": "item-2"}, "suggestion": {"suggestion_type": "task"}},
+            ]
+        })
         request._record_pilot_event = Mock()
         request._respond = Mock()
 
         request._handle_post("/inbox/batch")
 
-        self.assertEqual(request._create_inbox_capture.call_count, 2)
+        request._create_inbox_captures_batch.assert_called_once()
         self.assertEqual(request._respond.call_args.args[0]["created_count"], 2)
         self.assertEqual(request._respond.call_args.kwargs["status"], 201)
+
+    @patch("api.index._json_body", return_value={"items": ["Buy milk", "x" * 4001]})
+    def test_inbox_batch_rejects_invalid_item_before_database_call(self, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._create_inbox_captures_batch = Mock()
+        request._json_body = Mock(return_value={"items": ["Buy milk", "x" * 4001]})
+        request._respond = Mock()
+
+        with self.assertRaises(ValueError):
+            request._handle_post("/inbox/batch")
+
+        request._create_inbox_captures_batch.assert_not_called()
 
     def test_context_uses_a_valid_household_selection_cookie(self):
         request = object.__new__(handler)
@@ -128,6 +144,104 @@ class HostedApiContractTests(unittest.TestCase):
 
         request._redirect.assert_called_once_with("/select-household")
         request._send_bytes.assert_not_called()
+
+    def test_protected_page_redirects_to_selection_before_serving_shell(self):
+        request = object.__new__(handler)
+        request.path = "/tasks"
+        request.headers = {"Cookie": ""}
+        request._token = Mock(return_value="session-token")
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._memberships = Mock(return_value=[{"id": "11111111-1111-4111-8111-111111111111"}, {"id": "22222222-2222-4222-8222-222222222222"}])
+        request._redirect = Mock()
+        request._send_bytes = Mock()
+
+        request._handle_asset("/tasks")
+
+        request._redirect.assert_called_once_with("/select-household")
+        request._send_bytes.assert_not_called()
+
+    @patch("api.index._json_body", return_value={"delivery_date": "2026-08-08"})
+    def test_notification_queue_is_idempotent_per_member_and_delivery_date(self, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", {}))
+        request._respond = Mock()
+        with patch("api.index._supabase_request", side_effect=[
+            [{"enabled": True, "channel": "email", "preferred_time": "07:00"}],
+            {"queued": True, "delivery": {"id": "delivery-id", "status": "queued", "idempotency_key": "morning:2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47:viewer-id:2026-08-08"}},
+        ]) as supabase_request:
+            request._handle_post("/notifications/queue")
+
+        delivery = request._respond.call_args.args[0]["delivery"]
+        self.assertEqual(delivery["status"], "queued")
+        queue_rpc = supabase_request.call_args_list[1]
+        self.assertEqual(queue_rpc.args[1], "/rest/v1/rpc/queue_notification_delivery")
+        self.assertEqual(queue_rpc.kwargs["payload"]["p_delivery_date"], "2026-08-08")
+
+    def test_release_two_contract_is_wired_into_hosted_assets(self):
+        root = Path(__file__).parents[1]
+        dashboard = root / "hearthstate" / "dashboard"
+        index_html = (dashboard / "index.html").read_text()
+        app_js = (dashboard / "app.js").read_text()
+        notifications_html = (dashboard / "notifications.html").read_text()
+        notifications_js = (dashboard / "notifications.js").read_text()
+        migration = "".join(path.read_text() for path in (root / "supabase" / "migrations").glob("*notification_delivery*.sql"))
+        self.assertIn("data-quick-action=", index_html)
+        self.assertIn("completeVisibleAttention", app_js)
+        self.assertIn("/api/notifications/queue", notifications_js)
+        self.assertIn("id=\"queueBriefing\"", notifications_html)
+        self.assertIn("notification_deliveries", migration)
+        self.assertIn("idempotency_key", migration)
+        self.assertIn("queue_notification_delivery", migration)
+        self.assertIn("cancel_notification_deliveries", migration)
+        self.assertIn("grant select on public.notification_deliveries to authenticated", migration)
+        self.assertNotIn("grant select, insert, update on public.notification_deliveries to authenticated", migration)
+
+    def test_notification_dispatch_claims_and_marks_delivery_sent(self):
+        request = object.__new__(handler)
+        request.headers = {"Authorization": "Bearer cron-secret"}
+        request._respond = Mock()
+        delivery = {"id": "delivery-id", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
+        with patch("api.index._json_body", return_value={}), \
+             patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
+             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], {}]) as admin_request, \
+             patch("api.index._send_notification_email", return_value="provider-message-id"):
+            request._handle_post("/notifications/dispatch")
+
+        response = request._respond.call_args.args[0]
+        self.assertEqual(response["sent"], 1)
+        self.assertEqual(admin_request.call_args_list[-1].kwargs["payload"]["status"], "sent")
+
+    def test_notification_dispatch_requires_cron_authentication(self):
+        request = object.__new__(handler)
+        request.headers = {}
+        request._respond = Mock()
+        with patch("api.index._json_body", return_value={}), patch.dict("os.environ", {}, clear=False):
+            with self.assertRaises(hosted_api.SupabaseHTTPError) as error:
+                request._handle_post("/notifications/dispatch")
+        self.assertEqual(error.exception.status, 401)
+
+    def test_notification_provider_requires_a_message_id(self):
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.read.return_value = b"{}"
+        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>"}, clear=False), patch("api.index.urlopen", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "provider response"):
+                hosted_api._send_notification_email({"recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
+
+    def test_notification_dispatch_skips_malformed_preferences_without_aborting(self):
+        request = object.__new__(handler)
+        request.headers = {"Authorization": "Bearer cron-secret"}
+        request._respond = Mock()
+        malformed = {"household_id": "household-id", "user_id": "viewer-id", "preferred_time": "not-a-time", "quiet_start": "21:00", "quiet_end": "07:00", "enabled": True, "channel": "email"}
+        with patch("api.index._json_body", return_value={}), \
+             patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
+             patch("api.index._supabase_admin_request", side_effect=[[malformed], [{"household_id": "household-id", "user_id": "viewer-id"}], []]):
+            request._handle_post("/notifications/dispatch")
+
+        self.assertEqual(request._respond.call_args.args[0]["prepared"], 0)
+        self.assertEqual(request._respond.call_args.args[0]["claimed"], 0)
 
     def test_rewritten_vercel_route_is_normalized(self):
         request = object.__new__(handler)
@@ -221,11 +335,15 @@ class HostedApiContractTests(unittest.TestCase):
         }), patch("api.index._supabase_request", side_effect=[
             [{"household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "enabled": True}],
             [{"household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "enabled": False, "preferred_time": "06:30", "quiet_start": "21:00", "quiet_end": "07:00", "channel": "email"}],
+            [],
         ]) as supabase_request:
             request._handle_post("/notifications/preferences")
 
         self.assertEqual(request._respond.call_args.args[0]["preferences"]["enabled"], False)
-        self.assertEqual(supabase_request.call_count, 2)
+        self.assertEqual(supabase_request.call_count, 3)
+        cancellation = supabase_request.call_args_list[-1]
+        self.assertEqual(cancellation.args[1], "/rest/v1/rpc/cancel_notification_deliveries")
+        self.assertEqual(cancellation.kwargs["payload"]["p_household_id"], "household-id")
         request._log.assert_called_once()
         self.assertEqual(request._log.call_args.args[:5], ("household-id", "viewer-id", "session-token", "notification_preferences_updated", "notification_preferences"))
 

@@ -2082,3 +2082,18 @@ html[data-theme="dark"] .app-shell {
   .app-shell .inbox-capture-form { grid-template-columns: 1fr; }
   .app-shell .inbox-capture-form .small-action { width: 100%; }
 }
+
+.quick-actions { display: flex; align-items: center; gap: 8px; padding: 8px 0 18px; }
+.quick-actions-label { margin-right: 4px; color: var(--ledger-muted); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.quick-action { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; color: var(--ledger-forest-deep); border: 1px solid var(--ledger-line); border-radius: 999px; background: var(--ledger-paper); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+.quick-action span:first-child { color: var(--ledger-forest); font-size: 15px; }
+.quick-action:hover, .quick-action:focus-visible { border-color: var(--ledger-forest); background: var(--ledger-forest-soft); transform: translateY(-1px); outline: 0; }
+.panel-heading-actions { display: inline-flex; align-items: center; gap: 10px; }
+#completeAttentionButton:disabled { opacity: .42; cursor: default; }
+@media (max-width: 780px) {
+  .quick-actions { position: sticky; bottom: 12px; z-index: 4; margin: 0 -4px 16px; padding: 8px; overflow-x: auto; border: 1px solid var(--ledger-line); border-radius: 14px; background: color-mix(in srgb, var(--ledger-canvas) 88%, transparent); backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(25, 48, 39, .1); }
+  .quick-actions-label { flex: 0 0 auto; }
+  .quick-action { flex: 0 0 auto; }
+  .panel-heading-actions { gap: 6px; }
+  #completeAttentionButton { max-width: 116px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
