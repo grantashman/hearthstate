@@ -1194,6 +1194,14 @@ html[data-theme="dark"] .app-shell {
 
 @media (max-width: 780px) {
   .app-shell .sidebar { padding: 14px 18px; }
+  .app-shell .sidebar-footer {
+    margin: 0 0 0 auto;
+    padding: 0 0 0 12px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+  .app-shell .person-copy span,
+  .app-shell .more-button { display: none; }
   .app-shell .main-content { padding: 0 18px 30px; }
   .app-shell .topbar { min-height: 64px; }
   .app-shell .welcome-row { gap: 24px; padding: 40px 0 28px; }
