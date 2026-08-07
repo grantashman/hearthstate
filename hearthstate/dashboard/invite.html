@@ -7,31 +7,46 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-rebrand-1" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
-    <link rel="stylesheet" href="/styles.css?v=hearthstate-rebrand-1" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-ui-1" />
     <title>Hearthstate · Join household</title>
   </head>
-  <body class="login-page">
+  <body class="login-page invite-page">
     <main class="login-shell">
-      <section class="login-card" aria-labelledby="inviteTitle">
-        <div class="login-brand">
-          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-          <div><strong>hearthstate</strong><span>home, held together</span></div>
+      <aside class="login-rail" aria-label="About Hearthstate">
+        <div class="login-rail-top">
+          <a class="login-brand" href="/login" aria-label="Hearthstate sign in">
+            <img class="login-brand-mark" src="/brand-mark.svg?v=hearthstate-brand-1" alt="" />
+            <span class="login-brand-copy"><strong>hearthstate</strong><span>home, held together</span></span>
+          </a>
+          <span class="login-brand-badge">private household space</span>
         </div>
-        <div class="login-copy">
-          <p class="eyebrow">A PLACE AT THE HEARTH</p>
-          <h1 id="inviteTitle">Join your household</h1>
-          <p id="inviteSummary">Checking your invitation…</p>
+        <div class="login-rail-copy">
+          <p class="login-rail-kicker">A PLACE AT THE HEARTH</p>
+          <h2>There is room <span>for you.</span></h2>
+          <p>Join the shared place for meals, plans, and the details that keep home moving.</p>
         </div>
-        <form class="invite-form" id="inviteForm">
-          <label class="form-field" for="inviteEmail"><span>Invited email</span><input id="inviteEmail" name="email" type="email" autocomplete="email" readonly /></label>
-          <label class="form-field" for="displayName"><span>Your name</span><input id="displayName" name="displayName" type="text" autocomplete="name" required maxlength="200" placeholder="Your full name" /></label>
-          <div class="form-field is-hidden" id="inviteCodeWrap"><span>Verification code</span><input id="inviteCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" /></div>
-          <button class="quiet-action" type="button" id="sendInviteCode">Send sign-in code</button>
-          <button class="primary-action" type="submit">Accept invitation</button>
-        </form>
-        <div class="login-feedback is-hidden" id="inviteFeedback" role="alert"></div>
+        <div class="login-rail-footer"><span class="login-rail-footer-line" aria-hidden="true"></span><span>Private by design</span></div>
+      </aside>
+      <section class="login-panel" aria-labelledby="inviteTitle">
+        <div class="login-panel-inner">
+          <div class="login-panel-meta" aria-label="Invitation details"><span>Household invitation</span><span>Secure access</span></div>
+          <div class="login-copy">
+            <p class="eyebrow">A PLACE AT THE HEARTH</p>
+            <h1 id="inviteTitle">Join your household</h1>
+            <p id="inviteSummary">Checking your invitation...</p>
+          </div>
+          <form class="login-form invite-form" id="inviteForm">
+            <div class="login-form-heading"><span class="login-form-kicker">Make it yours</span><span>Confirm your name, then use the code we send.</span></div>
+            <label class="login-field"><span class="login-field-label">Invited email</span><input id="inviteEmail" name="email" type="email" autocomplete="email" readonly /></label>
+            <label class="login-field"><span class="login-field-label">Your name</span><input id="displayName" name="displayName" type="text" autocomplete="name" required maxlength="200" placeholder="Your full name" /></label>
+            <div class="login-field is-hidden" id="inviteCodeWrap"><span class="login-field-label">Verification code</span><input id="inviteCode" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="123456" /></div>
+            <button class="quiet-action" type="button" id="sendInviteCode">Send sign-in code</button>
+            <button class="primary-action" type="submit">Accept invitation</button>
+          </form>
+          <div class="login-feedback is-hidden" id="inviteFeedback" role="alert"></div>
+          <p class="login-footer">hearthstate / your household, together</p>
+        </div>
       </section>
-      <p class="login-footer">hearthstate · know what needs attention at home</p>
     </main>
     <script src="/invite.js?v=hearthstate-4" defer></script>
     <script>

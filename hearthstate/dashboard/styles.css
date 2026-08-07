@@ -1036,3 +1036,218 @@ html[data-theme="dark"] .member-option, html[data-theme="dark"] .chore-card { ba
   .chore-card-actions { width: 100%; }
   .chore-card-actions .secondary-action { flex: 1; }
 }
+
+/* Hearthstate application redesign: calm structure, clear actions, and one shared rhythm. */
+.app-shell {
+  --app-cta-bg: var(--ember-deep);
+  --app-cta-hover: #7f3026;
+  --app-cta-ink: #fffaf3;
+  --app-surface-shadow: 0 12px 28px rgba(113, 80, 48, .055);
+  --app-soft-shadow: 0 1px 0 rgba(40, 32, 29, .035);
+}
+
+html[data-theme="dark"] .app-shell {
+  --app-cta-bg: #ffad91;
+  --app-cta-hover: #ffc2ae;
+  --app-cta-ink: #1d1917;
+  --app-surface-shadow: 0 14px 30px rgba(0, 0, 0, .16);
+  --app-soft-shadow: 0 1px 0 rgba(255, 255, 255, .04);
+}
+
+.app-shell .sidebar {
+  flex-basis: 240px;
+  padding: 26px 16px 18px;
+  background: var(--paper);
+}
+.app-shell .brand-lockup { gap: 13px; padding: 0 8px; }
+.app-shell .brand-mark { flex-basis: 42px; width: 42px; height: 42px; }
+.app-shell .brand-name { font-size: 17px; }
+.app-shell .sidebar-kicker { margin: 46px 10px 12px; }
+.app-shell .nav-list { gap: 5px; }
+.app-shell .nav-item {
+  min-height: 42px;
+  padding: 0 11px;
+  border-radius: 12px;
+}
+.app-shell .nav-item.is-active {
+  box-shadow: inset 3px 0 0 var(--evergreen);
+}
+.app-shell .privacy-card {
+  margin: 0 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-soft) 82%, transparent);
+}
+.app-shell .sidebar-footer { margin-top: 16px; padding: 14px 8px 0; }
+
+.app-shell .main-content {
+  width: min(100%, 1320px);
+  padding: 0 48px 40px;
+}
+.app-shell .topbar { min-height: 72px; }
+.app-shell .topbar-actions { gap: 10px; }
+.app-shell .welcome-row { gap: 40px; padding: 52px 0 34px; }
+.app-shell .welcome-copy h1 {
+  max-width: 620px;
+  font-size: clamp(36px, 4.1vw, 58px);
+  line-height: 1;
+}
+.app-shell .welcome-subtitle { margin-top: 16px; }
+.app-shell .welcome-utility { max-width: 560px; gap: 12px; }
+.app-shell .state-card,
+.app-shell .welcome-note-panel { border-radius: 14px; }
+.app-shell .metric-strip { gap: 10px; margin-bottom: 18px; }
+.app-shell .metric-card {
+  min-height: 76px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--app-soft-shadow);
+}
+.app-shell .planning-panel,
+.app-shell .intelligence-panel { margin-top: 16px; }
+
+.app-shell .section-page { padding-bottom: 52px; }
+.app-shell .section-hero {
+  align-items: center;
+  gap: 36px;
+  padding: 48px 0 30px;
+}
+.app-shell .section-hero h1 {
+  font-size: clamp(38px, 4.8vw, 60px);
+  line-height: .98;
+}
+.app-shell .section-hero-note {
+  min-width: 260px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--evergreen);
+  border-radius: 12px;
+  box-shadow: var(--app-soft-shadow);
+}
+.app-shell .filter-bar,
+.app-shell .grocery-controls,
+.app-shell .recipe-toolbar {
+  border-radius: 14px;
+  box-shadow: var(--app-soft-shadow);
+}
+.app-shell .panel,
+.app-shell .records-panel {
+  border-radius: 16px;
+  box-shadow: var(--app-surface-shadow);
+}
+.app-shell .records-panel { min-height: 0; padding: 24px; }
+.app-shell .records-heading { padding-bottom: 15px; }
+.app-shell .record-row {
+  min-height: 74px;
+  padding: 12px 4px;
+  border-radius: 10px;
+}
+.app-shell .record-row:hover { background: var(--paper-soft); }
+.app-shell .record-row:last-child:hover { border-bottom: 0; }
+
+.app-shell .form-field input,
+.app-shell .form-field select,
+.app-shell .form-field textarea,
+.app-shell .assignee-filter select,
+.app-shell .admin-form input,
+.app-shell .admin-form select,
+.app-shell .notification-fields input {
+  min-height: 42px;
+  border-radius: 10px;
+  background: var(--paper-soft);
+}
+.app-shell .primary-action {
+  min-height: 44px;
+  color: var(--app-cta-ink);
+  border: 1px solid var(--app-cta-bg);
+  border-radius: 10px;
+  background: var(--app-cta-bg);
+}
+.app-shell .primary-action:hover {
+  color: var(--app-cta-ink);
+  border-color: var(--app-cta-hover);
+  background: var(--app-cta-hover);
+}
+.app-shell .secondary-action,
+.app-shell .quiet-action,
+.app-shell .ingredient-action {
+  border-radius: 10px;
+}
+.app-shell .secondary-action { min-height: 38px; }
+.app-shell .quiet-action { min-height: 32px; }
+.app-shell .error-banner,
+.app-shell .form-feedback,
+.app-shell .admin-feedback,
+.app-shell .notification-feedback { border-radius: 10px; }
+.app-shell .page-footer { margin-top: 36px; padding-top: 18px; }
+.app-shell .recipe-card,
+.app-shell .chore-card,
+.app-shell .admin-record,
+.app-shell .notification-switch-row { border-radius: 14px; }
+.app-shell .recipe-card:hover { transform: translateY(-1px); }
+.app-shell .meal-card-date { border-radius: 10px; }
+
+@media (max-width: 1120px) {
+  .app-shell .main-content { padding-right: 30px; padding-left: 30px; }
+}
+
+@media (max-width: 780px) {
+  .app-shell .sidebar { padding: 14px 18px; }
+  .app-shell .main-content { padding: 0 18px 30px; }
+  .app-shell .topbar { min-height: 64px; }
+  .app-shell .welcome-row { gap: 24px; padding: 40px 0 28px; }
+  .app-shell .section-hero { gap: 24px; padding: 40px 0 28px; }
+  .app-shell .section-hero-note { min-width: 0; }
+  .app-shell .panel,
+  .app-shell .records-panel { padding: 22px 18px; }
+  .app-shell .metric-card { border-radius: 12px; }
+  .app-shell .record-row { min-height: 68px; }
+}
+
+@media (max-width: 480px) {
+  .app-shell .sidebar { padding: 12px; }
+  .app-shell .main-content { padding-right: 12px; padding-left: 12px; }
+  .app-shell .panel,
+  .app-shell .records-panel { padding: 20px 16px; }
+  .app-shell .section-hero h1 { font-size: clamp(36px, 12vw, 52px); }
+}
+
+.invite-form { display: grid; gap: 12px; }
+.invite-form .login-field { width: auto; }
+.invite-form .quiet-action {
+  width: 100%;
+  min-height: 42px;
+  color: var(--login-ink-soft);
+  border: 1px solid var(--login-line);
+  border-radius: 10px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.invite-form .quiet-action:hover,
+.invite-form .quiet-action:focus-visible {
+  color: var(--login-ink);
+  border-color: var(--login-evergreen);
+  background: var(--login-evergreen-wash);
+  outline: 0;
+}
+.invite-form .primary-action {
+  width: 100%;
+  min-height: 48px;
+  color: var(--login-button-ink);
+  border: 1px solid var(--login-button-bg);
+  border-radius: 10px;
+  background: var(--login-button-bg);
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.invite-form .primary-action:hover,
+.invite-form .primary-action:focus-visible {
+  border-color: var(--login-button-hover);
+  background: var(--login-button-hover);
+  outline: 0;
+}
+.invite-form button:disabled { cursor: wait; opacity: .6; }

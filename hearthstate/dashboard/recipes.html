@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
     <title>Hearthstate · Recipes</title>
     <script>(() => { try { if (localStorage.getItem('hearthstate-theme') === 'dark') document.documentElement.dataset.theme = 'dark'; } catch (error) {} })();</script>
-    <link rel="stylesheet" href="/styles.css?v=hearthstate-rebrand-1" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-ui-1" />
   </head>
   <body data-section="recipes">
     <div class="app-shell">
@@ -41,7 +41,7 @@
           <label class="form-field"><span>Meal</span><select id="planType"><option value="dinner">Dinner</option><option value="lunch">Lunch</option><option value="breakfast">Breakfast</option></select></label>
         </section>
         <section class="recipe-layout">
-          <section class="records-panel recipe-results"><div class="records-heading"><div><p class="section-kicker">THE SHORTLIST</p><h2 id="recipeHeading">Simple and healthy</h2></div><span class="date-stamp" id="recipeUpdated">—</span></div><div class="recipe-grid" id="recipeGrid" aria-live="polite"></div><div class="empty-state is-hidden" id="recipeEmpty"><div class="empty-mark quiet">✦</div><strong>No recipes in this slice.</strong><span>Try a different filter or add your own.</span></div></section>
+          <section class="records-panel recipe-results"><div class="records-heading"><div><p class="section-kicker">THE SHORTLIST</p><h2 id="recipeHeading">Simple and healthy</h2></div><span class="date-stamp" id="recipeUpdated">...</span></div><div class="recipe-grid" id="recipeGrid" aria-live="polite"></div><div class="empty-state is-hidden" id="recipeEmpty"><div class="empty-mark quiet">✦</div><strong>No recipes in this slice.</strong><span>Try a different filter or add your own.</span></div></section>
           <aside class="recipe-sidebar">
             <form class="records-panel recipe-import" id="recipeImportForm">
               <div class="records-heading"><div><p class="section-kicker">YOUR OWN RECIPES</p><h2>Save a recipe</h2></div></div>
@@ -59,7 +59,7 @@
               <button class="primary-action" type="submit">Save recipe <span>↗</span></button>
               <div class="form-feedback is-hidden" id="importFeedback" role="status"></div>
             </form>
-            <div class="note-panel"><div class="note-pin">✦</div><p class="section-kicker">SOURCE NOTES</p><p class="note-copy">External links provide inspiration. HEARTHSTATE ORIGINAL ingredient lists are locally authored; cooking instructions remain on the original source.</p><span class="note-signoff">— hearthstate</span></div>
+            <div class="note-panel"><div class="note-pin">✦</div><p class="section-kicker">SOURCE NOTES</p><p class="note-copy">External links provide inspiration. HEARTHSTATE ORIGINAL ingredient lists are locally authored; cooking instructions remain on the original source.</p><span class="note-signoff">... hearthstate</span></div>
           </aside>
         </section>
         <div class="error-banner is-hidden" id="errorBanner" role="alert"></div>

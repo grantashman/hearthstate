@@ -7,34 +7,48 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-3">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/styles.css?v=hearthstate-ui-1">
   <title>Hearthstate · Set up your household</title>
   <style>
-    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #f4f0e8; color: #26231f; }
-    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top right, #fffaf0, #f4f0e8 48%); }
-    main { width: min(680px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 72px; }
-    header { margin-bottom: 28px; }
-    h1, h2, p { margin-top: 0; } h1 { font-size: clamp(2rem, 5vw, 3.8rem); letter-spacing: -.06em; margin-bottom: 8px; }
-    h2 { font-size: 1.15rem; letter-spacing: -.02em; } p { color: #6c655c; line-height: 1.55; }
-    .eyebrow { color: #a24b2a; text-transform: uppercase; letter-spacing: .16em; font-size: .72rem; font-weight: 800; }
-    .card { background: rgba(255,255,255,.78); border: 1px solid #e4dbce; border-radius: 22px; box-shadow: 0 18px 60px rgba(74, 54, 28, .08); padding: 24px; }
-    label { display: block; color: #6c655c; font-size: .84rem; font-weight: 700; margin-bottom: 7px; }
-    input, button { box-sizing: border-box; width: 100%; font: inherit; border-radius: 12px; border: 1px solid #d8cbbb; padding: 11px 13px; }
-    input { background: #fffdf9; color: #26231f; } button { cursor: pointer; background: #a24b2a; border-color: #a24b2a; color: white; font-weight: 750; margin-top: 12px; }
-    .muted { color: #8b8175; font-size: .88rem; } .error { color: #a83232; min-height: 1.3em; } .success { color: #39704d; min-height: 1.3em; }
-    @media (max-width: 640px) { main { padding-top: 28px; } .card { padding: 18px; border-radius: 17px; } }
+    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; background: #f3ede3; color: #2c2420; }
+    body.setup-page { margin: 0; min-height: 100dvh; background: #f3ede3; }
+    .setup-shell { display: grid; grid-template-columns: minmax(0, .9fr) minmax(320px, .72fr); width: min(1080px, calc(100% - 40px)); min-height: min(700px, calc(100dvh - 80px)); margin: 40px auto; overflow: hidden; border: 1px solid #e0d5c7; border-radius: 22px; background: #fffaf3; box-shadow: 0 18px 50px rgba(113, 80, 48, .09); }
+    .setup-rail { display: flex; flex-direction: column; justify-content: space-between; padding: clamp(28px, 5vw, 68px); color: #fffaf3; background: #356653; }
+    .setup-brand { display: inline-flex; align-items: center; gap: 13px; color: inherit; text-decoration: none; }
+    .setup-brand img { width: 58px; height: 58px; padding: 7px; border: 1px solid rgba(255,250,243,.32); border-radius: 16px; background: #fffaf3; box-shadow: 0 10px 24px rgba(29,25,23,.14); }
+    .setup-brand strong { display: block; font-size: 19px; letter-spacing: -.04em; line-height: 1; }
+    .setup-brand span { display: block; margin-top: 4px; color: rgba(255,250,243,.68); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .setup-rail-copy { max-width: 430px; margin: auto 0; padding: 80px 0; }
+    .setup-rail-copy .eyebrow { margin: 0 0 18px; color: rgba(255,250,243,.68); font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .setup-rail-copy h1 { max-width: 420px; margin: 0; color: #fffaf3; font-size: clamp(42px, 5vw, 72px); font-weight: 750; letter-spacing: -.07em; line-height: .95; }
+    .setup-rail-copy p:last-child { max-width: 320px; margin: 22px 0 0; color: rgba(255,250,243,.7); line-height: 1.55; }
+    .setup-rail-footer { display: flex; align-items: center; gap: 12px; color: rgba(255,250,243,.68); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .setup-rail-footer::before { content: ""; width: 42px; height: 1px; background: currentColor; }
+    .setup-card { align-self: center; width: min(100%, 470px); margin: 0 auto; padding: 38px; }
+    .setup-card h2 { margin: 0; color: #2c2420; font-size: 25px; letter-spacing: -.04em; }
+    .setup-card > p { color: #6c655c; line-height: 1.55; }
+    .setup-form { display: grid; gap: 8px; margin-top: 26px; }
+    .setup-form label { color: #6c655c; font-size: 11px; font-weight: 750; }
+    .setup-form input { box-sizing: border-box; width: 100%; min-height: 46px; margin-top: 7px; padding: 0 13px; color: #2c2420; border: 1px solid #d5c7b8; border-radius: 10px; background: #f7f0e7; font: inherit; outline: 0; }
+    .setup-form input:focus { border-color: #356653; box-shadow: 0 0 0 3px #e4efe8; }
+    .setup-form button { width: 100%; min-height: 46px; margin-top: 8px; padding: 0 16px; color: #fffaf3; border: 1px solid #8e392b; border-radius: 10px; background: #8e392b; font: inherit; font-weight: 750; cursor: pointer; }
+    .setup-form button:hover { background: #7f3026; }
+    .error, .success { min-height: 1.3em; margin: 16px 0 0; font-size: 12px; line-height: 1.45; }
+    .error { color: #8e392b; } .success { color: #356653; }
+    @media (max-width: 760px) { .setup-shell { display: block; width: min(100% - 24px, 560px); min-height: 0; margin: 12px auto; border-radius: 18px; } .setup-rail { min-height: 410px; padding: 24px 20px; } .setup-rail-copy { padding: 56px 0 12px; } .setup-card { width: auto; padding: 30px 20px 34px; } }
   </style>
 </head>
-<body>
-<main>
-  <header>
-    <div class="eyebrow">Household operations</div>
-    <h1>Set up Hearthstate</h1>
-    <p id="identity">Create the household that will hold your shared tasks, calendar, meals, groceries, and inbox.</p>
+<body class="setup-page">
+<main class="setup-shell">
+  <header class="setup-rail">
+    <a class="setup-brand" href="/login" aria-label="Hearthstate sign in"><img src="/brand-mark.svg?v=hearthstate-brand-1" alt="" /><span><strong>hearthstate</strong><span>home, held together</span></span></a>
+    <div class="setup-rail-copy"><div class="eyebrow">Household operations</div><h1>Set up Hearthstate</h1><p id="identity">Create the household that will hold your shared tasks, calendar, meals, groceries, and inbox.</p></div>
+    <span class="setup-rail-footer">Private by design</span>
   </header>
-  <section class="card">
+  <section class="setup-card">
     <h2>Create your household</h2>
     <p>This creates your first owner membership. Other members can be invited from the hosted administration flow.</p>
-    <form id="household-form">
+    <form id="household-form" class="setup-form">
       <label for="household-name">Household name</label>
       <input id="household-name" name="name" required maxlength="120" autocomplete="organization" placeholder="The Ashman Home">
       <button type="submit">Create household</button>
@@ -61,7 +75,7 @@
     event.preventDefault();
     const button = form.querySelector('button');
     button.disabled = true;
-    setMessage('Creating household…', false);
+    setMessage('Creating household...', false);
     try {
       const response = await fetch('/api/households', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ name: nameInput.value.trim() }) });
       const payload = await response.json().catch(() => ({}));
