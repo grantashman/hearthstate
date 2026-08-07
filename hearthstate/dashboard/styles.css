@@ -1193,8 +1193,16 @@ html[data-theme="dark"] .app-shell {
 }
 
 @media (max-width: 780px) {
-  .app-shell .sidebar { padding: 14px 18px; }
+  .app-shell .sidebar {
+    min-width: 0;
+    overflow-x: clip;
+    padding: 14px 18px;
+  }
+  .app-shell .brand-lockup,
+  .app-shell .brand-lockup > div:last-child { min-width: 0; }
   .app-shell .sidebar-footer {
+    min-width: 0;
+    flex: 0 1 auto;
     margin: 0 0 0 auto;
     padding: 0 0 0 12px;
     border-top: 0;
