@@ -51,7 +51,7 @@ async function establishHostedSession(accessToken) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || 'Could not start Hearthstate session.');
-  window.location.assign(payload.households?.length ? '/' : '/setup');
+  window.location.assign(payload.households?.length > 1 ? '/select-household' : payload.households?.length ? '/' : '/setup');
 }
 
 async function consumeMagicLink(token) {

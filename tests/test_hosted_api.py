@@ -4,10 +4,71 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import api.index as hosted_api
 from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _supabase_admin_request, _supabase_request, _uuid, handler
 
 
 class HostedApiContractTests(unittest.TestCase):
+    def test_inbox_capture_splitter_preserves_conservative_multi_action_boundaries(self):
+        self.assertEqual(
+            hosted_api._split_inbox_captures("Buy milk\nBook dentist; plan tacos"),
+            ["Buy milk", "Book dentist", "plan tacos"],
+        )
+        self.assertEqual(hosted_api._split_inbox_captures("Remember to bring the red folder and keys"), ["Remember to bring the red folder and keys"])
+
+    @patch("api.index._json_body", return_value={
+        "items": ["Buy milk", "Book dentist"],
+        "source": "dashboard",
+        "private": False,
+    })
+    def test_inbox_batch_capture_creates_one_reviewable_item_per_action(self, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._create_inbox_capture = Mock(side_effect=[
+            {"item": {"id": "item-1"}, "suggestion": {"suggestion_type": "grocery"}},
+            {"item": {"id": "item-2"}, "suggestion": {"suggestion_type": "task"}},
+        ])
+        request._record_pilot_event = Mock()
+        request._respond = Mock()
+
+        request._handle_post("/inbox/batch")
+
+        self.assertEqual(request._create_inbox_capture.call_count, 2)
+        self.assertEqual(request._respond.call_args.args[0]["created_count"], 2)
+        self.assertEqual(request._respond.call_args.kwargs["status"], 201)
+
+    def test_context_uses_a_valid_household_selection_cookie(self):
+        request = object.__new__(handler)
+        request.path = "/api/index.py"
+        request.headers = {"Cookie": "HearthstateHousehold=3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"}
+        request._memberships = Mock(return_value=[
+            {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "First"},
+            {"id": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48", "name": "Second"},
+        ])
+
+        household_id, _ = request._context("viewer-id", "session-token")
+
+        self.assertEqual(household_id, "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48")
+
+    @patch("api.index._json_body", return_value={"household_id": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"})
+    def test_household_selection_sets_a_scoped_cookie_after_membership_check(self, _json_body):
+        request = object.__new__(handler)
+        request.path = "/api/index.py"
+        request.headers = {}
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._memberships = Mock(return_value=[
+            {"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "name": "First"},
+            {"id": "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48", "name": "Second"},
+        ])
+        request._respond = Mock()
+
+        request._handle_post("/households/select")
+
+        headers = request._respond.call_args.kwargs["headers"]
+        self.assertIn("HearthstateHousehold=3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48", headers["Set-Cookie"])
+        self.assertIn("SameSite=Lax", headers["Set-Cookie"])
+
     def test_branded_login_exposes_temporary_password_fallback(self):
         dashboard = Path(__file__).parents[1] / "hearthstate" / "dashboard"
         login_html = (dashboard / "hosted-login.html").read_text()
@@ -24,6 +85,46 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn('establishHostedSession(accessToken)', login_js)
         self.assertNotIn("/api/session", login_js)
         self.assertNotIn("data-user", login_js)
+
+    def test_multi_household_selection_shell_and_invitation_redirect_are_wired(self):
+        dashboard = Path(__file__).parents[1] / "hearthstate" / "dashboard"
+        selector = (dashboard / "household-select.html").read_text()
+        invite_js = (dashboard / "invite.js").read_text()
+        api_source = (Path(__file__).parents[1] / "api" / "index.py").read_text()
+        self.assertIn('id="householdList"', selector)
+        self.assertIn("/households/select", (dashboard / "household-select.js").read_text())
+        self.assertIn("/select-household", invite_js)
+        self.assertIn('"household-select.html"', api_source)
+
+    def test_root_redirects_to_selection_when_a_multi_household_session_has_no_choice(self):
+        request = object.__new__(handler)
+        request.path = "/"
+        request.headers = {}
+        request._token = Mock(return_value="session-token")
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._memberships = Mock(return_value=[{"id": "household-1"}, {"id": "household-2"}])
+        request._redirect = Mock()
+        request._send_bytes = Mock()
+
+        self.assertTrue(request._handle_asset("/"))
+
+        request._redirect.assert_called_once_with("/select-household")
+        request._send_bytes.assert_not_called()
+
+    def test_root_redirects_when_household_selection_cookie_is_stale(self):
+        request = object.__new__(handler)
+        request.path = "/"
+        request.headers = {"Cookie": "HearthstateHousehold=4e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf49"}
+        request._token = Mock(return_value="session-token")
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._memberships = Mock(return_value=[{"id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47"}])
+        request._redirect = Mock()
+        request._send_bytes = Mock()
+
+        self.assertTrue(request._handle_asset("/"))
+
+        request._redirect.assert_called_once_with("/select-household")
+        request._send_bytes.assert_not_called()
 
     def test_rewritten_vercel_route_is_normalized(self):
         request = object.__new__(handler)

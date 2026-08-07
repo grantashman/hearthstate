@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
@@ -28,6 +29,8 @@ _DEFAULT_SUPABASE_URL = "https://zcfzdqtjglelrbyhcvcu.supabase.co"
 _DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8TG9k3vZPrIW2NLGeHuH1w_KGzTOgiA"
 _SESSION_COOKIE = "HearthstateHostedSession"
 _SESSION_MAX_AGE = 60 * 60 * 24 * 7
+_HOUSEHOLD_COOKIE = "HearthstateHousehold"
+_HOUSEHOLD_MAX_AGE = 60 * 60 * 24 * 30
 _DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "hearthstate" / "dashboard"
 _ADMIN_NAV_MARKER = "<!-- HEARTHSTATE_ADMIN_NAV -->"
 _ADMIN_NAV = '<a class="nav-item" id="administrationNav" href="/admin"><span class="nav-symbol">⚙</span>Administration</a>'
@@ -273,6 +276,22 @@ def _suggestion_for_capture(text: str) -> dict:
     }
 
 
+def _split_inbox_captures(text: str) -> list[str]:
+    """Split deliberate multi-action captures without breaking normal prose."""
+    raw_lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    parts: list[str] = []
+    for raw_line in raw_lines:
+        line = raw_line.strip()
+        line = re.sub(r"^(?:[-*•]|\d+[.)])\s+", "", line).strip()
+        if not line:
+            continue
+        for part in re.split(r"\s*;\s*", line):
+            normalized = part.strip()
+            if normalized:
+                parts.append(normalized)
+    return parts or [str(text or "").strip()]
+
+
 def _parse_datetime(value: object) -> datetime | None:
     if not value:
         return None
@@ -423,7 +442,10 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             if required:
                 raise SupabaseHTTPError(409, "household setup required")
             return None
-        requested = self.headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0]
+        request_headers = getattr(self, "headers", {})
+        cookies = SimpleCookie(request_headers.get("Cookie", ""))
+        cookie_selection = cookies.get(_HOUSEHOLD_COOKIE)
+        requested = request_headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0] or (cookie_selection.value if cookie_selection else "")
         if not requested and len(memberships) > 1:
             raise SupabaseHTTPError(409, "explicit household selection required")
         household_id = _uuid(requested, "household id") if requested else str(memberships[0]["id"])
@@ -1161,7 +1183,11 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     "title": match.get("title") if match else None,
                     "url": match.get("url") if match else None,
                     "confidence": match.get("confidence") if match else None,
+                    "match_basis": match.get("match_basis") if match else None,
+                    "note": match.get("note") if match else None,
                     "observed_at": match.get("observed_at") if match else None,
+                    "requested_size": match.get("requested_size") if match else None,
+                    "product_size": match.get("product_size") if match else None,
                     "size_match": match.get("size_match") if match else None,
                     "stale": bool(match.get("stale")) if match else False,
                     "matched": match is not None,
@@ -1534,6 +1560,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "/login": ("hosted-login.html", "text/html; charset=utf-8", False),
             "/setup": ("hosted.html", "text/html; charset=utf-8", False),
             "/invite": ("invite.html", "text/html; charset=utf-8", False),
+            "/select-household": ("household-select.html", "text/html; charset=utf-8", False),
             "/index.html": ("index.html", "text/html; charset=utf-8", True),
             "/calendar": ("calendar.html", "text/html; charset=utf-8", True), "/calendar/": ("calendar.html", "text/html; charset=utf-8", True),
             "/tasks": ("tasks.html", "text/html; charset=utf-8", True), "/tasks/": ("tasks.html", "text/html; charset=utf-8", True),
@@ -1545,14 +1572,25 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             "/notifications": ("notifications.html", "text/html; charset=utf-8", True), "/notifications/": ("notifications.html", "text/html; charset=utf-8", True),
         }
         assets = {name: (name, content_type, False) for name, content_type in {
-            "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "chores.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml", "brand-mark.svg": "image/svg+xml", "manifest.webmanifest": "application/manifest+json; charset=utf-8", "icons/icon-192.png": "image/png", "icons/icon-512.png": "image/png"}.items()}
+            "login.js": "text/javascript; charset=utf-8", "invite.js": "text/javascript; charset=utf-8", "household-select.js": "text/javascript; charset=utf-8", "nav.js": "text/javascript; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "section.js": "text/javascript; charset=utf-8", "meals.js": "text/javascript; charset=utf-8", "chores.js": "text/javascript; charset=utf-8", "groceries.js": "text/javascript; charset=utf-8", "recipes.js": "text/javascript; charset=utf-8", "admin.js": "text/javascript; charset=utf-8", "notifications.js": "text/javascript; charset=utf-8", "sw.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml", "brand-mark.svg": "image/svg+xml", "manifest.webmanifest": "application/manifest+json; charset=utf-8", "icons/icon-192.png": "image/png", "icons/icon-512.png": "image/png"}.items()}
         if route == "/":
             if not self._token():
                 filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
             else:
                 try:
                     user_id, token, _ = self._authenticate()
-                    filename, content_type, protected = ("index.html", "text/html; charset=utf-8", True) if self._memberships(user_id, token) else ("hosted.html", "text/html; charset=utf-8", False)
+                    memberships = self._memberships(user_id, token)
+                    request_headers = getattr(self, "headers", {})
+                    cookies = SimpleCookie(request_headers.get("Cookie", ""))
+                    selected = request_headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0] or (cookies.get(_HOUSEHOLD_COOKIE).value if cookies.get(_HOUSEHOLD_COOKIE) else "")
+                    household_ids = {str(item.get("id")) for item in memberships if item.get("id")}
+                    if selected and selected not in household_ids:
+                        self._redirect("/select-household")
+                        return True
+                    if len(memberships) > 1 and not selected:
+                        self._redirect("/select-household")
+                        return True
+                    filename, content_type, protected = ("index.html", "text/html; charset=utf-8", True) if memberships else ("hosted.html", "text/html; charset=utf-8", False)
                 except SupabaseHTTPError:
                     filename, content_type, protected = "hosted-login.html", "text/html; charset=utf-8", False
             content = (_DASHBOARD_DIR / filename).read_bytes()
@@ -1779,6 +1817,17 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             self._respond({"household": household}, status=201)
             return
         user_id, token, user = self._authenticate()
+        if route == "/households/select":
+            household_id = _uuid(payload.get("household_id"), "household id")
+            memberships = self._memberships(user_id, token)
+            household = next((item for item in memberships if str(item.get("id")) == household_id), None)
+            if household is None:
+                raise SupabaseHTTPError(403, "household membership required")
+            self._respond(
+                {"household": household},
+                headers={"Set-Cookie": f"{_HOUSEHOLD_COOKIE}={household_id}; Path=/; Secure; SameSite=Lax; Max-Age={_HOUSEHOLD_MAX_AGE}"},
+            )
+            return
         if route in {"/admin/export", "/admin/delete"}:
             selected_household = self.headers.get("X-Hearthstate-Household") or self._query().get("household_id", [""])[0]
             if not selected_household:
@@ -1818,6 +1867,45 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                     dedupe_key=f"capture:{item.get('id')}",
                 )
             self._respond(result, status=201)
+            return
+        if route == "/inbox/batch":
+            raw_items = payload.get("items")
+            if raw_items is None:
+                raw_items = [payload.get("original_text")]
+            if not isinstance(raw_items, list):
+                raise ValueError("items must be a list")
+            items: list[str] = []
+            for raw_item in raw_items:
+                if not isinstance(raw_item, str):
+                    raise ValueError("each Inbox item must be a string")
+                items.extend(_split_inbox_captures(raw_item))
+            items = [item.strip() for item in items if item.strip()]
+            if not items or len(items) > 8:
+                raise ValueError("Inbox batch must contain between 1 and 8 items")
+            source = payload.get("source", "dashboard")
+            private = payload.get("private", False)
+            captures = [
+                self._create_inbox_capture(
+                    household_id,
+                    user_id,
+                    token,
+                    {"original_text": item, "source": source, "private": private},
+                )
+                for item in items
+            ]
+            for result in captures:
+                item = result.get("item") if isinstance(result, dict) else {}
+                if isinstance(item, dict) and item.get("id"):
+                    self._record_pilot_event(
+                        household_id,
+                        user_id,
+                        "capture_created",
+                        entity_type="capture",
+                        entity_id=str(item["id"]),
+                        metadata={"source": str(source), "private": private},
+                        dedupe_key=f"capture:{item['id']}",
+                    )
+            self._respond({"captures": captures, "created_count": len(captures)}, status=201)
             return
         if route.startswith("/inbox/"):
             parts = route.removeprefix("/inbox/").strip("/").split("/")

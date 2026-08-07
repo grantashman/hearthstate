@@ -74,7 +74,7 @@ form.addEventListener('submit', async (event) => {
     const accept = await fetch('/api/auth/invitations/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, display_name: document.querySelector('#displayName').value }) });
     const accepted = await accept.json();
     if (!accept.ok) throw new Error(accepted.error || 'Could not accept invitation.');
-    window.location.assign('/');
+    window.location.assign('/select-household');
   } catch (error) {
     feedback.textContent = error.message;
     feedback.classList.remove('is-hidden');

@@ -65,6 +65,14 @@ const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
 }[character]));
 
+function splitInboxCaptures(text) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+    .flatMap((line) => line.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, '').split(/\s*;\s*/))
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 const formatDate = (value, options) => new Intl.DateTimeFormat(undefined, options).format(new Date(value));
 const viewerBootstrap = window.__HEARTHSTATE_VIEWER__ || {};
 let currentViewerName = viewerBootstrap.name || 'family';
@@ -262,6 +270,8 @@ function renderInbox(items) {
   els.inboxList.innerHTML = items.map((item) => {
     const suggestion = item.suggestion;
     const suggestedType = suggestion?.suggestion_type ? `Suggested ${suggestion.suggestion_type}` : 'Needs a review';
+    const proposed = suggestion?.proposed_payload || {};
+    const suggestionNote = suggestion ? (proposed.name ? 'Ready to review as a grocery item' : proposed.title ? 'Ready to review as a task' : 'Ready to review') : 'Needs a review';
     const reviewAction = suggestion
       ? `<button class="inbox-action" type="button" data-inbox-id="${escapeHTML(item.id)}">Review · ${escapeHTML(suggestion.suggestion_type)}</button>`
       : '<span class="inbox-meta">No suggestion available</span>';
@@ -269,7 +279,7 @@ function renderInbox(items) {
       <li class="inbox-item">
         <div class="inbox-item-copy">
           <div class="inbox-original">${escapeHTML(item.original_text)}</div>
-          <div class="inbox-meta"><span>${escapeHTML(item.source || 'dashboard')}</span><span>·</span><span>${escapeHTML(suggestedType)}</span></div>
+          <div class="inbox-meta"><span>${escapeHTML(item.source || 'dashboard')}</span><span>·</span><span>${escapeHTML(suggestedType)}</span><span>·</span><span>${escapeHTML(suggestionNote)}</span></div>
         </div>
         <div class="inbox-actions">
           ${reviewAction}
@@ -421,12 +431,13 @@ async function captureInboxItem(event) {
   event.preventDefault();
   const originalText = els.inboxCaptureText.value.trim();
   if (!originalText) return;
+  const captures = splitInboxCaptures(originalText);
   const submit = els.inboxCaptureForm.querySelector('button[type="submit"]');
   submit.disabled = true;
   try {
-    const response = await hearthstateFetch('/api/inbox', {
+    const response = await hearthstateFetch('/api/inbox/batch', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ original_text: originalText, source: 'dashboard' }),
+      body: JSON.stringify({ items: captures, source: 'dashboard' }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not capture Inbox item');

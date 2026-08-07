@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3ede3" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=hearthstate-rebrand-1" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css?v=hearthstate-ui-5" />
+    <title>Hearthstate · Choose household</title>
+  </head>
+  <body class="login-page">
+    <main class="login-shell">
+      <aside class="login-rail" aria-label="About Hearthstate">
+        <div class="login-rail-top">
+          <a class="login-brand" href="/login" aria-label="Hearthstate sign in"><img class="login-brand-mark" src="/brand-mark.svg?v=hearthstate-brand-1" alt="" /><span class="login-brand-copy"><strong>hearthstate</strong><span>home, held together</span></span></a>
+          <span class="login-brand-badge">private household space</span>
+        </div>
+        <div class="login-rail-copy"><p class="login-rail-kicker">A PLACE AT THE HEARTH</p><h2>Choose where <span>you belong.</span></h2><p>Some Hearthstate accounts belong to more than one household. Pick the shared space you want to open.</p></div>
+        <div class="login-rail-footer"><span class="login-rail-footer-line" aria-hidden="true"></span><span>Private by design</span></div>
+      </aside>
+      <section class="login-panel" aria-labelledby="householdTitle">
+        <div class="login-panel-inner">
+          <div class="login-panel-meta"><span>Household selection</span><span>Secure access</span></div>
+          <div class="login-copy"><p class="eyebrow">YOUR HOUSEHOLDS</p><h1 id="householdTitle">Where should we take you?</h1><p id="householdSummary">Loading your household spaces...</p></div>
+          <div class="login-form" id="householdList" aria-live="polite"></div>
+          <div class="login-feedback is-hidden" id="householdFeedback" role="alert"></div>
+          <p class="login-footer">hearthstate / your household, together</p>
+        </div>
+      </section>
+    </main>
+    <script src="/household-select.js?v=hearthstate-household-1" defer></script>
+  </body>
+</html>

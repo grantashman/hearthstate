@@ -6,6 +6,23 @@ from api.index import SupabaseHTTPError, handler
 
 
 class HostedGroceryMatchingTests(unittest.TestCase):
+    def test_snapshot_explains_retailer_match_basis_and_unknown_next_step(self):
+        item = {
+            "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",
+            "name": "eggs",
+            "quantity": 1,
+            "unit": "each",
+            "price": None,
+            "price_confidence": None,
+            "status": "open",
+        }
+        request = object.__new__(handler)
+        request._table = Mock(return_value=[item])
+        with patch("api.index._supabase_request", return_value=[]):
+            snapshot = request._grocery_snapshot("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", "access-token")
+        coles = snapshot["items"][0]["retailer_prices"]["coles"]
+        self.assertEqual(coles["match_basis"], "exact alias")
+        self.assertIn("12-pack", coles["note"])
     def test_size_qualified_existing_row_stays_unresolved_without_an_exact_supported_pack(self):
         item = {
             "id": "2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47",

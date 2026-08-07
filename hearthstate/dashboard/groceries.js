@@ -77,10 +77,11 @@ function renderRetailerPrices(item) {
     const safeURL = trustedPriceURL(price.url);
     const label = price.retailer_label || (retailer === 'coles' ? 'Coles' : 'Woolworths');
     const value = searchingLive ? 'Checking…' : price.line_total != null ? money(price.line_total) : 'Unknown';
-    const detail = searchingLive ? 'Searching live prices…' : price.price != null ? `${money(price.price)} each${price.size_match === 'closest' ? ' · closest pack' : ''}` : 'No safe match';
+    const detail = searchingLive ? 'Searching live prices…' : price.price != null ? `${money(price.price)} each${price.size_match === 'closest' ? ' · closest pack' : ''}` : 'No exact supported match · add a manual price';
+    const basis = price.price != null && price.match_basis ? `<small class="price-match-note">${escapeHTML(price.match_basis)}${price.note ? ` · ${escapeHTML(price.note)}` : ''}</small>` : '';
     const source = safeURL ? `<a href="${escapeHTML(safeURL)}" target="_blank" rel="noreferrer">${escapeHTML(price.title || 'View product')}</a>` : `<span>${escapeHTML(price.title || 'No safe match')}</span>`;
     const freshness = price.stale ? ' · stale' : price.observed_at ? ` · ${escapeHTML(checkedLabel(price.observed_at))}` : '';
-    return `<div class="retailer-price ${price.matched ? '' : 'is-unknown'} ${price.stale ? 'is-stale' : ''}"><div><strong>${escapeHTML(label)}</strong><span class="price-badge ${price.confidence === 'live' ? 'is-live' : price.confidence === 'curated' ? 'is-curated' : 'is-unknown'}">${escapeHTML(confidenceLabel(price, label))}</span></div><strong>${value}</strong><small>${escapeHTML(detail)}${freshness}</small><small>${source}</small></div>`;
+    return `<div class="retailer-price ${price.matched ? '' : 'is-unknown'} ${price.stale ? 'is-stale' : ''}"><div><strong>${escapeHTML(label)}</strong><span class="price-badge ${price.confidence === 'live' ? 'is-live' : price.confidence === 'curated' ? 'is-curated' : 'is-unknown'}">${escapeHTML(confidenceLabel(price, label))}</span></div><strong>${value}</strong><small>${escapeHTML(detail)}${freshness}</small>${basis}<small>${source}</small></div>`;
   }).join('')}</div>${item.retailer_savings > 0 ? `<div class="retailer-savings">Save ${money(item.retailer_savings)} at ${escapeHTML(item.cheapest_retailer_label)} for this item</div>` : ''}`;
 }
 
