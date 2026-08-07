@@ -27,6 +27,7 @@
     { "source": "/notifications.js", "destination": "/api/index.py?route=/notifications.js" },
     { "source": "/styles.css", "destination": "/api/index.py?route=/styles.css" },
     { "source": "/favicon.svg", "destination": "/api/index.py?route=/favicon.svg" },
+    { "source": "/brand-mark.svg", "destination": "/api/index.py?route=/brand-mark.svg" },
     { "source": "/manifest.webmanifest", "destination": "/api/index.py?route=/manifest.webmanifest" },
     { "source": "/sw.js", "destination": "/api/index.py?route=/sw.js" },
     { "source": "/icons/:path*", "destination": "/api/index.py?route=/icons/:path*" },

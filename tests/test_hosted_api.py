@@ -324,11 +324,12 @@ class HostedApiContractTests(unittest.TestCase):
         request._send_bytes = Mock()
         rewrites = json.loads((Path(__file__).parents[1] / "vercel.json").read_text())["rewrites"]
         rewrite_sources = {item["source"] for item in rewrites}
-        self.assertTrue({"/manifest.webmanifest", "/sw.js", "/icons/:path*"}.issubset(rewrite_sources))
+        self.assertTrue({"/manifest.webmanifest", "/sw.js", "/brand-mark.svg", "/icons/:path*"}.issubset(rewrite_sources))
 
         for route, content_type, marker in (
             ("/manifest.webmanifest", "application/manifest+json; charset=utf-8", '"display": "standalone"'),
             ("/sw.js", "text/javascript; charset=utf-8", "hearthstate-static-v"),
+            ("/brand-mark.svg", "image/svg+xml", "Hearthstate"),
             ("/icons/icon-192.png", "image/png", None),
             ("/icons/icon-512.png", "image/png", None),
         ):
