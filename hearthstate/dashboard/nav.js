@@ -12,6 +12,13 @@
     return fetch(input, { ...options, headers });
   };
 
+  const viewer = window.__HEARTHSTATE_VIEWER__;
+  if (viewer) {
+    document.querySelectorAll('#viewerName').forEach((element) => { element.textContent = viewer.name || 'Household member'; });
+    document.querySelectorAll('#viewerRole').forEach((element) => { element.textContent = viewer.role || 'Household member'; });
+    document.querySelectorAll('#viewerAvatar').forEach((element) => { element.textContent = (viewer.name || 'H').charAt(0).toUpperCase(); });
+  }
+
   const toggle = document.querySelector('.mobile-nav-toggle');
   const nav = document.querySelector('#primaryNav');
   const sidebar = document.querySelector('.sidebar');

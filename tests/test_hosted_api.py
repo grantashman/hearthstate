@@ -57,6 +57,7 @@ class HostedApiContractTests(unittest.TestCase):
         request._context = Mock(return_value=("household-id", []))
         request._table = Mock(return_value=[])
         request._enrich_rows = Mock(return_value=[])
+        request._household_members = Mock(return_value=[])
         request._respond = Mock()
 
         request._handle_get(request._route())
@@ -64,6 +65,97 @@ class HostedApiContractTests(unittest.TestCase):
         request._handle_asset.assert_not_called()
         request._respond.assert_called_once()
         self.assertEqual(request._respond.call_args.args[0]["tasks"], [])
+
+    def test_calendar_and_tasks_return_configured_members_and_filter_by_member_id(self):
+        request = object.__new__(handler)
+        member_id = "3e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf48"
+        members = [{"id": member_id, "display_name": "Configured member", "role": "member"}]
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._household_members = Mock(return_value=members)
+        request._calendar_items = Mock(return_value=[
+            {"id": "matching-event", "assignee": member_id},
+            {"id": "other-event", "assignee": "other-member"},
+        ])
+        request._table = Mock(return_value=[
+            {"id": "matching-task", "assignee": member_id},
+            {"id": "other-task", "assignee": "other-member"},
+        ])
+        request._visible_tasks = Mock(side_effect=lambda rows, _user_id: rows)
+        request._enrich_rows = Mock(side_effect=lambda rows, _token: rows)
+        request._respond = Mock()
+
+        request.path = f"/api/index.py?route=/api/calendar&assignee={member_id}"
+        request._handle_get("/calendar")
+        calendar_payload = request._respond.call_args.args[0]
+        self.assertEqual(calendar_payload["members"], members)
+        self.assertEqual([item["id"] for item in calendar_payload["calendar"]], ["matching-event"])
+
+        request._respond.reset_mock()
+        request.path = "/api/index.py?route=/api/tasks"
+        request._handle_get("/tasks")
+        tasks_payload = request._respond.call_args.args[0]
+        self.assertEqual(tasks_payload["members"], members)
+        self.assertEqual({item["id"] for item in tasks_payload["tasks"]}, {"matching-task", "other-task"})
+
+        request.path = "/api/index.py?route=/api/tasks&assignee=foreign-member"
+        with self.assertRaisesRegex(ValueError, "household member"):
+            request._handle_get("/tasks")
+
+    def test_notification_preferences_validate_authenticated_values_and_audit_update(self):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        request._respond = Mock()
+        request._log = Mock()
+        with patch("api.index._json_body", return_value={
+            "briefing_type": "morning",
+            "enabled": False,
+            "preferred_time": "06:30",
+            "quiet_start": "21:00",
+            "quiet_end": "07:00",
+        }), patch("api.index._supabase_request", side_effect=[
+            [{"household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "enabled": True}],
+            [{"household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "enabled": False, "preferred_time": "06:30", "quiet_start": "21:00", "quiet_end": "07:00", "channel": "email"}],
+        ]) as supabase_request:
+            request._handle_post("/notifications/preferences")
+
+        self.assertEqual(request._respond.call_args.args[0]["preferences"]["enabled"], False)
+        self.assertEqual(supabase_request.call_count, 2)
+        request._log.assert_called_once()
+        self.assertEqual(request._log.call_args.args[:5], ("household-id", "viewer-id", "session-token", "notification_preferences_updated", "notification_preferences"))
+
+    @patch("api.index._json_body", return_value={"briefing_type": "morning", "enabled": True, "preferred_time": "7:00", "quiet_start": "21:00", "quiet_end": "07:00"})
+    @patch("api.index._supabase_request")
+    def test_notification_preferences_reject_non_canonical_clock_values(self, supabase_request, _json_body):
+        request = object.__new__(handler)
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", {}))
+        with self.assertRaisesRegex(ValueError, "HH:MM"):
+            request._handle_post("/notifications/preferences")
+        supabase_request.assert_not_called()
+
+    def test_notifications_page_redirects_to_administration(self):
+        request = object.__new__(handler)
+        request._token = Mock(return_value="session-token")
+        request._redirect = Mock()
+        self.assertTrue(request._handle_asset("/notifications"))
+        request._redirect.assert_called_once_with("/admin#notificationSettings")
+
+    def test_non_owner_can_load_administration_shell_without_owner_data(self):
+        request = object.__new__(handler)
+        request.path = "/api/index.py?route=/api/admin"
+        request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
+        request._context = Mock(return_value=("household-id", []))
+        request._role = Mock(return_value="member")
+        request._respond = Mock()
+
+        request._handle_get("/admin")
+
+        payload = request._respond.call_args.args[0]
+        self.assertFalse(payload["is_owner"])
+        self.assertEqual(payload["members"], [])
+        self.assertEqual(payload["invitations"], [])
 
     def test_chores_snapshot_includes_members_and_next_rotating_assignee(self):
         request = object.__new__(handler)

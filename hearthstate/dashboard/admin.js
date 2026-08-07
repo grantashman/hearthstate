@@ -8,6 +8,17 @@ const householdName = document.querySelector('#householdName');
 const themeToggle = document.querySelector('#themeToggle');
 const exportDataButton = document.querySelector('#exportDataButton');
 const deleteHouseholdButton = document.querySelector('#deleteHouseholdButton');
+const notificationForm = document.querySelector('#notificationForm');
+const notificationChannelBadge = document.querySelector('#notificationChannelBadge');
+const notificationFields = {
+  enabled: document.querySelector('#enabled'),
+  preferred_time: document.querySelector('#preferredTime'),
+  quiet_start: document.querySelector('#quietStart'),
+  quiet_end: document.querySelector('#quietEnd'),
+};
+const saveNotificationsButton = document.querySelector('#saveNotifications');
+const ownerControls = document.querySelectorAll('.admin-owner-only');
+ownerControls.forEach((element) => { element.classList.add('is-hidden'); });
 
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
@@ -78,15 +89,37 @@ function renderInvitations(invitations) {
   });
 }
 
+function renderNotificationPreferences(preferences) {
+  notificationFields.enabled.checked = Boolean(preferences.enabled);
+  notificationFields.preferred_time.value = preferences.preferred_time;
+  notificationFields.quiet_start.value = preferences.quiet_start;
+  notificationFields.quiet_end.value = preferences.quiet_end;
+  notificationChannelBadge.textContent = preferences.channel === 'email' ? 'Email' : preferences.channel;
+}
+
+async function loadNotificationPreferences() {
+  const payload = await api('/api/notifications/preferences?briefing_type=morning');
+  renderNotificationPreferences(payload.preferences);
+}
+
 async function loadAdmin() {
   document.querySelector('#adminSyncStatus').textContent = 'Refreshing';
   try {
     const payload = await api('/api/admin');
-    householdName.value = payload.household.name;
-    renderMembers(payload.members);
-    renderInvitations(payload.invitations);
+    const isOwner = payload.is_owner !== false;
+    ownerControls.forEach((element) => { element.classList.toggle('is-hidden', !isOwner); });
+    if (isOwner) {
+      householdName.value = payload.household.name;
+      renderMembers(payload.members);
+      renderInvitations(payload.invitations);
+    }
     document.querySelector('#adminSyncStatus').textContent = 'Live snapshot';
     hideFeedback();
+    try {
+      await loadNotificationPreferences();
+    } catch (error) {
+      showFeedback(error.message, 'error');
+    }
   } catch (error) {
     showFeedback(error.message, 'error');
     document.querySelector('#adminSyncStatus').textContent = 'Offline';
@@ -214,6 +247,30 @@ document.querySelector('#inviteForm').addEventListener('submit', async (event) =
     showFeedback(error.message, 'error');
   } finally {
     submit.disabled = false;
+  }
+});
+
+notificationForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  saveNotificationsButton.disabled = true;
+  try {
+    const payload = await api('/api/notifications/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        briefing_type: 'morning',
+        enabled: notificationFields.enabled.checked,
+        preferred_time: notificationFields.preferred_time.value,
+        quiet_start: notificationFields.quiet_start.value,
+        quiet_end: notificationFields.quiet_end.value,
+      }),
+    });
+    renderNotificationPreferences(payload.preferences);
+    showFeedback('Notification settings saved.');
+  } catch (error) {
+    showFeedback(error.message, 'error');
+  } finally {
+    saveNotificationsButton.disabled = false;
   }
 });
 

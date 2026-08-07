@@ -1,11 +1,11 @@
-const CACHE_NAME = 'hearthstate-static-v3';
+const CACHE_NAME = 'hearthstate-static-v4';
 const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/favicon.svg?v=hearthstate-pwa-1',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/styles.css?v=hearthstate-pwa-2',
-  '/nav.js?v=hearthstate-pwa-2',
+  '/nav.js?v=hearthstate-pwa-3',
 ];
 
 self.addEventListener('install', (event) => {

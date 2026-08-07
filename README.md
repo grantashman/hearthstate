@@ -38,20 +38,20 @@ The hosted dashboard includes:
 
 Grocery matching uses controlled product aliases rather than unconstrained fuzzy matching. For example, `Coke Zero` resolves to equivalent curated Coles and Woolworths Coca-Cola Zero Sugar 2L observations. Grocery price metadata is server-controlled: ordinary grocery writes cannot set prices or provenance, the manual-price route supplies fixed manual metadata, and the dashboard links only to HTTPS Coles or Woolworths domains. The database migration also removes authenticated PostgREST write privileges for protected price columns and quote mutations; only service-role-only RPCs can persist curated/manual price metadata and refresh observations, and each RPC re-checks and locks the actor's household membership before mutating. Size-qualified lines are canonicalized to one packaged purchase only when a known Coles or Woolworths product supports that exact interpretation. Explicit same-family size differences may be shown as a **closest pack**, but they are never treated as equivalent for a cheapest-retailer recommendation.
 - Owner administration for household name, roles, members, invitations, and revocation.
-- Authenticated notification preferences.
+- Authenticated notification preferences in Administration.
 
-Assignments are explicit and shared: **Grant, Billie, Skye, or All**.
+Assignments are explicit and shared across household members configured in Administration.
 
 Supported planner actions include:
 
 ```text
 Add oat milk and bananas to the grocery list
 Remind me to submit the school form tomorrow
-Add soccer Thursday at 5 for Skye
-Add school permission form to the family tasks for Grant
-What tasks are assigned to Skye?
-What is on the calendar for All?
-Add tacos to the meal plan tomorrow for Billie with ingredients tortillas, mince, lettuce
+Add soccer Thursday at 5 for a configured household member
+Add school permission form to the family tasks for a configured household member
+What tasks are assigned to a configured household member?
+What is on the calendar for the household?
+Add tacos to the meal plan tomorrow for a configured household member with ingredients tortillas, mince, lettuce
 What's for dinner tomorrow?
 What needs attention?
 ```
