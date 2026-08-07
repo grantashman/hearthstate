@@ -94,6 +94,21 @@ begin
             jsonb_build_object('source', capture_row.source, 'private', capture_row.private, 'has_suggestion', true)
         );
 
+        insert into public.pilot_events (household_id, actor, event_name, entity_type, entity_id, metadata, dedupe_key)
+        values (
+            p_household_id,
+            p_actor_user_id,
+            'capture_created',
+            'capture',
+            capture_row.id,
+            jsonb_build_object('private', capture_row.private)
+                || case when capture_row.source in ('setup', 'dashboard', 'email', 'photon', 'notification', 'client', 'unknown')
+                        then jsonb_build_object('source', capture_row.source)
+                        else '{}'::jsonb end,
+            'capture:' || capture_row.id::text
+        )
+        on conflict (household_id, event_name, dedupe_key) where dedupe_key is not null do nothing;
+
         results := results || jsonb_build_array(jsonb_build_object('item', to_jsonb(capture_row), 'suggestion', to_jsonb(suggestion_row)));
     end loop;
     return jsonb_build_object('captures', results);

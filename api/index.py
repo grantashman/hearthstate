@@ -206,7 +206,11 @@ def _notification_email(delivery: dict) -> str:
             "text": delivery["body"],
         }).encode("utf-8"),
         method="POST",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Idempotency-Key": str(delivery.get("idempotency_key") or delivery.get("id") or "").strip(),
+        },
     )
     try:
         with urlopen(request, timeout=10) as response:
@@ -1898,47 +1902,30 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 continue
             if not service_key:
                 raise SupabaseHTTPError(503, "Supabase service role environment is not configured")
+            delivery_date = local_now.date().isoformat()
             try:
-                auth_user = _supabase_request("GET", f"/auth/v1/admin/users/{user_id}", token=service_key, api_key=service_key)
+                queued = _supabase_admin_request(
+                    "POST",
+                    "/rest/v1/rpc/queue_notification_delivery",
+                    payload={"p_household_id": household_id, "p_actor_user_id": user_id, "p_delivery_date": delivery_date},
+                )
             except SupabaseHTTPError as exc:
-                if exc.status == 404:
+                if exc.status in {400, 403, 404, 422}:
                     continue
                 raise
-            if not isinstance(auth_user, dict) or not auth_user.get("email_confirmed_at"):
-                continue
-            recipient_email = str(auth_user.get("email") or "").strip().lower()
-            if not recipient_email:
-                continue
-            delivery_date = local_now.date().isoformat()
-            idempotency_key = f"morning:{household_id}:{user_id}:{delivery_date}"
-            public_url = os.environ.get("HEARTHSTATE_PUBLIC_URL", "https://hearthstate.vercel.app").strip().rstrip("/")
-            _supabase_admin_request(
-                "POST",
-                "/rest/v1/notification_deliveries",
-                query=[("on_conflict", "idempotency_key")],
-                prefer="return=representation,resolution=ignore-duplicates",
-                payload={
-                    "household_id": household_id,
-                    "user_id": user_id,
-                    "briefing_type": "morning",
-                    "delivery_date": delivery_date,
-                    "idempotency_key": idempotency_key,
-                    "channel": "email",
-                    "recipient_email": recipient_email,
-                    "subject": "Your Hearthstate morning briefing",
-                    "body": f"Your Hearthstate morning briefing is ready.\n\nOpen your household dashboard: {public_url}/",
-                    "status": "queued",
-                    "scheduled_for": scheduled_local.astimezone(timezone.utc).isoformat(),
-                },
-            )
-            prepared += 1
+            if isinstance(queued, list):
+                queued = _first(queued) or {}
+            if isinstance(queued, dict) and queued.get("queued"):
+                prepared += 1
 
         claimed = _rows(_supabase_admin_request("POST", "/rest/v1/rpc/claim_notification_deliveries", payload={"p_limit": 25}))
         sent = failed = no_provider = 0
         for delivery in claimed:
-            delivery_id = str(delivery.get("id") or "")
-            claim_token = str(delivery.get("claim_token") or "")
-            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}")] if delivery_id and claim_token else [("id", f"eq.{delivery_id}")]
+            delivery_id = str(delivery.get("id") or "").strip()
+            claim_token = str(delivery.get("claim_token") or "").strip()
+            if not delivery_id or not claim_token:
+                raise SupabaseHTTPError(502, "Supabase returned an unfenced notification claim")
+            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}")]
             try:
                 provider_id = _send_notification_email(delivery)
                 _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "sent", "provider_message_id": provider_id, "sent_at": _iso_now(), "lease_expires_at": None, "claim_token": None, "last_error": None})
@@ -2111,18 +2098,6 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             captures = batch_result.get("captures", []) if isinstance(batch_result, dict) else []
             if not isinstance(captures, list) or len(captures) != len(items):
                 raise SupabaseHTTPError(502, "Supabase returned an invalid Inbox batch")
-            for result in captures:
-                item = result.get("item") if isinstance(result, dict) else {}
-                if isinstance(item, dict) and item.get("id"):
-                    self._record_pilot_event(
-                        household_id,
-                        user_id,
-                        "capture_created",
-                        entity_type="capture",
-                        entity_id=str(item["id"]),
-                        metadata={"source": str(source), "private": private},
-                        dedupe_key=f"capture:{item['id']}",
-                    )
             self._respond({"captures": captures, "created_count": len(captures)}, status=201)
             return
         if route.startswith("/inbox/"):

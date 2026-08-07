@@ -37,6 +37,7 @@ class HostedApiContractTests(unittest.TestCase):
         request._handle_post("/inbox/batch")
 
         request._create_inbox_captures_batch.assert_called_once()
+        request._record_pilot_event.assert_not_called()
         self.assertEqual(request._respond.call_args.args[0]["created_count"], 2)
         self.assertEqual(request._respond.call_args.kwargs["status"], 201)
 
@@ -196,12 +197,15 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("cancel_notification_deliveries", migration)
         self.assertIn("grant select on public.notification_deliveries to authenticated", migration)
         self.assertNotIn("grant select, insert, update on public.notification_deliveries to authenticated", migration)
+        self.assertIn("p.channel = 'email'", migration)
+        self.assertIn("quiet_start", migration)
+        self.assertIn("for update", migration)
 
     def test_notification_dispatch_claims_and_marks_delivery_sent(self):
         request = object.__new__(handler)
         request.headers = {"Authorization": "Bearer cron-secret"}
         request._respond = Mock()
-        delivery = {"id": "delivery-id", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
+        delivery = {"id": "delivery-id", "claim_token": "claim-token", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
         with patch("api.index._json_body", return_value={}), \
              patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
              patch("api.index._supabase_admin_request", side_effect=[[], [delivery], {}]) as admin_request, \
@@ -211,6 +215,19 @@ class HostedApiContractTests(unittest.TestCase):
         response = request._respond.call_args.args[0]
         self.assertEqual(response["sent"], 1)
         self.assertEqual(admin_request.call_args_list[-1].kwargs["payload"]["status"], "sent")
+
+    def test_notification_dispatch_rejects_unfenced_claims_without_sending(self):
+        request = object.__new__(handler)
+        request.headers = {"Authorization": "Bearer cron-secret"}
+        request._respond = Mock()
+        delivery = {"id": "delivery-id", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
+        with patch("api.index._json_body", return_value={}), patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
+             patch("api.index._supabase_admin_request", side_effect=[[], [delivery]]) as admin_request, \
+             patch("api.index._send_notification_email") as send_email:
+            with self.assertRaisesRegex(hosted_api.SupabaseHTTPError, "unfenced"):
+                request._handle_post("/notifications/dispatch")
+        send_email.assert_not_called()
+        self.assertEqual(admin_request.call_count, 2)
 
     def test_notification_dispatch_requires_cron_authentication(self):
         request = object.__new__(handler)

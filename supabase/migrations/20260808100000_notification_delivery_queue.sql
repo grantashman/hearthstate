@@ -72,13 +72,15 @@ begin
         raise exception 'household membership required' using errcode = '42501';
     end if;
     select * into preference from public.notification_preferences
-    where household_id = p_household_id and user_id = p_actor_user_id and briefing_type = 'morning';
+    where household_id = p_household_id and user_id = p_actor_user_id and briefing_type = 'morning'
+    for update;
     if not found then
         insert into public.notification_preferences (household_id, user_id, briefing_type)
         values (p_household_id, p_actor_user_id, 'morning')
         on conflict (household_id, user_id, briefing_type) do nothing;
         select * into preference from public.notification_preferences
-        where household_id = p_household_id and user_id = p_actor_user_id and briefing_type = 'morning';
+        where household_id = p_household_id and user_id = p_actor_user_id and briefing_type = 'morning'
+        for update;
     end if;
     if not preference.enabled or preference.channel = 'none' then
         return jsonb_build_object('queued', false, 'delivery', null, 'reason', 'notifications disabled');
@@ -106,7 +108,7 @@ begin
         'Your Hearthstate morning briefing is ready. Open your Hearthstate dashboard: https://hearthstate.vercel.app/',
         'queued', scheduled_at
     ) on conflict (idempotency_key) do nothing;
-    select * into delivery_row from public.notification_deliveries d where d.idempotency_key = delivery_key;
+    select * into delivery_row from public.notification_deliveries d where d.idempotency_key = delivery_key for update;
     if delivery_row.status in ('cancelled', 'failed', 'no_provider') then
         update public.notification_deliveries
         set status = 'queued', attempts = 0, next_attempt_at = null, lease_expires_at = null,
@@ -182,10 +184,33 @@ begin
         and exists (
             select 1
             from public.notification_preferences p
+            cross join lateral (
+                select
+                    case when p.preferred_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.preferred_time::time else null::time end as preferred_time_value,
+                    case when p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_start::time else null::time end as quiet_start_value,
+                    case when p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_end::time else null::time end as quiet_end_value
+            ) clock
             where p.household_id = d.household_id
               and p.user_id = d.user_id
               and p.briefing_type = d.briefing_type
               and p.enabled = true
+              and p.channel = 'email'
+              and clock.preferred_time_value is not null
+              and clock.quiet_start_value is not null
+              and clock.quiet_end_value is not null
+              and (
+                  d.delivery_date < timezone('Australia/Sydney', now())::date
+                  or (d.delivery_date = timezone('Australia/Sydney', now())::date
+                      and timezone('Australia/Sydney', now())::time >= clock.preferred_time_value)
+              )
+              and not (
+                  (clock.quiet_start_value < clock.quiet_end_value
+                   and timezone('Australia/Sydney', now())::time >= clock.quiet_start_value
+                   and timezone('Australia/Sydney', now())::time < clock.quiet_end_value)
+                  or (clock.quiet_start_value >= clock.quiet_end_value
+                      and (timezone('Australia/Sydney', now())::time >= clock.quiet_start_value
+                           or timezone('Australia/Sydney', now())::time < clock.quiet_end_value))
+              )
         )
         and exists (
             select 1
