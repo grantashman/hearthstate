@@ -1519,3 +1519,284 @@ html[data-theme="dark"] .app-shell {
   .app-shell .metric-card strong { font-size: 22px; }
   .app-shell .metric-note { display: none; }
 }
+
+/*
+ * Household monitor cohesion pass
+ *
+ * The dashboard is a Monitor surface: one daily state, one action entry point,
+ * and one planning rhythm. Keep the visual language quiet so the data carries
+ * the personality instead of making every module look like a separate card.
+ */
+.app-shell {
+  --cohesion-canvas: #edf0e9;
+  --cohesion-paper: #fffdf8;
+  --cohesion-paper-quiet: #f5f4ed;
+  --cohesion-forest: #1d4b3d;
+  --cohesion-forest-deep: #12372d;
+  --cohesion-ink: #1d2823;
+  --cohesion-muted: #748078;
+  --cohesion-line: rgba(29, 75, 61, .15);
+  --cohesion-shadow: 0 1px 1px rgba(29, 52, 42, .06), 0 14px 30px rgba(54, 69, 57, .08);
+  background: var(--cohesion-canvas);
+}
+
+html[data-theme="dark"] .app-shell {
+  --cohesion-canvas: #171e1a;
+  --cohesion-paper: #232c27;
+  --cohesion-paper-quiet: #1d2621;
+  --cohesion-forest: #173b31;
+  --cohesion-forest-deep: #102b23;
+  --cohesion-ink: #f4eee4;
+  --cohesion-muted: #a8b6ac;
+  --cohesion-line: rgba(220, 235, 223, .14);
+  --cohesion-shadow: 0 1px 1px rgba(0, 0, 0, .22), 0 16px 32px rgba(0, 0, 0, .16);
+}
+
+.app-shell .sidebar {
+  flex-basis: 248px;
+  padding: 30px 18px 18px;
+  background: var(--cohesion-forest);
+  border-right: 0;
+}
+.app-shell .brand-lockup { padding: 0 10px; }
+.app-shell .brand-name,
+.app-shell .brand-caption,
+.app-shell .sidebar-kicker,
+.app-shell .nav-item,
+.app-shell .sidebar-footer,
+.app-shell .person-copy span,
+.app-shell .more-button { color: rgba(255, 253, 248, .72); }
+.app-shell .brand-name,
+.app-shell .person-copy strong { color: #fffdf8; }
+.app-shell .brand-caption,
+.app-shell .sidebar-kicker { color: rgba(255, 253, 248, .48); }
+.app-shell .nav-item { border-radius: 11px; }
+.app-shell .nav-item:hover { color: #fffdf8; background: rgba(255, 253, 248, .1); }
+.app-shell .nav-item.is-active { color: var(--cohesion-forest-deep); background: var(--board-gold); }
+.app-shell .nav-item.is-active svg,
+.app-shell .nav-item.is-active .nav-symbol { color: var(--cohesion-forest-deep); }
+.app-shell .privacy-card { border-color: rgba(255, 253, 248, .18); background: rgba(255, 253, 248, .08); }
+.app-shell .privacy-card strong { color: #fffdf8; }
+.app-shell .privacy-card p { color: rgba(255, 253, 248, .55); }
+.app-shell .privacy-icon { color: var(--cohesion-forest-deep); background: var(--board-gold); }
+.app-shell .sidebar-footer { border-top-color: rgba(255, 253, 248, .16); }
+.app-shell .avatar-you { color: var(--cohesion-forest-deep); background: var(--board-gold); }
+
+.app-shell .main-content {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  padding: 0 48px 58px;
+  background: var(--cohesion-canvas);
+}
+.app-shell .topbar { min-height: 70px; border-bottom-color: var(--cohesion-line); }
+.app-shell .breadcrumb { color: var(--cohesion-muted); }
+.app-shell .breadcrumb span:first-child { color: var(--cohesion-forest); }
+.app-shell .sync-status,
+.app-shell .theme-button,
+.app-shell .refresh-button { border-color: var(--cohesion-line); background: var(--cohesion-paper); }
+.app-shell .sync-status { color: var(--cohesion-muted); }
+
+/* The hero is one composed unit: copy, state, and house note share one frame. */
+.app-shell .welcome-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(430px, .78fr);
+  align-items: stretch;
+  gap: 30px;
+  min-height: 250px;
+  margin-top: 28px;
+  padding: 28px;
+  border-radius: 22px;
+  background: var(--cohesion-forest);
+  box-shadow: var(--cohesion-shadow);
+}
+.app-shell .welcome-row::after { right: -95px; bottom: -180px; opacity: .7; }
+.app-shell .welcome-copy { align-self: center; }
+.app-shell .welcome-copy .eyebrow,
+.app-shell .welcome-note-panel .section-kicker { color: var(--board-gold); }
+.app-shell .welcome-copy h1 {
+  max-width: 680px;
+  color: #fffdf8;
+  font-size: clamp(42px, 4.5vw, 64px);
+  letter-spacing: -.07em;
+  line-height: .94;
+}
+.app-shell .welcome-subtitle { max-width: 500px; margin-top: 15px; color: rgba(255, 253, 248, .68); }
+.app-shell .welcome-utility {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr);
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  max-width: 520px;
+  align-self: stretch;
+  padding: 8px;
+  border: 1px solid rgba(255, 253, 248, .15);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, .08);
+}
+.app-shell .state-card {
+  width: auto;
+  min-width: 0;
+  padding: 18px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--board-gold);
+  box-shadow: none;
+}
+.app-shell .state-card-title { margin-top: 10px; color: var(--cohesion-forest-deep); font-size: 23px; }
+.app-shell .state-card p { margin-bottom: 13px; color: rgba(18, 55, 45, .7); }
+.app-shell .welcome-note-panel {
+  width: auto;
+  min-width: 0;
+  padding: 18px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+}
+.app-shell .welcome-note-panel .note-pin { margin-bottom: 15px; background: rgba(255, 253, 248, .16); }
+.app-shell .welcome-note-panel .note-copy { max-width: none; color: #fffdf8; font-size: 15px; line-height: 1.25; }
+.app-shell .welcome-note-panel .note-signoff { color: rgba(255, 253, 248, .52); }
+
+/* Three metrics become one quiet summary rail instead of three floating tiles. */
+.app-shell .metric-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 16px 0 20px;
+  overflow: hidden;
+  border: 1px solid var(--cohesion-line);
+  border-radius: 16px;
+  background: var(--cohesion-paper);
+  box-shadow: var(--cohesion-shadow);
+}
+.app-shell .metric-card {
+  min-height: 82px;
+  padding: 15px 20px;
+  border: 0;
+  border-right: 1px solid var(--cohesion-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell .metric-card:last-child { border-right: 0; }
+.app-shell .metric-card::before { display: none; }
+.app-shell .metric-icon,
+.app-shell .metric-calendar .metric-icon,
+.app-shell .metric-grocery .metric-icon { color: var(--cohesion-forest); background: #e0ebe2; }
+.app-shell .metric-card strong { color: var(--cohesion-ink); font-size: 25px; }
+.app-shell .metric-label,
+.app-shell .metric-note { color: var(--cohesion-muted); }
+
+/* Every content panel now shares the same elevation and no longer announces a different theme. */
+.app-shell .panel,
+.app-shell .records-panel {
+  border: 1px solid var(--cohesion-line);
+  border-radius: 18px;
+  background: var(--cohesion-paper);
+  box-shadow: var(--cohesion-shadow);
+}
+.app-shell .panel-heading { align-items: center; padding-bottom: 15px; border-bottom: 1px solid var(--cohesion-line); }
+.app-shell .panel-heading h2,
+.app-shell .records-heading h2 { color: var(--cohesion-ink); font-size: 23px; }
+.app-shell .panel-intro { max-width: 420px; margin: 11px 0 18px; color: var(--cohesion-muted); }
+.app-shell .section-kicker { color: var(--cohesion-forest); }
+.app-shell .panel-link { color: var(--cohesion-forest); }
+.app-shell .panel-badge,
+.app-shell .grocery-count,
+.app-shell .inbox-badge { color: var(--cohesion-forest); background: #e0ebe2; }
+.app-shell .inbox-panel,
+.app-shell .planning-panel,
+.app-shell .intelligence-panel { margin-top: 18px; border-top: 1px solid var(--cohesion-line); }
+.app-shell .attention-panel,
+.app-shell .day-panel,
+.app-shell .grocery-panel { border-top: 1px solid var(--cohesion-line); }
+
+/* The empty inbox is a compact calm state, not a second blank panel. */
+.app-shell .inbox-panel { padding: 23px 27px 18px; }
+.app-shell .inbox-capture-form { margin-bottom: 0; }
+.app-shell .inbox-capture-form textarea { min-height: 48px; background: var(--cohesion-paper-quiet); }
+.app-shell .inbox-capture-form .small-action { color: var(--cohesion-forest-deep); border-color: var(--cohesion-forest); background: #e0ebe2; }
+.app-shell .inbox-panel .empty-state {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 15px 0 2px;
+  border-top: 1px solid var(--cohesion-line);
+}
+.app-shell .inbox-panel .empty-state .empty-mark { grid-row: 1 / 3; margin: 0; }
+.app-shell .inbox-panel .empty-state strong { align-self: end; }
+.app-shell .inbox-panel .empty-state span:last-child { align-self: start; }
+
+/* Planning is a single week strip; the nested dashed boxes were visual noise. */
+.app-shell .planning-panel { padding: 23px 24px 24px; }
+.app-shell .planning-strip {
+  gap: 0;
+  overflow-x: auto;
+  padding: 0;
+  border: 1px solid var(--cohesion-line);
+  border-radius: 13px;
+  background: var(--cohesion-paper-quiet);
+}
+.app-shell .planning-day {
+  min-width: 135px;
+  padding: 13px;
+  border: 0;
+  border-right: 1px solid var(--cohesion-line);
+  border-radius: 0;
+  background: transparent;
+}
+.app-shell .planning-day:last-child { border-right: 0; }
+.app-shell .planning-day.is-today { box-shadow: inset 0 3px 0 var(--ember); background: #f7e9c5; }
+.app-shell .planning-day-head { margin-bottom: 12px; }
+.app-shell .planning-day-head strong { color: var(--cohesion-ink); }
+.app-shell .planning-dinner,
+.app-shell .planning-dinner.planning-empty {
+  min-height: 66px;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--cohesion-line);
+  border-bottom: 1px solid var(--cohesion-line);
+  border-radius: 0;
+  background: transparent;
+}
+.app-shell .planning-dinner:hover { box-shadow: none; }
+.app-shell .planning-label { color: var(--cohesion-forest); }
+.app-shell .planning-dinner strong { color: var(--cohesion-ink); }
+.app-shell .planning-items { margin-top: 10px; }
+
+.app-shell .intelligence-grid > div { border: 0; background: transparent; }
+.app-shell .timeline-card,
+.app-shell .record-row:hover { background: var(--cohesion-paper-quiet); }
+.app-shell .primary-action { box-shadow: 0 5px 12px rgba(142, 57, 43, .12); }
+
+@media (max-width: 1120px) {
+  .app-shell .welcome-row { grid-template-columns: 1fr; }
+  .app-shell .welcome-utility { max-width: none; }
+}
+
+@media (max-width: 780px) {
+  .app-shell .main-content { padding: 0 18px 36px; }
+  .app-shell .welcome-row { gap: 22px; margin-top: 18px; padding: 22px 20px; border-radius: 19px; }
+  .app-shell .welcome-copy h1 { font-size: clamp(42px, 12vw, 58px); }
+  .app-shell .welcome-utility { grid-template-columns: 1fr 1fr; }
+  .app-shell .metric-card { min-height: 78px; padding: 12px 10px; }
+  .app-shell .metric-card strong { font-size: 22px; }
+  .app-shell .metric-note { display: none; }
+  .app-shell .inbox-panel,
+  .app-shell .planning-panel { padding: 20px 17px 17px; }
+}
+
+@media (max-width: 480px) {
+  .app-shell .welcome-row { padding: 20px 16px; }
+  .app-shell .welcome-utility { grid-template-columns: 1fr; }
+  .app-shell .welcome-note-panel { min-height: 128px; }
+  .app-shell .metric-strip { border-radius: 13px; }
+  .app-shell .metric-card { min-width: 0; padding: 11px 5px; text-align: center; }
+  .app-shell .metric-card { display: grid; justify-items: center; gap: 5px; }
+  .app-shell .metric-icon { width: 27px; height: 27px; }
+  .app-shell .metric-card strong { font-size: 20px; }
+  .app-shell .inbox-capture-form { grid-template-columns: 1fr; }
+  .app-shell .inbox-capture-form .small-action { width: 100%; }
+}
