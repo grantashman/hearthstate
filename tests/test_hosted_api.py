@@ -187,6 +187,8 @@ class HostedApiContractTests(unittest.TestCase):
         notifications_html = (dashboard / "notifications.html").read_text()
         notifications_js = (dashboard / "notifications.js").read_text()
         migration = "".join(path.read_text() for path in (root / "supabase" / "migrations").glob("*notification_delivery*.sql"))
+        vercel = (root / "vercel.json").read_text()
+        dispatch_workflow = (root / ".github" / "workflows" / "notification-dispatch.yml").read_text()
         self.assertIn("data-quick-action=", index_html)
         self.assertIn("completeVisibleAttention", app_js)
         self.assertIn("/api/notifications/queue", notifications_js)
@@ -200,6 +202,9 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("p.channel = 'email'", migration)
         self.assertIn("quiet_start", migration)
         self.assertIn("for update", migration)
+        self.assertNotIn('"crons"', vercel)
+        self.assertIn('cron: "*/15 * * * *"', dispatch_workflow)
+        self.assertIn("HEARTHSTATE_CRON_SECRET", dispatch_workflow)
 
     def test_notification_dispatch_claims_and_marks_delivery_sent(self):
         request = object.__new__(handler)

@@ -1,0 +1,26 @@
+name: Hearthstate Notification Dispatch
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch due notifications
+        env:
+          HEARTHSTATE_CRON_SECRET: ${{ secrets.HEARTHSTATE_CRON_SECRET }}
+        run: |
+          test -n "$HEARTHSTATE_CRON_SECRET"
+          curl --fail --silent --show-error --retry 2 --retry-delay 5 \
+            --request POST \
+            --header "Authorization: Bearer $HEARTHSTATE_CRON_SECRET" \
+            --header "Content-Type: application/json" \
+            --data '{}' \
+            https://hearthstate.vercel.app/api/notifications/dispatch

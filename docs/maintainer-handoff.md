@@ -51,8 +51,8 @@ SUPABASE_PUBLISHABLE_KEY
 SUPABASE_SERVICE_ROLE_KEY   # server-only; never expose or commit
 ```
 
-For scheduled email briefings, Vercel Production also needs `CRON_SECRET`,
-`RESEND_API_KEY`, and `HEARTHSTATE_NOTIFICATION_FROM`. The cron route is
+For scheduled email briefings, Vercel Production needs `CRON_SECRET`,
+`RESEND_API_KEY`, and `HEARTHSTATE_NOTIFICATION_FROM`. The dispatch route is
 `/api/notifications/dispatch`; it creates at-most-one delivery per member and
 Sydney household date, claims rows atomically with expiring leases, retries
 provider failures, and records recoverable `no_provider` state when email
@@ -61,7 +61,15 @@ queueing and cancellation use household/member-checked security-definer RPCs,
 and recipients come from verified Supabase Auth identities rather than editable
 profile fields.
 
-GitHub Actions' `production` environment needs:
+Vercel Hobby does not accept sub-daily cron expressions, so the 15-minute
+scheduler runs from `.github/workflows/notification-dispatch.yml`. Add an
+Actions secret named `HEARTHSTATE_CRON_SECRET` containing the same server-only
+value as Vercel `CRON_SECRET`; never put either value in tracked files or chat.
+The workflow fails closed when that Actions secret is absent. Vercel remains
+responsible for serving the endpoint and its server-side Supabase/provider
+configuration.
+
+GitHub Actions' `production` environment also needs:
 
 ```text
 SUPABASE_ACCESS_TOKEN
