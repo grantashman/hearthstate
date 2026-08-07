@@ -1,11 +1,11 @@
-const CACHE_NAME = 'hearthstate-static-v8';
+const CACHE_NAME = 'hearthstate-static-v9';
 const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/favicon.svg?v=hearthstate-rebrand-1',
   '/brand-mark.svg?v=hearthstate-brand-1',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/styles.css?v=hearthstate-ui-4',
+  '/styles.css?v=hearthstate-ui-5',
   '/nav.js?v=hearthstate-pwa-3',
 ];
 

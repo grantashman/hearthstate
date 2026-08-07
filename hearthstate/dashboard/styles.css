@@ -1800,3 +1800,285 @@ html[data-theme="dark"] .app-shell {
   .app-shell .inbox-capture-form { grid-template-columns: 1fr; }
   .app-shell .inbox-capture-form .small-action { width: 100%; }
 }
+
+/*
+ * Direction 2 — household command center
+ *
+ * The overview is an operating surface, not a promotional landing page. Keep
+ * one visual object (the status cassette), then let the household information
+ * read as a continuous ledger on paper.
+ */
+.app-shell {
+  --ledger-canvas: #f0f1eb;
+  --ledger-paper: #fffdf8;
+  --ledger-paper-soft: #f7f6f0;
+  --ledger-forest: #1b493b;
+  --ledger-forest-deep: #10372c;
+  --ledger-ink: #202923;
+  --ledger-muted: #748078;
+  --ledger-line: rgba(27, 73, 59, .17);
+  background: var(--ledger-canvas);
+}
+
+html[data-theme="dark"] .app-shell {
+  --ledger-canvas: #171e1a;
+  --ledger-paper: #222b26;
+  --ledger-paper-soft: #1d2621;
+  --ledger-forest: #173b31;
+  --ledger-forest-deep: #0f2b23;
+  --ledger-ink: #f4eee4;
+  --ledger-muted: #a7b4aa;
+  --ledger-line: rgba(231, 240, 231, .15);
+}
+
+.app-shell .main-content {
+  padding: 0 52px 68px;
+  background: var(--ledger-canvas);
+}
+.app-shell .topbar { min-height: 70px; border-bottom-color: var(--ledger-line); }
+.app-shell .breadcrumb { color: var(--ledger-muted); }
+.app-shell .breadcrumb span:first-child { color: var(--ledger-forest); }
+.app-shell .sync-status,
+.app-shell .theme-button,
+.app-shell .refresh-button { border-color: var(--ledger-line); background: var(--ledger-paper); }
+
+/* One strong object at the top: useful status, not a decorative hero. */
+.app-shell .welcome-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(470px, .78fr);
+  align-items: center;
+  gap: 42px;
+  min-height: 0;
+  margin-top: 0;
+  padding: 38px 0 30px;
+  overflow: visible;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ledger-line);
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell .welcome-row::after { display: none; }
+.app-shell .welcome-copy { align-self: center; }
+.app-shell .welcome-copy .eyebrow { color: var(--ledger-forest); }
+.app-shell .welcome-copy h1 {
+  max-width: 720px;
+  color: var(--ledger-forest-deep);
+  font-size: clamp(48px, 5vw, 74px);
+  letter-spacing: -.08em;
+  line-height: .9;
+}
+.app-shell .welcome-subtitle { max-width: 470px; margin-top: 17px; color: var(--ledger-muted); }
+.app-shell .welcome-utility {
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr);
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 560px;
+  padding: 9px;
+  border: 0;
+  border-radius: 17px;
+  background: var(--ledger-forest);
+  box-shadow: 0 12px 24px rgba(27, 73, 59, .15);
+}
+.app-shell .state-card {
+  width: auto;
+  min-width: 0;
+  padding: 20px;
+  border: 0;
+  border-radius: 10px 0 0 10px;
+  background: var(--board-gold);
+  box-shadow: none;
+}
+.app-shell .state-card-title { margin-top: 11px; color: var(--ledger-forest-deep); font-size: 25px; }
+.app-shell .state-card p { margin-bottom: 15px; color: rgba(16, 55, 44, .72); }
+.app-shell .welcome-note-panel {
+  width: auto;
+  min-width: 0;
+  padding: 20px;
+  border: 0;
+  border-radius: 0 10px 10px 0;
+  background: transparent;
+}
+.app-shell .welcome-note-panel .note-pin { margin-bottom: 17px; background: rgba(255, 253, 248, .15); }
+.app-shell .welcome-note-panel .note-copy { max-width: none; color: #fffdf8; font-size: 15px; line-height: 1.27; }
+.app-shell .welcome-note-panel .note-signoff { color: rgba(255, 253, 248, .52); }
+
+/* Summary is a ledger row, not another group of cards. */
+.app-shell .metric-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-bottom: 1px solid var(--ledger-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell .metric-card {
+  min-height: 88px;
+  padding: 18px 20px 17px 0;
+  border: 0;
+  border-right: 1px solid var(--ledger-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell .metric-card + .metric-card { padding-left: 20px; }
+.app-shell .metric-card:last-child { border-right: 0; }
+.app-shell .metric-card::before { display: none; }
+.app-shell .metric-icon,
+.app-shell .metric-calendar .metric-icon,
+.app-shell .metric-grocery .metric-icon { color: var(--ledger-forest); background: #dfeae1; }
+.app-shell .metric-card strong { color: var(--ledger-ink); font-size: 26px; }
+.app-shell .metric-label,
+.app-shell .metric-note { color: var(--ledger-muted); }
+
+/* Paper sections now form one continuous ledger; only the top rule separates them. */
+.app-shell .panel,
+.app-shell .records-panel {
+  border: 0;
+  border-top: 1px solid var(--ledger-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell .panel-heading {
+  align-items: center;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.app-shell .panel-heading h2,
+.app-shell .records-heading h2 { color: var(--ledger-forest-deep); font-size: 25px; }
+.app-shell .panel-intro { max-width: 460px; margin: 10px 0 20px; color: var(--ledger-muted); }
+.app-shell .section-kicker { color: var(--ledger-forest); }
+.app-shell .panel-link { color: var(--ledger-forest); }
+.app-shell .panel-badge,
+.app-shell .grocery-count,
+.app-shell .inbox-badge { color: var(--ledger-forest); background: #dfeae1; }
+.app-shell .inbox-panel,
+.app-shell .planning-panel,
+.app-shell .intelligence-panel { margin-top: 0; padding: 28px 0 26px; border-top: 1px solid var(--ledger-line); }
+.app-shell .attention-panel,
+.app-shell .day-panel,
+.app-shell .grocery-panel { border-top: 1px solid var(--ledger-line); }
+
+.app-shell .inbox-capture-form { margin-bottom: 0; }
+.app-shell .inbox-capture-form textarea {
+  min-height: 52px;
+  border-color: var(--ledger-line);
+  border-radius: 6px;
+  background: var(--ledger-paper);
+}
+.app-shell .inbox-capture-form .small-action {
+  color: var(--ledger-forest-deep);
+  border-color: var(--ledger-forest);
+  border-radius: 6px;
+  background: #dfeae1;
+}
+.app-shell .inbox-panel .empty-state {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  align-items: center;
+  margin-top: 17px;
+  padding: 15px 0 1px;
+  border-top: 1px solid var(--ledger-line);
+}
+.app-shell .inbox-panel .empty-state .empty-mark { grid-row: 1 / 3; margin: 0; }
+
+.app-shell .planning-panel { padding-top: 28px; }
+.app-shell .planning-strip {
+  gap: 0;
+  overflow-x: auto;
+  padding: 0;
+  border: 1px solid var(--ledger-line);
+  border-radius: 8px;
+  background: var(--ledger-paper);
+}
+.app-shell .planning-day {
+  min-width: 135px;
+  padding: 14px;
+  border: 0;
+  border-right: 1px solid var(--ledger-line);
+  border-radius: 0;
+  background: transparent;
+}
+.app-shell .planning-day:last-child { border-right: 0; }
+.app-shell .planning-day.is-today { box-shadow: inset 0 3px 0 var(--ember); background: #f6e7c0; }
+.app-shell .planning-dinner,
+.app-shell .planning-dinner.planning-empty {
+  min-height: 66px;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--ledger-line);
+  border-bottom: 1px solid var(--ledger-line);
+  border-radius: 0;
+  background: transparent;
+}
+.app-shell .planning-dinner:hover { box-shadow: none; }
+.app-shell .planning-label { color: var(--ledger-forest); }
+.app-shell .planning-dinner strong { color: var(--ledger-ink); }
+
+.app-shell .intelligence-grid { border-top: 1px solid var(--ledger-line); }
+.app-shell .intelligence-grid > div { border: 0; background: transparent; }
+.app-shell .timeline-card,
+.app-shell .record-row:hover { background: var(--ledger-paper); }
+.app-shell .dashboard-grid { gap: 0; }
+.app-shell .dashboard-grid .panel { padding: 28px 20px 22px 0; }
+.app-shell .dashboard-grid .panel + .panel { padding-left: 20px; border-left: 1px solid var(--ledger-line); }
+.app-shell .primary-action { box-shadow: 0 5px 12px rgba(142, 57, 43, .12); }
+
+/* Secondary pages use the same editorial header instead of switching visual dialects. */
+.app-shell .section-hero {
+  min-height: 0;
+  margin-top: 0;
+  padding: 38px 0 30px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ledger-line);
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell .section-hero::after { display: none; }
+.app-shell .section-hero h1 { color: var(--ledger-forest-deep); font-size: clamp(48px, 5vw, 72px); }
+.app-shell .section-hero .welcome-subtitle { color: var(--ledger-muted); }
+.app-shell .section-hero-note { border: 1px solid var(--ledger-line); border-left: 3px solid var(--ledger-forest); background: var(--ledger-paper); }
+.app-shell .section-hero-note .section-kicker { color: var(--ledger-forest); }
+.app-shell .section-hero-note strong { color: var(--ledger-ink); }
+
+@media (max-width: 1120px) {
+  .app-shell .welcome-row { grid-template-columns: 1fr; gap: 24px; }
+  .app-shell .welcome-utility { max-width: 600px; }
+}
+
+@media (max-width: 780px) {
+  .app-shell .main-content { padding: 0 20px 44px; }
+  .app-shell .welcome-row { gap: 22px; padding: 31px 0 25px; }
+  .app-shell .welcome-copy h1 { font-size: clamp(46px, 13vw, 62px); }
+  .app-shell .welcome-utility { max-width: none; }
+  .app-shell .metric-card { min-height: 78px; padding-top: 14px; padding-bottom: 14px; }
+  .app-shell .metric-card + .metric-card { padding-left: 12px; }
+  .app-shell .metric-card strong { font-size: 22px; }
+  .app-shell .metric-note { display: none; }
+  .app-shell .inbox-panel,
+  .app-shell .planning-panel,
+  .app-shell .intelligence-panel { padding-top: 24px; padding-bottom: 23px; }
+  .app-shell .dashboard-grid .panel,
+  .app-shell .dashboard-grid .panel + .panel { padding: 24px 0; border-left: 0; }
+  .app-shell .section-hero { padding: 31px 0 25px; }
+}
+
+@media (max-width: 480px) {
+  .app-shell .welcome-row { padding-top: 27px; }
+  .app-shell .welcome-utility { grid-template-columns: 1fr; padding: 8px; }
+  .app-shell .state-card { border-radius: 10px; }
+  .app-shell .welcome-note-panel { min-height: 125px; padding-top: 16px; }
+  .app-shell .metric-card { min-width: 0; padding-right: 5px; padding-left: 5px; text-align: center; }
+  .app-shell .metric-card + .metric-card { padding-left: 5px; }
+  .app-shell .metric-card { display: grid; justify-items: center; gap: 4px; }
+  .app-shell .metric-icon { width: 27px; height: 27px; }
+  .app-shell .metric-card strong { font-size: 20px; }
+  .app-shell .inbox-capture-form { grid-template-columns: 1fr; }
+  .app-shell .inbox-capture-form .small-action { width: 100%; }
+}
