@@ -47,7 +47,7 @@ jobs:
         if: steps.migration_changes.outputs.changed == 'true'
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.111.0
 
       - name: Apply committed Supabase migrations
         if: steps.migration_changes.outputs.changed == 'true'
