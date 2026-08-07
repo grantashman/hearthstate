@@ -283,6 +283,17 @@ def _parse_datetime(value: object) -> datetime | None:
         return None
 
 
+def _normalize_clock_time(value: object, field_name: str) -> str:
+    text = str(value or "").strip()
+    try:
+        parsed = datetime.strptime(text, "%H:%M")
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must use HH:MM time") from exc
+    if parsed.strftime("%H:%M") != text:
+        raise ValueError(f"{field_name} must use HH:MM time")
+    return text
+
+
 def _format_time(value: object) -> str:
     parsed = _parse_datetime(value)
     return parsed.strftime("%-I:%M %p") if parsed else ""
@@ -454,6 +465,22 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             for row in memberships
             if row.get("user_id")
         ]
+
+    def _member_filter(self, household_id: str, token: str) -> tuple[list[dict], str | None]:
+        members = self._household_members(household_id, token)
+        raw_assignee = self._query().get("assignee", [""])[0].strip()
+        if len(raw_assignee) > 100:
+            raise ValueError("assignee is invalid")
+        assignee = raw_assignee or None
+        if assignee and assignee not in {str(member.get("id")) for member in members}:
+            raise ValueError("assignee must be a household member")
+        return members, assignee
+
+    @staticmethod
+    def _filter_assignee(rows: list[dict], assignee: str | None) -> list[dict]:
+        if not assignee:
+            return rows
+        return [row for row in rows if str(row.get("assignee") or row.get("cook") or "") == assignee]
 
     def _chore_snapshot(self, household_id: str, token: str) -> tuple[list[dict], list[dict]]:
         members = self._household_members(household_id, token)
@@ -1534,6 +1561,12 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             except SupabaseHTTPError:
                 self._redirect("/login")
                 return True
+        if route in {"/notifications", "/notifications/"}:
+            if not self._token():
+                self._redirect("/login")
+            else:
+                self._redirect("/admin#notificationSettings")
+            return True
         asset = pages.get(route) or assets.get(route.removeprefix("/"))
         if asset is None and route.startswith("/recipe-images/"):
             filename = Path(route.removeprefix("/recipe-images/")).name
@@ -1553,10 +1586,7 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
         if route == "/admin" and self._token():
             try:
                 user_id, token, _ = self._authenticate()
-                context = self._context(user_id, token)
-                if context and self._role(context[0], user_id, token) != "owner":
-                    self._redirect("/")
-                    return True
+                self._context(user_id, token)
             except SupabaseHTTPError:
                 self._redirect("/login")
                 return True
@@ -1660,19 +1690,30 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 filtered.append(recipe)
             self._respond({"recipes": filtered, "members": self._household_members(household_id, token), "generated_at": _iso_now()})
         elif route == "/tasks":
-            self._respond({"viewer": user_id, "generated_at": _iso_now(), "tasks": self._enrich_rows(self._visible_tasks(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), user_id), token)})
+            members, assignee = self._member_filter(household_id, token)
+            tasks = self._enrich_rows(self._visible_tasks(self._table("tasks", household_id, token, ("status", "eq.open"), order="due_at.asc.nullsfirst"), user_id), token)
+            self._respond({"viewer": user_id, "generated_at": _iso_now(), "tasks": self._filter_assignee(tasks, assignee), "members": members})
         elif route == "/calendar":
-            self._respond({"viewer": user_id, "generated_at": _iso_now(), "calendar": self._calendar_items(household_id, user_id, token, datetime.now(timezone.utc))})
+            members, assignee = self._member_filter(household_id, token)
+            calendar = self._filter_assignee(self._calendar_items(household_id, user_id, token, datetime.now(timezone.utc)), assignee)
+            self._respond({"viewer": user_id, "generated_at": _iso_now(), "calendar": calendar, "members": members})
         elif route == "/meals":
             meals = self._enrich_rows(self._table("meals", household_id, token, order="meal_date.asc"), token)
             self._respond({"generated_at": _iso_now(), "meals": meals, "members": self._household_members(household_id, token)})
         elif route == "/notifications/preferences":
-            briefing_type = self._query().get("briefing_type", ["morning"])[0].lower() or "morning"
+            briefing_type = self._query().get("briefing_type", ["morning"])[0].strip().lower() or "morning"
+            if briefing_type != "morning":
+                raise ValueError("unsupported briefing type")
             preferences = _first(_supabase_request("GET", "/rest/v1/notification_preferences", token=token, query=[("select", "*"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}"), ("briefing_type", f"eq.{briefing_type}")])) or {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": True, "preferred_time": "07:00", "quiet_start": "21:00", "quiet_end": "07:00", "channel": "email"}
             self._respond({"preferences": preferences})
         elif route == "/admin":
-            if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")
-            self._respond(self._admin(household_id, user_id, token))
+            is_owner = self._role(household_id, user_id, token) == "owner"
+            if is_owner:
+                payload = self._admin(household_id, user_id, token)
+                payload["is_owner"] = True
+            else:
+                payload = {"household": {}, "members": [], "invitations": [], "is_owner": False}
+            self._respond(payload)
         else:
             self._respond({"error": "not found"}, status=404)
 
@@ -2017,9 +2058,20 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             meal = self._post_record("meals", household_id, user_id, token, payload)
             self._respond({"meal": meal}, status=201); return
         if route == "/notifications/preferences":
-            briefing_type = str(payload.get("briefing_type", "morning"))
-            preference = {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": bool(payload.get("enabled", True)), "preferred_time": str(payload.get("preferred_time", "07:00")), "quiet_start": str(payload.get("quiet_start", "21:00")), "quiet_end": str(payload.get("quiet_end", "07:00")), "channel": "email", "updated_at": _iso_now()}
+            briefing_type = str(payload.get("briefing_type", "morning")).strip().lower() or "morning"
+            if briefing_type != "morning":
+                raise ValueError("unsupported briefing type")
+            enabled = payload.get("enabled", True)
+            if not isinstance(enabled, bool):
+                raise ValueError("enabled must be a boolean")
+            preferred_time = _normalize_clock_time(payload.get("preferred_time", "07:00"), "preferred_time")
+            quiet_start = _normalize_clock_time(payload.get("quiet_start", "21:00"), "quiet_start")
+            quiet_end = _normalize_clock_time(payload.get("quiet_end", "07:00"), "quiet_end")
+            preference_query = [("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}"), ("briefing_type", f"eq.{briefing_type}")]
+            before = _first(_supabase_request("GET", "/rest/v1/notification_preferences", token=token, query=[("select", "household_id,user_id,briefing_type,enabled,preferred_time,quiet_start,quiet_end,channel"), *preference_query]))
+            preference = {"household_id": household_id, "user_id": user_id, "briefing_type": briefing_type, "enabled": enabled, "preferred_time": preferred_time, "quiet_start": quiet_start, "quiet_end": quiet_end, "channel": "email", "updated_at": _iso_now()}
             row = _first(_supabase_request("POST", "/rest/v1/notification_preferences", token=token, query=[("on_conflict", "household_id,user_id,briefing_type")], payload=preference, prefer="return=representation,resolution=merge-duplicates")) or preference
+            self._log(household_id, user_id, token, "notification_preferences_updated", "notification_preferences", entity_id=f"{user_id}:{briefing_type}", before=before, after={key: row.get(key) for key in ("household_id", "user_id", "briefing_type", "enabled", "preferred_time", "quiet_start", "quiet_end", "channel") if isinstance(row, dict)})
             self._respond({"preferences": row}); return
         if route == "/admin/household":
             if self._role(household_id, user_id, token) != "owner": raise SupabaseHTTPError(403, "owner access required")

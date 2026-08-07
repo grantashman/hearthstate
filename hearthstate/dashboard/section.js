@@ -9,6 +9,7 @@ const els = {
   updatedAt: document.querySelector('#updatedAt'),
   list: document.querySelector('#recordsList'),
   empty: document.querySelector('#emptyState'),
+  assignmentSummary: document.querySelector('#assignmentSummary'),
   error: document.querySelector('#errorBanner'),
   addRecord: document.querySelector('#addRecordButton'),
   editor: document.querySelector('#editorForm'),
@@ -55,6 +56,15 @@ function formatRelativeDate(value) {
   if (date.toDateString() === today.toDateString()) return 'Today';
   if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
   return formatDate(value, { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function renderAssigneeOptions(members) {
+  const current = els.assignee.value;
+  const options = [{ id: '', display_name: 'Everyone' }, ...(Array.isArray(members) ? members : [])];
+  const optionMarkup = options.map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.display_name || member.id)}</option>`).join('');
+  els.assignee.innerHTML = optionMarkup;
+  els.recordAssignee.innerHTML = `<option value="">Unassigned</option>${options.slice(1).map((member) => `<option value="${escapeHTML(member.id)}">${escapeHTML(member.display_name || member.id)}</option>`).join('')}`;
+  if (options.some((member) => String(member.id) === String(current))) els.assignee.value = current;
 }
 
 function renderCalendar(items) {
@@ -113,6 +123,9 @@ async function mutateTask(taskId, action) {
 }
 
 function render(payload) {
+  const members = Array.isArray(payload.members) ? payload.members : [];
+  renderAssigneeOptions(members);
+  els.assignmentSummary.textContent = members.length ? members.map((member) => member.display_name || member.id).join(' · ') : 'No household members configured';
   const items = isCalendar ? payload.calendar : payload.tasks;
   els.recordCount.textContent = items.length;
   els.updatedAt.textContent = `UPDATED ${formatDate(payload.generated_at, { hour: 'numeric', minute: '2-digit' }).toUpperCase()}`;
@@ -165,14 +178,12 @@ async function saveRecord(event) {
     starts_at: els.recordStartsAt.value,
     person: els.recordPerson.value.trim(),
     assignee: els.recordAssignee.value || null,
-    created_by: 'you',
   } : {
     id: els.recordId.value ? els.recordId.value : undefined,
     title: els.recordTitle.value.trim(),
     due_at: els.recordStartsAt.value || null,
     assignee: els.recordAssignee.value || null,
     recurrence: els.recordRecurrence.value || 'none',
-    created_by: 'you',
   };
   try {
     const response = await hearthstateFetch(isCalendar ? '/api/calendar' : '/api/tasks', {
@@ -194,7 +205,7 @@ async function loadSection() {
   els.syncStatus.textContent = 'Refreshing';
   try {
     const endpoint = isCalendar ? '/api/calendar' : '/api/tasks';
-    const query = new URLSearchParams({ viewer: 'you' });
+    const query = new URLSearchParams();
     if (els.assignee.value) query.set('assignee', els.assignee.value);
     const response = await hearthstateFetch(`${endpoint}?${query.toString()}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);

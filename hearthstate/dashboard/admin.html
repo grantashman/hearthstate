@@ -35,12 +35,12 @@
           <a class="nav-item" href="/meals"><span class="nav-symbol">♨</span>Meals</a>
           <a class="nav-item" href="/recipes"><span class="nav-symbol">✦</span>Recipes</a>
           <a class="nav-item" href="/groceries"><span class="nav-symbol">+</span>Groceries</a>
-          <a class="nav-item" href="/notifications"><span class="nav-symbol">⌁</span>Notifications</a>
+
           <a class="nav-item is-active" href="/admin" aria-current="page"><span class="nav-symbol">⚙</span>Administration</a>
         </nav>
         <div class="sidebar-spacer"></div>
         <div class="privacy-card"><div class="privacy-icon" aria-hidden="true">✦</div><div><strong>Private by default</strong><p>Only owners can change household access.</p></div></div>
-        <div class="sidebar-footer"><div class="avatar avatar-you">G</div><div class="person-copy"><strong>Owner</strong><span>Household administration</span></div><a class="more-button" href="/login" aria-label="Sign out" title="Sign out">↺</a></div>
+        <div class="sidebar-footer"><div class="avatar avatar-you" id="viewerAvatar">H</div><div class="person-copy"><strong id="viewerName">Household member</strong><span id="viewerRole">Household member</span></div><a class="more-button" href="/login" aria-label="Sign out" title="Sign out">↺</a></div>
       </aside>
 
       <main class="main-content section-page admin-page">
@@ -58,15 +58,15 @@
 
         <section class="section-hero admin-hero" aria-labelledby="adminTitle">
           <div>
-            <p class="eyebrow">OWNER WORKBENCH</p>
+            <p class="eyebrow">HOUSEHOLD WORKBENCH</p>
             <h1 id="adminTitle">Household administration</h1>
-            <p class="section-hero-copy">Keep the people, access, and shared name of home in good shape.</p>
+            <p class="section-hero-copy">Keep household access in good shape and choose your notification rhythm.</p>
           </div>
           <div class="admin-hero-mark" aria-hidden="true"><span>✦</span><small>ACCESS<br />WITH CARE</small></div>
         </section>
 
         <div class="admin-feedback is-hidden" id="adminFeedback" role="status" aria-live="polite"></div>
-        <div class="admin-grid">
+        <div class="admin-grid admin-owner-only">
           <section class="panel admin-panel admin-settings-panel" aria-labelledby="settingsTitle">
             <div class="panel-heading">
               <div><p class="section-kicker">THE HOUSE</p><h2 id="settingsTitle">Household settings</h2></div>
@@ -81,19 +81,51 @@
 
           <section class="panel admin-panel admin-invite-panel" aria-labelledby="inviteTitle">
             <div class="panel-heading">
-              <div><p class="section-kicker">MAKE ROOM</p><h2 id="inviteTitle">Invite someone</h2></div>
+              <div><p class="section-kicker">MAKE ROOM</p><h2 id="inviteTitle">Add a household user</h2></div>
               <span class="admin-panel-mark" aria-hidden="true">＋</span>
             </div>
-            <p class="panel-intro">Send a one-time link with the smallest role that fits.</p>
+            <p class="panel-intro">Send a one-time invitation. After they accept, their configured name appears in member selectors throughout the household.</p>
             <form class="admin-form" id="inviteForm">
               <label for="inviteEmail">Email address</label>
               <input id="inviteEmail" name="email" type="email" autocomplete="email" maxlength="320" placeholder="someone@example.com" required />
-              <div class="admin-inline-form"><label class="admin-select-label" for="inviteRole">Role<select id="inviteRole" name="role"><option value="member">Member</option><option value="child">Child</option><option value="guest">Guest</option></select></label><button class="primary-action" type="submit">Send invite <span aria-hidden="true">↗</span></button></div>
+              <div class="admin-inline-form"><label class="admin-select-label" for="inviteRole">Role<select id="inviteRole" name="role"><option value="member">Member</option><option value="child">Child</option><option value="guest">Guest</option></select></label><button class="primary-action" type="submit">Create invitation <span aria-hidden="true">↗</span></button></div>
             </form>
           </section>
         </div>
 
-        <section class="panel admin-panel admin-data-panel" aria-labelledby="dataTitle">
+        <section class="panel admin-panel" id="notificationSettings" aria-labelledby="notificationSettingsTitle">
+          <div class="panel-heading">
+            <div><p class="section-kicker">YOUR DELIVERY</p><h2 id="notificationSettingsTitle">Notification settings</h2></div>
+            <span class="panel-badge" id="notificationChannelBadge">Email</span>
+          </div>
+          <p class="panel-intro">Choose when Hearthstate can send your morning briefing. These preferences are saved for your signed-in account.</p>
+          <div class="notification-feedback is-hidden" id="notificationFeedback" role="status" aria-live="polite"></div>
+          <form id="notificationForm" class="notification-layout">
+            <section class="notification-panel notification-main-panel" aria-labelledby="briefingTitle">
+              <div class="panel-heading"><div><p class="section-kicker">MORNING BRIEFING</p><h3 id="briefingTitle">A useful note, not a siren</h3></div></div>
+              <p class="panel-intro">A compact household snapshot with tasks, calendar, dinner, and grocery signals. Private tasks stay private.</p>
+              <label class="notification-switch-row" for="enabled">
+                <span><strong>Send my morning briefing</strong><small>Delivered to the email address on your Hearthstate account.</small></span>
+                <input id="enabled" name="enabled" type="checkbox" role="switch" />
+              </label>
+            </section>
+            <section class="notification-panel" aria-labelledby="timingTitle">
+              <div class="panel-heading"><div><p class="section-kicker">WHEN</p><h3 id="timingTitle">Set the rhythm</h3></div><span class="notification-symbol" aria-hidden="true">◷</span></div>
+              <p class="panel-intro">The time uses the household’s configured timezone.</p>
+              <div class="notification-fields">
+                <label for="preferredTime">Preferred delivery time<input id="preferredTime" name="preferred_time" type="time" required /></label>
+                <label for="quietStart">Quiet hours start<input id="quietStart" name="quiet_start" type="time" required /></label>
+                <label for="quietEnd">Quiet hours end<input id="quietEnd" name="quiet_end" type="time" required /></label>
+              </div>
+            </section>
+            <div class="notification-actions">
+              <span class="notification-save-note" id="notificationSaveNote">Changes are saved for your account.</span>
+              <button class="primary-action" id="saveNotifications" type="submit">Save notification settings <span aria-hidden="true">↗</span></button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel admin-panel admin-data-panel admin-owner-only" aria-labelledby="dataTitle">
           <div class="panel-heading">
             <div><p class="section-kicker">YOUR HOUSEHOLD DATA</p><h2 id="dataTitle">Export or leave</h2></div>
             <span class="panel-badge">Owner only</span>
