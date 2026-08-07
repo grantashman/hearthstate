@@ -1,11 +1,11 @@
-const CACHE_NAME = 'hearthstate-static-v6';
+const CACHE_NAME = 'hearthstate-static-v7';
 const PRECACHE_URLS = [
   '/manifest.webmanifest',
   '/favicon.svg?v=hearthstate-rebrand-1',
   '/brand-mark.svg?v=hearthstate-brand-1',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/styles.css?v=hearthstate-ui-2',
+  '/styles.css?v=hearthstate-ui-3',
   '/nav.js?v=hearthstate-pwa-3',
 ];
 
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || url.origin !== self.location.origin || !cacheablePath.has(url.pathname)) return;
 
   event.respondWith(
-    caches.match(request, { ignoreSearch: true }).then((cached) => {
+    caches.match(request).then((cached) => {
       if (cached) return cached;
       return fetch(request).then((response) => {
         if (!response.ok) return response;
