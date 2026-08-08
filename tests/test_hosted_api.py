@@ -190,6 +190,7 @@ class HostedApiContractTests(unittest.TestCase):
         followup_migration = (root / "supabase" / "migrations" / "20260808103000_notification_and_inbox_followup_hardening.sql").read_text()
         vercel = (root / "vercel.json").read_text()
         dispatch_workflow = (root / ".github" / "workflows" / "notification-dispatch.yml").read_text()
+        production_workflow = (root / ".github" / "workflows" / "production.yml").read_text()
         api_source = (root / "api" / "index.py").read_text()
         self.assertIn("data-quick-action=", index_html)
         self.assertIn("completeVisibleAttention", app_js)
@@ -211,15 +212,27 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("jsonb_typeof(capture_input->'original_text') is distinct from 'string'", migration)
         self.assertIn("delivery_row.status = 'cancelled'", followup_migration)
         self.assertIn("'sending'", followup_migration)
-        self.assertIn("_notification_delivery_authorized", api_source)
-        self.assertIn("enabled,channel,preferred_time,quiet_start,quiet_end", api_source)
+        self.assertIn("begin_notification_delivery", api_source)
+        self.assertNotIn("_notification_delivery_authorized", api_source)
         self.assertIn("_fenced_notification_update", api_source)
         self.assertIn("case when p.preferred_time ~", followup_migration)
         self.assertIn("order by d.household_id asc, d.user_id asc, d.id asc", followup_migration)
+        fence_migration = (root / "supabase" / "migrations" / "20260808110000_notification_provider_start_fence.sql").read_text()
+        self.assertIn("provider_started_at", fence_migration)
+        self.assertIn("begin_notification_delivery", fence_migration)
+        self.assertIn("status = 'sending' and provider_started_at is null", fence_migration)
+        self.assertIn("clock_timestamp()", fence_migration)
+        self.assertIn("if p_delivery_date = local_today then", fence_migration)
+        self.assertIn("pg_advisory_xact_lock", fence_migration)
+        self.assertIn("Serialize preference initialization", fence_migration)
         self.assertNotIn("delivery_row.status in ('cancelled', 'failed', 'no_provider')", followup_migration)
         self.assertNotIn('"crons"', vercel)
         self.assertIn('cron: "*/15 * * * *"', dispatch_workflow)
         self.assertIn("HEARTHSTATE_CRON_SECRET", dispatch_workflow)
+        self.assertIn("group: hearthstate-production", dispatch_workflow)
+        self.assertIn("Wait for connected Vercel deployment", production_workflow)
+        self.assertNotIn("status.sha", production_workflow)
+        self.assertLess(production_workflow.index("Wait for connected Vercel deployment"), production_workflow.index("Apply committed Supabase migrations"))
 
     def test_notification_dispatch_claims_and_marks_delivery_sent(self):
         request = object.__new__(handler)
@@ -228,12 +241,15 @@ class HostedApiContractTests(unittest.TestCase):
         delivery = {"id": "delivery-id", "household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "claim_token": "claim-token", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
         with patch("api.index._json_body", return_value={}), \
              patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
-             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], [{"enabled": True, "channel": "email"}], [{"user_id": "viewer-id"}], {}]) as admin_request, \
+             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], {"authorized": True}, {}]) as admin_request, \
              patch("api.index._send_notification_email", return_value="provider-message-id"):
             request._handle_post("/notifications/dispatch")
 
         response = request._respond.call_args.args[0]
         self.assertEqual(response["sent"], 1)
+        self.assertEqual(admin_request.call_args_list[2].args[1], "/rest/v1/rpc/begin_notification_delivery")
+        self.assertEqual(admin_request.call_args_list[2].kwargs["payload"]["p_claim_token"], "claim-token")
+        self.assertIn(("provider_started_at", "not.is.null"), admin_request.call_args_list[-1].kwargs["query"])
         self.assertEqual(admin_request.call_args_list[-1].kwargs["payload"]["status"], "sent")
 
     def test_notification_dispatch_rejects_unfenced_claims_without_sending(self):
@@ -292,7 +308,7 @@ class HostedApiContractTests(unittest.TestCase):
         delivery = {"id": "delivery-id", "household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "claim_token": "claim-token", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
         with patch("api.index._json_body", return_value={}), \
              patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
-             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], [{"enabled": False, "channel": "email"}], {}]), \
+             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], {"authorized": False}]), \
              patch("api.index._send_notification_email") as send_email:
             request._handle_post("/notifications/dispatch")
         send_email.assert_not_called()

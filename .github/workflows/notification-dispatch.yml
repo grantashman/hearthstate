@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: hearthstate-production
+  cancel-in-progress: false
+
 jobs:
   dispatch:
     runs-on: ubuntu-latest

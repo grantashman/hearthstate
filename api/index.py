@@ -188,54 +188,6 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat()
 
 
-def _notification_delivery_authorized(delivery: dict) -> bool:
-    household_id = str(delivery.get("household_id") or "").strip()
-    user_id = str(delivery.get("user_id") or "").strip()
-    briefing_type = str(delivery.get("briefing_type") or "morning").strip().lower()
-    if not household_id or not user_id or briefing_type != "morning":
-        return False
-    preference = _first(_supabase_admin_request(
-        "GET",
-        "/rest/v1/notification_preferences",
-        query=[
-            ("select", "enabled,channel,preferred_time,quiet_start,quiet_end"),
-            ("household_id", f"eq.{household_id}"),
-            ("user_id", f"eq.{user_id}"),
-            ("briefing_type", f"eq.{briefing_type}"),
-        ],
-    ))
-    if not preference or preference.get("enabled") is not True or preference.get("channel") != "email":
-        return False
-    try:
-        preferred_time = _normalize_clock_time(preference.get("preferred_time"), "preferred_time") if preference.get("preferred_time") is not None else None
-        quiet_start = _normalize_clock_time(preference.get("quiet_start"), "quiet_start") if preference.get("quiet_start") is not None else None
-        quiet_end = _normalize_clock_time(preference.get("quiet_end"), "quiet_end") if preference.get("quiet_end") is not None else None
-    except (TypeError, ValueError):
-        return False
-    local_now = datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney"))
-    if quiet_start and quiet_end:
-        current_time = local_now.strftime("%H:%M")
-        in_quiet = (quiet_start <= current_time < quiet_end) if quiet_start < quiet_end else (current_time >= quiet_start or current_time < quiet_end)
-        if in_quiet:
-            return False
-    delivery_date = str(delivery.get("delivery_date") or "").strip()
-    if delivery_date:
-        try:
-            parsed_date = datetime.strptime(delivery_date, "%Y-%m-%d").date()
-        except ValueError:
-            return False
-        if parsed_date.isoformat() != delivery_date:
-            return False
-        if parsed_date > local_now.date() or (parsed_date == local_now.date() and preferred_time and local_now.strftime("%H:%M") < preferred_time):
-            return False
-    membership = _first(_supabase_admin_request(
-        "GET",
-        "/rest/v1/memberships",
-        query=[("select", "user_id"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}")],
-    ))
-    return bool(membership and membership.get("user_id"))
-
-
 def _fenced_notification_update(claim_query: list[tuple[str, str]], payload: dict) -> bool:
     updated = _supabase_admin_request(
         "PATCH",
@@ -2023,24 +1975,29 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
             claim_token = str(delivery.get("claim_token") or "").strip()
             if not delivery_id or not claim_token:
                 raise SupabaseHTTPError(502, "Supabase returned an unfenced notification claim")
-            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}"), ("status", "eq.sending")]
+            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}"), ("status", "eq.sending"), ("provider_started_at", "not.is.null")]
             try:
-                if not _notification_delivery_authorized(delivery):
-                    if _fenced_notification_update(claim_query, {"status": "cancelled", "lease_expires_at": None, "claim_token": None, "last_error": "notification consent or membership no longer active"}):
-                        cancelled += 1
+                begin_result = _supabase_admin_request(
+                    "POST",
+                    "/rest/v1/rpc/begin_notification_delivery",
+                    payload={"p_delivery_id": delivery_id, "p_claim_token": claim_token},
+                )
+                begin_row = _first(begin_result) if isinstance(begin_result, list) else begin_result
+                if not isinstance(begin_row, dict) or begin_row.get("authorized") is not True:
+                    cancelled += 1
                     continue
                 provider_id = _send_notification_email(delivery)
-                if _fenced_notification_update(claim_query, {"status": "sent", "provider_message_id": provider_id, "sent_at": _iso_now(), "lease_expires_at": None, "claim_token": None, "last_error": None}):
+                if _fenced_notification_update(claim_query, {"status": "sent", "provider_message_id": provider_id, "provider_started_at": None, "sent_at": _iso_now(), "lease_expires_at": None, "claim_token": None, "last_error": None}):
                     sent += 1
                 else:
                     cancelled += 1
             except NotificationProviderUnavailable as exc:
-                if _fenced_notification_update(claim_query, {"status": "no_provider", "next_attempt_at": (now + timedelta(hours=1)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": str(exc)[:200]}):
+                if _fenced_notification_update(claim_query, {"status": "no_provider", "provider_started_at": None, "next_attempt_at": (now + timedelta(hours=1)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": str(exc)[:200]}):
                     no_provider += 1
                 else:
                     cancelled += 1
             except Exception:
-                if _fenced_notification_update(claim_query, {"status": "failed", "next_attempt_at": (now + timedelta(minutes=15)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": "provider delivery failed"}):
+                if _fenced_notification_update(claim_query, {"status": "failed", "provider_started_at": None, "next_attempt_at": (now + timedelta(minutes=15)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": "provider delivery failed"}):
                     failed += 1
                 else:
                     cancelled += 1
