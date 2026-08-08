@@ -2118,6 +2118,16 @@ html[data-theme="dark"] .app-shell {
   letter-spacing: -.055em;
   line-height: 1.1;
 }
+html[data-theme="dark"] .app-shell .section-hero-note span:last-child { color: var(--ledger-muted); }
+html[data-theme="dark"] .app-shell .welcome-copy h1,
+html[data-theme="dark"] .app-shell .section-hero h1,
+html[data-theme="dark"] .app-shell .panel-heading h2,
+html[data-theme="dark"] .app-shell .records-heading h2,
+html[data-theme="dark"] .app-shell .grocery-sidebar h2,
+html[data-theme="dark"] .app-shell .admin-page .notification-panel .panel-heading h3 { color: var(--ledger-ink); }
+html[data-theme="dark"] .app-shell .section-kicker,
+html[data-theme="dark"] .app-shell .breadcrumb span:first-child,
+html[data-theme="dark"] .app-shell .panel-link { color: var(--ledger-muted); }
 .app-shell .admin-page #notificationSettings .notification-layout {
   grid-template-columns: minmax(0, 1fr);
 }
