@@ -120,7 +120,7 @@ form.addEventListener('submit', async (event) => {
 themeToggle.addEventListener('click', () => {
   setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 });
-themeToggle.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
+setTheme(document.documentElement.dataset.theme);
 queueButton.addEventListener('click', queueBriefing);
 loadPreferences();
 loadDelivery();
