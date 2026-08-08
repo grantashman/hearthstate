@@ -280,12 +280,16 @@ deleteHouseholdButton.addEventListener('click', deleteHousehold);
 themeToggle.addEventListener('click', () => {
   const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   document.documentElement.dataset.theme = nextTheme;
-  themeToggle.setAttribute('aria-pressed', String(nextTheme === 'dark'));
-  themeToggle.setAttribute('aria-label', nextTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-  const themeMeta = document.querySelector('meta[name="theme-color"]');
-  if (themeMeta) themeMeta.setAttribute('content', nextTheme === 'dark' ? '#171e1a' : '#f0f1eb');
+  syncThemeControls(nextTheme);
   try { localStorage.setItem('hearthstate-theme', nextTheme); } catch (error) { /* no-op */ }
 });
 
-themeToggle.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
+function syncThemeControls(theme) {
+  themeToggle.setAttribute('aria-pressed', String(theme === 'dark'));
+  themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute('content', theme === 'dark' ? '#171e1a' : '#f0f1eb');
+}
+
+syncThemeControls(document.documentElement.dataset.theme);
 loadAdmin();
