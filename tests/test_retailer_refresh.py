@@ -26,6 +26,7 @@ class LiveRetailerRefreshTests(unittest.TestCase):
                 "coles": {
                     "matches": [{
                         "item_id": item_id,
+                        "observed_at": checked_at,
                         "product_key": "coles-eggs-700g",
                         "comparison_key": "eggs-12-pack-700g",
                         "title": "Coles Cage Free Eggs 12 Pack 700g",
@@ -40,6 +41,7 @@ class LiveRetailerRefreshTests(unittest.TestCase):
                 "woolworths": {
                     "matches": [{
                         "item_id": item_id,
+                        "observed_at": checked_at,
                         "product_key": "woolworths-eggs-700g",
                         "comparison_key": "eggs-12-pack-700g",
                         "title": "Woolworths Free Range Eggs 12 Pack 700g",

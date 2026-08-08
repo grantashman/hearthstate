@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import math
 import os
 import threading
@@ -9,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 # Live refresh is intentionally limited to the two supported retailers. The
@@ -28,6 +29,16 @@ _MAX_MATCHES = 300
 _MIN_REFRESH_INTERVAL_SECONDS = 30
 _RATE_LOCK = threading.Lock()
 _LAST_REFRESH_BY_KEY: dict[str, float] = {}
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Do not forward provider bearer credentials to another host."""
+
+    def redirect_request(self, request, file, code, message, headers, new_url):
+        return None
+
+
+_NO_REDIRECT_OPENER = build_opener(_NoRedirectHandler)
 LIVE_SEARCH_POLICY = {
     "mode": "live",
     "preserve_user_query": True,
@@ -57,6 +68,17 @@ def _provider_endpoint() -> str | None:
     parsed = urlparse(endpoint)
     if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.fragment:
         raise LiveRetailerRefreshError("live retailer provider must use an HTTPS URL without embedded credentials")
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if not hostname or parsed.port:
+        raise LiveRetailerRefreshError("live retailer provider must use a public HTTPS hostname")
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        raise LiveRetailerRefreshError("live retailer provider must use a public HTTPS hostname")
+    if hostname in {"localhost", "localhost.localdomain"}:
+        raise LiveRetailerRefreshError("live retailer provider must use a public HTTPS hostname")
     return endpoint
 
 
@@ -81,6 +103,12 @@ def _iso_datetime(value: object, *, fallback: str | None = None) -> str:
     if parsed > datetime.now(timezone.utc) + timedelta(minutes=5):
         raise LiveRetailerRefreshError("provider returned a future observation time")
     return parsed.isoformat()
+
+
+def _require_fresh(timestamp: str, label: str) -> None:
+    parsed = datetime.fromisoformat(timestamp)
+    if datetime.now(timezone.utc) - parsed > LIVE_QUOTE_MAX_AGE:
+        raise LiveRetailerRefreshError(f"provider returned a stale {label}")
 
 
 def _safe_text(value: object, field: str, maximum: int, *, required: bool = True) -> str:
@@ -139,6 +167,8 @@ def normalize_live_match(
         raise LiveRetailerRefreshError("provider returned an invalid size safety flag")
     comparison_key = _safe_text(raw.get("comparison_key"), "comparison key", 200)
     observed_at = _iso_datetime(raw.get("observed_at"), fallback=default_observed_at)
+    if not stale:
+        _require_fresh(observed_at, "observation")
     confidence = str(raw.get("confidence") or "live").strip().lower()
     if confidence != "live":
         raise LiveRetailerRefreshError("live provider confidence must be live")
@@ -234,7 +264,7 @@ def _fetch(endpoint: str, payload: dict) -> dict:
         headers["Authorization"] = f"Bearer {api_key}"
     request = Request(endpoint, data=json.dumps(payload, separators=(",", ":")).encode("utf-8"), method="POST", headers=headers)
     try:
-        with urlopen(request, timeout=8) as response:
+        with _NO_REDIRECT_OPENER.open(request, timeout=8) as response:
             raw = response.read(_MAX_RESPONSE_BYTES + 1)
     except HTTPError as exc:
         raise LiveRetailerRefreshError(f"live provider returned HTTP {exc.code}") from exc
@@ -266,7 +296,8 @@ def refresh_live_retailers(items: list[dict], *, rate_key: str | None = None) ->
 
     try:
         payload = _fetch(endpoint, _request_payload(items))
-        checked_at = _iso_datetime(payload.get("checked_at"), fallback=datetime.now(timezone.utc).isoformat())
+        checked_at = _iso_datetime(payload.get("checked_at"))
+        _require_fresh(checked_at, "check")
         raw_retailers = payload.get("retailers")
         if not isinstance(raw_retailers, dict):
             raise LiveRetailerRefreshError("live provider omitted retailer results")
@@ -284,7 +315,7 @@ def refresh_live_retailers(items: list[dict], *, rate_key: str | None = None) ->
                 total_matches += 1
                 if total_matches > _MAX_MATCHES:
                     raise LiveRetailerRefreshError("live provider returned too many matches")
-                match = normalize_live_match(retailer, raw_match, expected_ids, default_observed_at=checked_at)
+                match = normalize_live_match(retailer, raw_match, expected_ids)
                 if match["item_id"] in retailer_matches:
                     raise LiveRetailerRefreshError("live provider returned duplicate item matches")
                 retailer_matches[match["item_id"]] = match
