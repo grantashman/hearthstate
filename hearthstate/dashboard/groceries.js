@@ -17,7 +17,7 @@ function syncTheme() {
   els.theme.setAttribute('aria-pressed', String(dark));
   els.theme.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
   if (!els.theme.querySelector('.theme-icon')) els.theme.textContent = dark ? '☀' : '☾';
-  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#1d1917' : '#f3ede3';
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#171e1a' : '#f0f1eb';
 }
 function setTheme(theme) { document.documentElement.dataset.theme = theme; try { localStorage.setItem('hearthstate-theme', theme); } catch (error) {} syncTheme(); }
 function checkedLabel(value) {

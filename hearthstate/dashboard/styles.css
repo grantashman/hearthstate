@@ -895,7 +895,6 @@ html[data-theme="dark"] .login-page { --login-rail: #293e36; --login-rail-ink: #
   .user-choice, .login-field, .primary-button { transition: none; }
 }
 
-.admin-page { max-width: 1180px; }
 .admin-hero { align-items: center; }
 .admin-hero-mark { display: grid; place-items: center; width: 124px; height: 124px; color: var(--evergreen-deep); border: 1px solid rgba(81, 122, 104, .24); border-radius: 50%; background: var(--evergreen-wash); text-align: center; transform: rotate(7deg); }
 .admin-hero-mark span { font-size: 30px; line-height: 1; }
@@ -943,7 +942,6 @@ html[data-theme="dark"] .login-page { --login-rail: #293e36; --login-rail-ink: #
   .admin-remove, .admin-revoke { margin-left: auto; }
 }
 
-.notifications-page { max-width: 1180px; }
 .notifications-hero { align-items: center; }
 .notifications-hero-mark { display: grid; place-items: center; width: 124px; height: 124px; color: var(--ember-deep); border: 1px solid rgba(198, 87, 61, .25); border-radius: 50%; background: var(--ember-wash); text-align: center; transform: rotate(-7deg); }
 .notifications-hero-mark span { font-size: 35px; line-height: 1; }
