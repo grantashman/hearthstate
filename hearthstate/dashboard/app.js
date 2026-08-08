@@ -112,7 +112,7 @@ function syncThemeButton() {
   els.themeToggle.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
   els.themeToggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
   const themeMeta = document.querySelector('meta[name="theme-color"]');
-  if (themeMeta) themeMeta.setAttribute('content', isDark ? '#1d1917' : '#f3ede3');
+  if (themeMeta) themeMeta.setAttribute('content', isDark ? '#171e1a' : '#f0f1eb');
 }
 
 function setTheme(theme) {
@@ -294,7 +294,7 @@ function renderIntelligence(intelligence) {
     return `<li><strong>${escapeHTML(label)}</strong><span>${escapeHTML(item.action.replace('.', ' '))} · ${escapeHTML(item.actor)}</span></li>`;
   }).join('');
   els.choreList.innerHTML = chores.slice(0, 4).map((item) => {
-    const next = item.participants?.[item.next_index % item.participants.length] || '...';
+    const next = item.participants?.[item.next_index % item.participants.length] || '…';
     return `<li><strong>${escapeHTML(item.title)}</strong><span>Next: ${escapeHTML(next)} · ${escapeHTML(item.cadence)}</span></li>`;
   }).join('');
   els.conflictList.classList.toggle('is-hidden', conflicts.length === 0);

@@ -21,6 +21,8 @@ function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
   themeToggle.setAttribute('aria-pressed', String(theme === 'dark'));
   themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.setAttribute('content', theme === 'dark' ? '#171e1a' : '#f0f1eb');
   try { localStorage.setItem('hearthstate-theme', theme); } catch (error) { /* no-op */ }
 }
 

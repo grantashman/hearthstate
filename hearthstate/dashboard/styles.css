@@ -560,10 +560,10 @@ html[data-theme="dark"] .assignee-billie { color: #a5d1da; }
 .retailer-total > div > strong { color: var(--ink); font-size: 12px; }
 .retailer-total > div > span { color: var(--ink-faint); font-size: 9px; }
 .retailer-products { margin-top: 7px; color: var(--ink); font-size: 0.76rem; }
-.retailer-products summary { color: var(--accent); cursor: pointer; font-weight: 700; }
+.retailer-products summary { color: var(--evergreen); cursor: pointer; font-weight: 700; }
 .retailer-products ul { display: grid; gap: 5px; margin: 7px 0 0; padding-left: 16px; }
 .retailer-products li { display: grid; gap: 2px; }
-.retailer-products small { color: var(--muted); line-height: 1.35; }
+.retailer-products small { color: var(--ink-faint); line-height: 1.35; }
 .retailer-total > strong { color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .retailer-total.is-recommended { margin: 0 -10px; padding: 11px 10px; border: 1px solid #d0ded5; border-radius: 7px; background: var(--evergreen-wash); }
 .retailer-total.is-recommended > strong { color: var(--evergreen); }
@@ -895,7 +895,6 @@ html[data-theme="dark"] .login-page { --login-rail: #293e36; --login-rail-ink: #
   .user-choice, .login-field, .primary-button { transition: none; }
 }
 
-.admin-page { max-width: 1180px; }
 .admin-hero { align-items: center; }
 .admin-hero-mark { display: grid; place-items: center; width: 124px; height: 124px; color: var(--evergreen-deep); border: 1px solid rgba(81, 122, 104, .24); border-radius: 50%; background: var(--evergreen-wash); text-align: center; transform: rotate(7deg); }
 .admin-hero-mark span { font-size: 30px; line-height: 1; }
@@ -943,7 +942,6 @@ html[data-theme="dark"] .login-page { --login-rail: #293e36; --login-rail-ink: #
   .admin-remove, .admin-revoke { margin-left: auto; }
 }
 
-.notifications-page { max-width: 1180px; }
 .notifications-hero { align-items: center; }
 .notifications-hero-mark { display: grid; place-items: center; width: 124px; height: 124px; color: var(--ember-deep); border: 1px solid rgba(198, 87, 61, .25); border-radius: 50%; background: var(--ember-wash); text-align: center; transform: rotate(-7deg); }
 .notifications-hero-mark span { font-size: 35px; line-height: 1; }
@@ -1813,6 +1811,7 @@ html[data-theme="dark"] .app-shell {
   --ledger-paper: #fffdf8;
   --ledger-paper-soft: #f7f6f0;
   --ledger-forest: #1b493b;
+  --ledger-forest-soft: #e4eee8;
   --ledger-forest-deep: #10372c;
   --ledger-ink: #202923;
   --ledger-muted: #748078;
@@ -1825,6 +1824,7 @@ html[data-theme="dark"] .app-shell {
   --ledger-paper: #222b26;
   --ledger-paper-soft: #1d2621;
   --ledger-forest: #173b31;
+  --ledger-forest-soft: #294139;
   --ledger-forest-deep: #0f2b23;
   --ledger-ink: #f4eee4;
   --ledger-muted: #a7b4aa;
@@ -2097,3 +2097,39 @@ html[data-theme="dark"] .app-shell {
   .panel-heading-actions { gap: 6px; }
   #completeAttentionButton { max-width: 116px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* Final visual consistency pass: keep secondary pages readable and aligned with the ledger type system. */
+.app-shell .section-hero-note span:last-child { color: var(--ledger-forest); }
+.app-shell .grocery-sidebar h2 {
+  margin: 0;
+  color: var(--ledger-forest-deep);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: -.055em;
+  line-height: 1.05;
+}
+.app-shell .admin-page .notification-panel .panel-heading h3 {
+  margin: 0;
+  color: var(--ledger-forest-deep);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -.055em;
+  line-height: 1.1;
+}
+html[data-theme="dark"] .app-shell .section-hero-note span:last-child { color: var(--ledger-muted); }
+html[data-theme="dark"] .app-shell .welcome-copy h1,
+html[data-theme="dark"] .app-shell .section-hero h1,
+html[data-theme="dark"] .app-shell .panel-heading h2,
+html[data-theme="dark"] .app-shell .records-heading h2,
+html[data-theme="dark"] .app-shell .grocery-sidebar h2,
+html[data-theme="dark"] .app-shell .admin-page .notification-panel .panel-heading h3 { color: var(--ledger-ink); }
+html[data-theme="dark"] .app-shell .section-kicker,
+html[data-theme="dark"] .app-shell .breadcrumb span:first-child,
+html[data-theme="dark"] .app-shell .panel-link { color: var(--ledger-muted); }
+.app-shell .admin-page #notificationSettings .notification-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell .admin-page #notificationSettings .notification-main-panel { grid-column: auto; }
+.app-shell .admin-page #notificationSettings .notification-fields { max-width: 480px; }

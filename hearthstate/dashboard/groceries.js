@@ -9,15 +9,15 @@ const els = {
   comparison: document.querySelector('#retailerComparison'), comparisonNote: document.querySelector('#comparisonNote'), bestDeals: document.querySelector('#bestDeals'),
 };
 const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
-const money = (value) => value == null ? '...' : new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
+const money = (value) => value == null ? '…' : new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const liveSearches = new Set();
 
 function syncTheme() {
   const dark = document.documentElement.dataset.theme === 'dark';
   els.theme.setAttribute('aria-pressed', String(dark));
   els.theme.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
-  els.theme.textContent = dark ? '☀' : '☾';
-  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#1d1917' : '#f3ede3';
+  if (!els.theme.querySelector('.theme-icon')) els.theme.textContent = dark ? '☀' : '☾';
+  const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#171e1a' : '#f0f1eb';
 }
 function setTheme(theme) { document.documentElement.dataset.theme = theme; try { localStorage.setItem('hearthstate-theme', theme); } catch (error) {} syncTheme(); }
 function checkedLabel(value) {
@@ -145,7 +145,7 @@ function render(payload) {
   els.pricedTotal.textContent = money(payload.priced_total);
   els.budgetTotal.textContent = money(payload.budget);
   els.unknownCount.textContent = payload.unknown_price_count;
-  els.remainingTotal.textContent = payload.remaining == null ? '...' : money(payload.remaining);
+  els.remainingTotal.textContent = payload.remaining == null ? '…' : money(payload.remaining);
   els.budgetStatus.textContent = payload.budget == null ? 'Set a target below' : (payload.over_budget ? 'Over the known subtotal' : 'Known prices included');
   els.remainingStatus.textContent = payload.remaining == null ? 'Set a weekly budget' : (payload.over_budget ? 'Over budget' : 'After known prices');
   els.budgetSignal.textContent = payload.budget == null ? 'Set a weekly target' : (payload.over_budget ? `${money(Math.abs(payload.remaining))} over known budget` : `${money(payload.remaining)} left on known prices`);

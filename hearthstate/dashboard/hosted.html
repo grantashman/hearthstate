@@ -75,7 +75,7 @@
     event.preventDefault();
     const button = form.querySelector('button');
     button.disabled = true;
-    setMessage('Creating household...', false);
+    setMessage('Creating household…', false);
     try {
       const response = await fetch('/api/households', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ name: nameInput.value.trim() }) });
       const payload = await response.json().catch(() => ({}));
