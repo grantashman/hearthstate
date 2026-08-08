@@ -36,7 +36,7 @@ function syncTheme() {
   const dark = document.documentElement.dataset.theme === 'dark';
   els.theme.setAttribute('aria-pressed', String(dark));
   els.theme.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
-  els.theme.textContent = dark ? '☀' : '☾';
+  if (!els.theme.querySelector('.theme-icon')) els.theme.textContent = dark ? '☀' : '☾';
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = dark ? '#1d1917' : '#f3ede3';
 }

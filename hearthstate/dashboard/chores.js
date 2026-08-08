@@ -38,7 +38,7 @@ function syncThemeButton() {
   elements.themeToggle.setAttribute('aria-pressed', String(dark));
   elements.themeToggle.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
   elements.themeToggle.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
-  elements.themeToggle.textContent = dark ? '☀' : '☾';
+  if (!elements.themeToggle.querySelector('.theme-icon')) elements.themeToggle.textContent = dark ? '☀' : '☾';
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = dark ? '#1d1917' : '#f3ede3';
 }

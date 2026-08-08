@@ -294,7 +294,7 @@ function renderIntelligence(intelligence) {
     return `<li><strong>${escapeHTML(label)}</strong><span>${escapeHTML(item.action.replace('.', ' '))} · ${escapeHTML(item.actor)}</span></li>`;
   }).join('');
   els.choreList.innerHTML = chores.slice(0, 4).map((item) => {
-    const next = item.participants?.[item.next_index % item.participants.length] || '...';
+    const next = item.participants?.[item.next_index % item.participants.length] || '…';
     return `<li><strong>${escapeHTML(item.title)}</strong><span>Next: ${escapeHTML(next)} · ${escapeHTML(item.cadence)}</span></li>`;
   }).join('');
   els.conflictList.classList.toggle('is-hidden', conflicts.length === 0);
