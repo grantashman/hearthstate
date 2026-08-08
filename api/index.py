@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
@@ -188,8 +188,75 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).replace(second=0, microsecond=0).isoformat()
 
 
+def _notification_delivery_authorized(delivery: dict) -> bool:
+    household_id = str(delivery.get("household_id") or "").strip()
+    user_id = str(delivery.get("user_id") or "").strip()
+    briefing_type = str(delivery.get("briefing_type") or "morning").strip().lower()
+    if not household_id or not user_id or briefing_type != "morning":
+        return False
+    preference = _first(_supabase_admin_request(
+        "GET",
+        "/rest/v1/notification_preferences",
+        query=[
+            ("select", "enabled,channel,preferred_time,quiet_start,quiet_end"),
+            ("household_id", f"eq.{household_id}"),
+            ("user_id", f"eq.{user_id}"),
+            ("briefing_type", f"eq.{briefing_type}"),
+        ],
+    ))
+    if not preference or preference.get("enabled") is not True or preference.get("channel") != "email":
+        return False
+    try:
+        preferred_time = _normalize_clock_time(preference.get("preferred_time"), "preferred_time") if preference.get("preferred_time") is not None else None
+        quiet_start = _normalize_clock_time(preference.get("quiet_start"), "quiet_start") if preference.get("quiet_start") is not None else None
+        quiet_end = _normalize_clock_time(preference.get("quiet_end"), "quiet_end") if preference.get("quiet_end") is not None else None
+    except (TypeError, ValueError):
+        return False
+    local_now = datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney"))
+    if quiet_start and quiet_end:
+        current_time = local_now.strftime("%H:%M")
+        in_quiet = (quiet_start <= current_time < quiet_end) if quiet_start < quiet_end else (current_time >= quiet_start or current_time < quiet_end)
+        if in_quiet:
+            return False
+    delivery_date = str(delivery.get("delivery_date") or "").strip()
+    if delivery_date:
+        try:
+            parsed_date = datetime.strptime(delivery_date, "%Y-%m-%d").date()
+        except ValueError:
+            return False
+        if parsed_date.isoformat() != delivery_date:
+            return False
+        if parsed_date > local_now.date() or (parsed_date == local_now.date() and preferred_time and local_now.strftime("%H:%M") < preferred_time):
+            return False
+    membership = _first(_supabase_admin_request(
+        "GET",
+        "/rest/v1/memberships",
+        query=[("select", "user_id"), ("household_id", f"eq.{household_id}"), ("user_id", f"eq.{user_id}")],
+    ))
+    return bool(membership and membership.get("user_id"))
+
+
+def _fenced_notification_update(claim_query: list[tuple[str, str]], payload: dict) -> bool:
+    updated = _supabase_admin_request(
+        "PATCH",
+        "/rest/v1/notification_deliveries",
+        query=claim_query,
+        prefer="return=representation",
+        payload=payload,
+    )
+    return bool(_rows(updated))
+
+
 class NotificationProviderUnavailable(RuntimeError):
     pass
+
+
+class _RejectNotificationRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise NotificationProviderUnavailable("email provider redirect rejected")
+
+
+_notification_provider_opener = build_opener(_RejectNotificationRedirect)
 
 
 def _notification_email(delivery: dict) -> str:
@@ -198,10 +265,15 @@ def _notification_email(delivery: dict) -> str:
     if not api_key or not sender:
         raise NotificationProviderUnavailable("email provider is not configured")
     provider_url = os.environ.get("RESEND_API_URL", "https://api.resend.com/emails").strip()
-    parsed_url = urlparse(provider_url)
+    try:
+        parsed_url = urlparse(provider_url)
+        provider_port = parsed_url.port
+    except ValueError as exc:
+        raise NotificationProviderUnavailable("email provider endpoint is invalid") from exc
     if (
         parsed_url.scheme != "https"
         or parsed_url.hostname != "api.resend.com"
+        or provider_port not in (None, 443)
         or parsed_url.path != "/emails"
         or parsed_url.params
         or parsed_url.query
@@ -229,7 +301,7 @@ def _notification_email(delivery: dict) -> str:
         },
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        with _notification_provider_opener.open(request, timeout=10) as response:
             response_body = response.read(64 * 1024 + 1)
             if len(response_body) > 64 * 1024:
                 raise RuntimeError("email provider response was too large")
@@ -376,11 +448,13 @@ def _notification_delivery_date(value: object) -> str:
     elif isinstance(value, bool) or not isinstance(value, str):
         raise ValueError("delivery_date must use YYYY-MM-DD")
     else:
-        raw = value.strip()
+        raw = value
     try:
         parsed = datetime.strptime(raw, "%Y-%m-%d").date()
     except ValueError as exc:
         raise ValueError("delivery_date must use YYYY-MM-DD") from exc
+    if parsed.isoformat() != raw:
+        raise ValueError("delivery_date must use YYYY-MM-DD")
     today = datetime.now(timezone.utc).astimezone(ZoneInfo("Australia/Sydney")).date()
     if parsed < today or (parsed - today).days > 7:
         raise ValueError("delivery_date must be within the next 7 days")
@@ -1943,24 +2017,34 @@ class handler(BaseHTTPRequestHandler):  # Vercel's Python runtime discovers this
                 prepared += 1
 
         claimed = _rows(_supabase_admin_request("POST", "/rest/v1/rpc/claim_notification_deliveries", payload={"p_limit": 25}))
-        sent = failed = no_provider = 0
+        sent = failed = no_provider = cancelled = 0
         for delivery in claimed:
             delivery_id = str(delivery.get("id") or "").strip()
             claim_token = str(delivery.get("claim_token") or "").strip()
             if not delivery_id or not claim_token:
                 raise SupabaseHTTPError(502, "Supabase returned an unfenced notification claim")
-            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}")]
+            claim_query = [("id", f"eq.{delivery_id}"), ("claim_token", f"eq.{claim_token}"), ("status", "eq.sending")]
             try:
+                if not _notification_delivery_authorized(delivery):
+                    if _fenced_notification_update(claim_query, {"status": "cancelled", "lease_expires_at": None, "claim_token": None, "last_error": "notification consent or membership no longer active"}):
+                        cancelled += 1
+                    continue
                 provider_id = _send_notification_email(delivery)
-                _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "sent", "provider_message_id": provider_id, "sent_at": _iso_now(), "lease_expires_at": None, "claim_token": None, "last_error": None})
-                sent += 1
+                if _fenced_notification_update(claim_query, {"status": "sent", "provider_message_id": provider_id, "sent_at": _iso_now(), "lease_expires_at": None, "claim_token": None, "last_error": None}):
+                    sent += 1
+                else:
+                    cancelled += 1
             except NotificationProviderUnavailable as exc:
-                _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "no_provider", "next_attempt_at": (now + timedelta(hours=1)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": str(exc)[:200]})
-                no_provider += 1
+                if _fenced_notification_update(claim_query, {"status": "no_provider", "next_attempt_at": (now + timedelta(hours=1)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": str(exc)[:200]}):
+                    no_provider += 1
+                else:
+                    cancelled += 1
             except Exception:
-                _supabase_admin_request("PATCH", "/rest/v1/notification_deliveries", query=claim_query, prefer="return=minimal", payload={"status": "failed", "next_attempt_at": (now + timedelta(minutes=15)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": "provider delivery failed"})
-                failed += 1
-        self._respond({"prepared": prepared, "claimed": len(claimed), "sent": sent, "failed": failed, "no_provider": no_provider})
+                if _fenced_notification_update(claim_query, {"status": "failed", "next_attempt_at": (now + timedelta(minutes=15)).isoformat(), "lease_expires_at": None, "claim_token": None, "last_error": "provider delivery failed"}):
+                    failed += 1
+                else:
+                    cancelled += 1
+        self._respond({"prepared": prepared, "claimed": len(claimed), "sent": sent, "failed": failed, "no_provider": no_provider, "cancelled": cancelled})
 
     def _handle_post(self, route: str) -> None:
         payload = _json_body(self)

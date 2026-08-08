@@ -190,6 +190,7 @@ class HostedApiContractTests(unittest.TestCase):
         followup_migration = (root / "supabase" / "migrations" / "20260808103000_notification_and_inbox_followup_hardening.sql").read_text()
         vercel = (root / "vercel.json").read_text()
         dispatch_workflow = (root / ".github" / "workflows" / "notification-dispatch.yml").read_text()
+        api_source = (root / "api" / "index.py").read_text()
         self.assertIn("data-quick-action=", index_html)
         self.assertIn("completeVisibleAttention", app_js)
         self.assertIn("/api/notifications/queue", notifications_js)
@@ -204,9 +205,17 @@ class HostedApiContractTests(unittest.TestCase):
         self.assertIn("quiet_start", migration)
         self.assertIn("for update", migration)
         self.assertIn("pg_temp", migration)
-        self.assertIn("for key share of p, m", migration)
+        self.assertIn("Explicit individual locks make acquisition order deterministic", followup_migration)
+        self.assertIn("for update;", followup_migration)
+        self.assertNotIn("for key share of p, m", followup_migration)
         self.assertIn("jsonb_typeof(capture_input->'original_text') is distinct from 'string'", migration)
         self.assertIn("delivery_row.status = 'cancelled'", followup_migration)
+        self.assertIn("'sending'", followup_migration)
+        self.assertIn("_notification_delivery_authorized", api_source)
+        self.assertIn("enabled,channel,preferred_time,quiet_start,quiet_end", api_source)
+        self.assertIn("_fenced_notification_update", api_source)
+        self.assertIn("case when p.preferred_time ~", followup_migration)
+        self.assertIn("order by d.household_id asc, d.user_id asc, d.id asc", followup_migration)
         self.assertNotIn("delivery_row.status in ('cancelled', 'failed', 'no_provider')", followup_migration)
         self.assertNotIn('"crons"', vercel)
         self.assertIn('cron: "*/15 * * * *"', dispatch_workflow)
@@ -216,10 +225,10 @@ class HostedApiContractTests(unittest.TestCase):
         request = object.__new__(handler)
         request.headers = {"Authorization": "Bearer cron-secret"}
         request._respond = Mock()
-        delivery = {"id": "delivery-id", "claim_token": "claim-token", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
+        delivery = {"id": "delivery-id", "household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "claim_token": "claim-token", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
         with patch("api.index._json_body", return_value={}), \
              patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
-             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], {}]) as admin_request, \
+             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], [{"enabled": True, "channel": "email"}], [{"user_id": "viewer-id"}], {}]) as admin_request, \
              patch("api.index._send_notification_email", return_value="provider-message-id"):
             request._handle_post("/notifications/dispatch")
 
@@ -254,22 +263,40 @@ class HostedApiContractTests(unittest.TestCase):
         response.__enter__ = Mock(return_value=response)
         response.__exit__ = Mock(return_value=False)
         response.read.return_value = b"{}"
-        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>", "RESEND_API_URL": "https://api.resend.com/emails"}, clear=False), patch("api.index.urlopen", return_value=response) as urlopen_mock:
+        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>", "RESEND_API_URL": "https://api.resend.com/emails"}, clear=False), patch("api.index._notification_provider_opener.open", return_value=response) as urlopen_mock:
             with self.assertRaisesRegex(RuntimeError, "provider response"):
                 hosted_api._send_notification_email({"id": "delivery-id", "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
         request = urlopen_mock.call_args.args[0]
         self.assertEqual(request.get_header("Idempotency-key"), "delivery-id")
 
     def test_notification_provider_rejects_unapproved_endpoint(self):
-        with patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>", "RESEND_API_URL": "http://attacker.example/emails"}, clear=False):
-            with self.assertRaisesRegex(hosted_api.NotificationProviderUnavailable, "endpoint is invalid"):
-                hosted_api._send_notification_email({"id": "delivery-id", "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
+        for endpoint in ("http://attacker.example/emails", "https://api.resend.com:444/emails", "https://[invalid/emails"):
+            with self.subTest(endpoint=endpoint), patch.dict("os.environ", {"RESEND_API_KEY": "provider-key", "HEARTHSTATE_NOTIFICATION_FROM": "Hearthstate <briefing@example.com>", "RESEND_API_URL": endpoint}, clear=False):
+                with self.assertRaisesRegex(hosted_api.NotificationProviderUnavailable, "endpoint is invalid"):
+                    hosted_api._send_notification_email({"id": "delivery-id", "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"})
+
+    def test_notification_provider_rejects_redirects(self):
+        with self.assertRaisesRegex(hosted_api.NotificationProviderUnavailable, "redirect rejected"):
+            hosted_api._RejectNotificationRedirect().redirect_request(None, None, 307, "temporary redirect", {}, "https://attacker.example/emails")
 
     def test_notification_delivery_date_rejects_non_string_values(self):
-        for value in (False, True, 0, 1, [], {}):
+        for value in (False, True, 0, 1, [], {}, "2026-8-8", "2026-08-8", "2026-8-08", " 2026-08-08 "):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, "YYYY-MM-DD"):
                     hosted_api._notification_delivery_date(value)
+
+    def test_notification_dispatch_fences_revoked_consent_before_provider(self):
+        request = object.__new__(handler)
+        request.headers = {"Authorization": "Bearer cron-secret"}
+        request._respond = Mock()
+        delivery = {"id": "delivery-id", "household_id": "household-id", "user_id": "viewer-id", "briefing_type": "morning", "claim_token": "claim-token", "status": "sending", "attempts": 1, "recipient_email": "person@example.com", "subject": "Briefing", "body": "Open Hearthstate"}
+        with patch("api.index._json_body", return_value={}), \
+             patch.dict("os.environ", {"HEARTHSTATE_CRON_SECRET": "cron-secret", "SUPABASE_SERVICE_ROLE_KEY": "service-key"}, clear=False), \
+             patch("api.index._supabase_admin_request", side_effect=[[], [delivery], [{"enabled": False, "channel": "email"}], {}]), \
+             patch("api.index._send_notification_email") as send_email:
+            request._handle_post("/notifications/dispatch")
+        send_email.assert_not_called()
+        self.assertEqual(request._respond.call_args.args[0]["cancelled"], 1)
 
     def test_notification_dispatch_skips_malformed_preferences_without_aborting(self):
         request = object.__new__(handler)

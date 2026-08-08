@@ -128,7 +128,7 @@ begin
     set status = 'cancelled', last_error = 'notifications disabled by member', lease_expires_at = null,
         claim_token = null, updated_at = timezone('utc', now())
     where household_id = p_household_id and user_id = p_actor_user_id
-      and briefing_type = p_briefing_type and status in ('queued', 'failed', 'no_provider');
+      and briefing_type = p_briefing_type and status in ('queued', 'failed', 'no_provider', 'sending');
     get diagnostics changed = row_count;
     return changed;
 end;
@@ -143,15 +143,56 @@ language plpgsql
 security definer
 set search_path = public, extensions, pg_temp
 as $$
+declare
+    candidate_id uuid;
+    delivery_row public.notification_deliveries;
+    preference_row public.notification_preferences;
+    membership_row public.memberships;
+    preference_found boolean;
+    membership_found boolean;
+    preferred_time_value time;
+    quiet_start_value time;
+    quiet_end_value time;
+    now_local time := timezone('Australia/Sydney', now())::time;
+    today_local date := timezone('Australia/Sydney', now())::date;
+    claim_limit integer := greatest(least(coalesce(p_limit, 25), 100), 1);
+    claimed_count integer := 0;
 begin
-    update public.notification_deliveries
-    set status = 'failed', next_attempt_at = null, lease_expires_at = null, claim_token = null,
-        last_error = 'delivery lease expired after retry limit', updated_at = timezone('utc', now())
-    where status = 'sending' and attempts >= 10
-      and coalesce(lease_expires_at, timezone('utc', now())) <= timezone('utc', now());
+    -- Recover terminal leases with the same preference -> membership -> delivery
+    -- lock order used by queue and cancellation. Do not return these rows.
+    for candidate_id in
+        select d.id
+        from public.notification_deliveries d
+        where d.status = 'sending'
+          and d.attempts >= 10
+          and coalesce(d.lease_expires_at, timezone('utc', now())) <= timezone('utc', now())
+        order by d.household_id asc, d.user_id asc, d.id asc
+        limit claim_limit * 4
+    loop
+        select * into delivery_row from public.notification_deliveries where id = candidate_id;
+        if not found then
+            continue;
+        end if;
+        select * into preference_row
+        from public.notification_preferences
+        where household_id = delivery_row.household_id
+          and user_id = delivery_row.user_id
+          and briefing_type = delivery_row.briefing_type
+        for update;
+        preference_found := found;
+        select * into membership_row
+        from public.memberships
+        where household_id = delivery_row.household_id and user_id = delivery_row.user_id
+        for update;
+        membership_found := found;
+        update public.notification_deliveries
+        set status = 'failed', next_attempt_at = null, lease_expires_at = null, claim_token = null,
+            last_error = 'delivery lease expired after retry limit', updated_at = timezone('utc', now())
+        where id = candidate_id and status = 'sending' and attempts >= 10
+          and coalesce(lease_expires_at, timezone('utc', now())) <= timezone('utc', now());
+    end loop;
 
-    return query
-    with candidates as (
+    for candidate_id in
         select d.id
         from public.notification_deliveries d
         where d.channel = 'email'
@@ -160,53 +201,105 @@ begin
             or (d.status in ('failed', 'no_provider') and d.attempts < 10 and coalesce(d.next_attempt_at, timezone('utc', now())) <= timezone('utc', now()))
             or (d.status = 'sending' and d.attempts < 10 and coalesce(d.lease_expires_at, timezone('utc', now())) <= timezone('utc', now()))
           )
-        and exists (
+          and exists (
             select 1
             from public.notification_preferences p
             join public.memberships m
               on m.household_id = d.household_id and m.user_id = d.user_id
-            cross join lateral (
-                select
-                    case when p.preferred_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.preferred_time::time else null::time end as preferred_time_value,
-                    case when p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_start::time else null::time end as quiet_start_value,
-                    case when p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_end::time else null::time end as quiet_end_value
-            ) clock
             where p.household_id = d.household_id
               and p.user_id = d.user_id
               and p.briefing_type = d.briefing_type
               and p.enabled = true
               and p.channel = 'email'
-              and clock.preferred_time_value is not null
-              and clock.quiet_start_value is not null
-              and clock.quiet_end_value is not null
+              and p.preferred_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+              and p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+              and p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
               and (
                   d.delivery_date < timezone('Australia/Sydney', now())::date
                   or (d.delivery_date = timezone('Australia/Sydney', now())::date
-                      and timezone('Australia/Sydney', now())::time >= clock.preferred_time_value)
+                      and timezone('Australia/Sydney', now())::time >=
+                          case when p.preferred_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.preferred_time::time end)
               )
               and not (
-                  (clock.quiet_start_value < clock.quiet_end_value
-                   and timezone('Australia/Sydney', now())::time >= clock.quiet_start_value
-                   and timezone('Australia/Sydney', now())::time < clock.quiet_end_value)
-                  or (clock.quiet_start_value >= clock.quiet_end_value
-                      and (timezone('Australia/Sydney', now())::time >= clock.quiet_start_value
-                           or timezone('Australia/Sydney', now())::time < clock.quiet_end_value))
+                  (case when p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_start::time end
+                   < case when p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_end::time end
+                   and timezone('Australia/Sydney', now())::time >= case when p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_start::time end
+                   and timezone('Australia/Sydney', now())::time < case when p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_end::time end)
+                  or (case when p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_start::time end
+                      >= case when p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_end::time end
+                      and (timezone('Australia/Sydney', now())::time >= case when p.quiet_start ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_start::time end
+                           or timezone('Australia/Sydney', now())::time < case when p.quiet_end ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then p.quiet_end::time end))
               )
-            for key share of p, m
-        )
-        order by d.scheduled_for asc, d.id asc
-        limit greatest(least(coalesce(p_limit, 25), 100), 1)
-        for update skip locked
-    )
-    update public.notification_deliveries d
-       set status = 'sending',
-           attempts = d.attempts + 1,
-           claim_token = gen_random_uuid(),
-           lease_expires_at = timezone('utc', now()) + interval '15 minutes',
-           updated_at = timezone('utc', now())
-      from candidates
-     where d.id = candidates.id
-    returning d.*;
+          )
+        order by d.household_id asc, d.user_id asc, d.id asc
+        limit claim_limit * 4
+    loop
+        -- Explicit individual locks make acquisition order deterministic.
+        select * into delivery_row from public.notification_deliveries
+        where id = candidate_id;
+        if not found then
+            continue;
+        end if;
+        select * into preference_row
+        from public.notification_preferences
+        where household_id = delivery_row.household_id
+          and user_id = delivery_row.user_id
+          and briefing_type = delivery_row.briefing_type
+        for update;
+        preference_found := found;
+        select * into membership_row
+        from public.memberships
+        where household_id = delivery_row.household_id and user_id = delivery_row.user_id
+        for update;
+        membership_found := found;
+        if not preference_found or not membership_found
+           or not preference_row.enabled or preference_row.channel <> 'email'
+           or preference_row.preferred_time is null
+           or preference_row.preferred_time !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+           or preference_row.quiet_start is null
+           or preference_row.quiet_start !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+           or preference_row.quiet_end is null
+           or preference_row.quiet_end !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then
+            continue;
+        end if;
+        preferred_time_value := preference_row.preferred_time::time;
+        quiet_start_value := preference_row.quiet_start::time;
+        quiet_end_value := preference_row.quiet_end::time;
+        if not (
+            delivery_row.delivery_date < today_local
+            or (delivery_row.delivery_date = today_local and now_local >= preferred_time_value)
+        ) then
+            continue;
+        end if;
+        if (
+            (quiet_start_value < quiet_end_value and now_local >= quiet_start_value and now_local < quiet_end_value)
+            or (quiet_start_value >= quiet_end_value and (now_local >= quiet_start_value or now_local < quiet_end_value))
+        ) then
+            continue;
+        end if;
+        select * into delivery_row
+        from public.notification_deliveries d
+        where d.id = candidate_id
+          and d.channel = 'email'
+          and (
+            (d.status = 'queued' and d.attempts < 10 and d.scheduled_for <= timezone('utc', now()))
+            or (d.status in ('failed', 'no_provider') and d.attempts < 10 and coalesce(d.next_attempt_at, timezone('utc', now())) <= timezone('utc', now()))
+            or (d.status = 'sending' and d.attempts < 10 and coalesce(d.lease_expires_at, timezone('utc', now())) <= timezone('utc', now()))
+          )
+        for update skip locked;
+        if not found then
+            continue;
+        end if;
+        update public.notification_deliveries
+        set status = 'sending', attempts = delivery_row.attempts + 1,
+            claim_token = gen_random_uuid(), lease_expires_at = timezone('utc', now()) + interval '15 minutes',
+            updated_at = timezone('utc', now())
+        where id = delivery_row.id
+        returning * into delivery_row;
+        return next delivery_row;
+        claimed_count := claimed_count + 1;
+        exit when claimed_count >= claim_limit;
+    end loop;
 end;
 $$;
 
