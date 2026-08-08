@@ -69,7 +69,11 @@ def _provider_endpoint() -> str | None:
     if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.fragment:
         raise LiveRetailerRefreshError("live retailer provider must use an HTTPS URL without embedded credentials")
     hostname = (parsed.hostname or "").lower().rstrip(".")
-    if not hostname or parsed.port:
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise LiveRetailerRefreshError("live retailer provider must use a public HTTPS hostname") from exc
+    if not hostname or port not in {None, 443, 8443}:
         raise LiveRetailerRefreshError("live retailer provider must use a public HTTPS hostname")
     try:
         ipaddress.ip_address(hostname)
