@@ -1,8 +1,10 @@
 import json
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 import api.index as hosted_api
 from api.index import _channel_token_hash, _inject_viewer_bootstrap, _normalize_channel_identity, _rows, _supabase_admin_request, _supabase_request, _uuid, handler
@@ -161,23 +163,26 @@ class HostedApiContractTests(unittest.TestCase):
         request._redirect.assert_called_once_with("/select-household")
         request._send_bytes.assert_not_called()
 
-    @patch("api.index._json_body", return_value={"delivery_date": "2026-08-08"})
-    def test_notification_queue_is_idempotent_per_member_and_delivery_date(self, _json_body):
+    def test_notification_queue_is_idempotent_per_member_and_delivery_date(self):
+        delivery_date = (datetime.now(ZoneInfo("Australia/Sydney")).date() + timedelta(days=1)).isoformat()
         request = object.__new__(handler)
         request._authenticate = Mock(return_value=("viewer-id", "session-token", {}))
         request._context = Mock(return_value=("2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47", {}))
         request._respond = Mock()
-        with patch("api.index._supabase_request", side_effect=[
-            [{"enabled": True, "channel": "email", "preferred_time": "07:00"}],
-            {"queued": True, "delivery": {"id": "delivery-id", "status": "queued", "idempotency_key": "morning:2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47:viewer-id:2026-08-08"}},
-        ]) as supabase_request:
+        with patch("api.index._json_body", return_value={"delivery_date": delivery_date}), patch(
+            "api.index._supabase_request",
+            side_effect=[
+                [{"enabled": True, "channel": "email", "preferred_time": "07:00"}],
+                {"queued": True, "delivery": {"id": "delivery-id", "status": "queued", "idempotency_key": f"morning:2e3d9d4b-8bc1-4eb4-9f26-4c4f3f66bf47:viewer-id:{delivery_date}"}},
+            ],
+        ) as supabase_request:
             request._handle_post("/notifications/queue")
 
         delivery = request._respond.call_args.args[0]["delivery"]
         self.assertEqual(delivery["status"], "queued")
         queue_rpc = supabase_request.call_args_list[1]
         self.assertEqual(queue_rpc.args[1], "/rest/v1/rpc/queue_notification_delivery")
-        self.assertEqual(queue_rpc.kwargs["payload"]["p_delivery_date"], "2026-08-08")
+        self.assertEqual(queue_rpc.kwargs["payload"]["p_delivery_date"], delivery_date)
 
     def test_release_two_contract_is_wired_into_hosted_assets(self):
         root = Path(__file__).parents[1]
